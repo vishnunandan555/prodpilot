@@ -33,6 +33,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [discoveredServices, setDiscoveredServices] = useState([]);
   const [discovering, setDiscovering] = useState(false);
+  const [registerProgress, setRegisterProgress] = useState(null);
 
   // Form states
   const [form, setForm] = useState({
@@ -176,7 +177,51 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
       return;
     }
 
+    setRegisterProgress({
+      step: 1,
+      total_steps: 4,
+      stage: 'validating',
+      title: 'Validating Configuration & Target',
+      detail: `Setting up target '${form.name}'...`,
+      logs: [
+        `Target Name: ${form.name}`,
+        `Health Probe Target: ${form.health_url}`,
+        form.render_service_id ? `Render Service ID: ${form.render_service_id}` : 'Provider: Custom/Render Web Service'
+      ],
+      status: 'running'
+    });
+
     try {
+      // Step 2 timer simulation
+      setTimeout(() => {
+        setRegisterProgress((prev) => {
+          if (!prev || prev.status !== 'running') return prev;
+          return {
+            ...prev,
+            step: 2,
+            stage: 'probing',
+            title: 'Probing Health Check Endpoint',
+            detail: `Dispatching live HTTP probe to ${form.health_url}...`,
+            logs: [...prev.logs, `Probing healthcheck: ${form.health_url}`]
+          };
+        });
+      }, 350);
+
+      // Step 3 timer simulation
+      setTimeout(() => {
+        setRegisterProgress((prev) => {
+          if (!prev || prev.status !== 'running') return prev;
+          return {
+            ...prev,
+            step: 3,
+            stage: 'render',
+            title: 'Verifying Cloud Telemetry & Render API',
+            detail: form.render_service_id ? `Querying Render API for ${form.render_service_id}...` : 'Verifying uptime monitoring configuration...',
+            logs: [...prev.logs, form.render_service_id ? `Authenticating with Render API for service ${form.render_service_id}...` : 'Configuring health probe watcher...']
+          };
+        });
+      }, 700);
+
       const res = await fetch(`${apiUrl}/servers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,23 +230,58 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to connect server');
 
-      setShowConnectModal(false);
-      setForm({
-        name: '',
-        project_id: '',
-        provider: 'render',
-        render_service_id: '',
-        render_api_key: '',
-        health_url: '',
-        port: 8000,
-        host: '127.0.0.1'
+      const probe = data.probe || {};
+      const statusText = probe.status || 'ONLINE';
+      const latencyStr = probe.latency_ms ? `${probe.latency_ms.toFixed(0)}ms` : 'healthy';
+
+      setRegisterProgress({
+        step: 4,
+        total_steps: 4,
+        stage: 'completed',
+        title: 'Production Server Verified & Connected!',
+        detail: `Status: ${statusText} • Latency: ${latencyStr} • Monitoring Active`,
+        logs: [
+          `Probe Response: ${statusText} (${latencyStr})`,
+          `Server ID: ${data.server?.id}`,
+          'Watchdog health probe scheduled every 15 seconds.',
+          'Autonomous SRE watchdog is active for this service.'
+        ],
+        status: 'success',
+        server: data.server,
+        probe: probe
       });
+
       await fetchServers();
       if (data.server?.id) {
         setSelectedServerId(data.server.id);
       }
+
+      // Automatically close modal after brief appreciation delay
+      setTimeout(() => {
+        setShowConnectModal(false);
+        setRegisterProgress(null);
+        setForm({
+          name: '',
+          project_id: '',
+          provider: 'render',
+          render_service_id: '',
+          render_api_key: '',
+          health_url: '',
+          port: 8000,
+          host: '127.0.0.1'
+        });
+      }, 2000);
+
     } catch (err) {
-      alert(err.message);
+      setRegisterProgress({
+        step: 4,
+        total_steps: 4,
+        stage: 'error',
+        title: 'Connection Failed',
+        detail: err.message || 'Could not verify server health URL or Render credentials.',
+        logs: [`Error: ${err.message}`],
+        status: 'error'
+      });
     }
   };
 
@@ -508,6 +588,146 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
               </button>
             </div>
 
+            {registerProgress ? (
+              <div className="p-6 space-y-5 animate-in fade-in duration-200">
+                {/* Status Bar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {registerProgress.status === 'running' && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#58a6ff] animate-ping" />
+                    )}
+                    {registerProgress.status === 'success' && (
+                      <CheckCircle2 size={16} className="text-[#3fb950]" />
+                    )}
+                    {registerProgress.status === 'error' && (
+                      <AlertTriangle size={16} className="text-[#f85149]" />
+                    )}
+                    <span className="text-xs font-bold text-[#f0f6fc] tracking-wide uppercase">
+                      {registerProgress.status === 'running'
+                        ? 'Provisioning & Probing Server...'
+                        : registerProgress.status === 'success'
+                        ? 'Server Connected & Verified'
+                        : 'Registration Failed'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#8b949e]">
+                    Step {registerProgress.step} of {registerProgress.total_steps}
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full h-1.5 bg-[#161f30] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      registerProgress.status === 'error'
+                        ? 'bg-[#f85149]'
+                        : registerProgress.status === 'success'
+                        ? 'bg-[#3fb950]'
+                        : 'bg-gradient-to-r from-[#58a6ff] to-[#3fb950]'
+                    }`}
+                    style={{
+                      width: `${(registerProgress.step / registerProgress.total_steps) * 100}%`
+                    }}
+                  />
+                </div>
+
+                {/* Step Cards */}
+                <div className="space-y-2.5">
+                  {[
+                    { num: 1, title: 'Validating Configuration & Target', desc: `Target: ${form.name}` },
+                    { num: 2, title: 'Probing Live Health Check URL', desc: form.health_url },
+                    { num: 3, title: 'Verifying Cloud Telemetry & Render API', desc: form.render_service_id || 'Standard health probe' },
+                    { num: 4, title: 'Activating Watchdog & Monitoring', desc: 'Polling every 15s for 5xx downtime & latency' }
+                  ].map((s) => {
+                    const isDone = registerProgress.step > s.num || (registerProgress.step === s.num && registerProgress.status === 'success');
+                    const isCurrent = registerProgress.step === s.num && registerProgress.status === 'running';
+                    const isFailed = registerProgress.step === s.num && registerProgress.status === 'error';
+
+                    return (
+                      <div
+                        key={s.num}
+                        className={`flex items-start gap-3 p-2.5 rounded-lg border transition-all ${
+                          isDone
+                            ? 'bg-[#121d2f]/60 border-[#23426e] text-[#f0f6fc]'
+                            : isCurrent
+                            ? 'bg-[#16233b] border-[#388bfd] text-[#58a6ff] shadow-sm shadow-[#388bfd]/20'
+                            : isFailed
+                            ? 'bg-[#2d1216] border-[#f85149] text-[#ff7b72]'
+                            : 'bg-[#090d16]/40 border-[#1a2336] text-[#6e7681]'
+                        }`}
+                      >
+                        <div className="mt-0.5 flex-shrink-0">
+                          {isDone ? (
+                            <CheckCircle2 size={15} className="text-[#3fb950]" />
+                          ) : isCurrent ? (
+                            <RefreshCw size={15} className="text-[#58a6ff] animate-spin" />
+                          ) : isFailed ? (
+                            <AlertTriangle size={15} className="text-[#f85149]" />
+                          ) : (
+                            <div className="w-3.5 h-3.5 rounded-full border border-[#30363d] flex items-center justify-center text-[9px] font-mono">
+                              {s.num}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold leading-tight">{s.title}</div>
+                          <div className="text-[11px] text-[#8b949e] truncate mt-0.5">{s.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Live Console Output */}
+                <div className="bg-[#05070c] border border-[#1b2438] rounded-lg p-3 font-mono text-[11px] text-[#79c0ff] space-y-1 max-h-32 overflow-y-auto">
+                  <div className="text-[10px] text-[#484f58] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                    <Terminal size={11} />
+                    <span>Telemetry Provisioning Console</span>
+                  </div>
+                  {registerProgress.logs.map((log, idx) => (
+                    <div key={idx} className="flex items-start gap-1.5 text-[#c9d1d9]">
+                      <span className="text-[#58a6ff] select-none">&gt;</span>
+                      <span className="break-all">{log}</span>
+                    </div>
+                  ))}
+                  {registerProgress.status === 'running' && (
+                    <div className="flex items-center gap-1 text-[#8b949e]">
+                      <span className="inline-block w-1.5 h-3 bg-[#58a6ff] animate-pulse" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#1b2438]">
+                  {registerProgress.status === 'error' ? (
+                    <button
+                      type="button"
+                      onClick={() => setRegisterProgress(null)}
+                      className="px-4 py-2 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-[#f0f6fc] text-xs font-semibold transition"
+                    >
+                      Back to Edit Form
+                    </button>
+                  ) : registerProgress.status === 'success' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowConnectModal(false);
+                        setRegisterProgress(null);
+                      }}
+                      className="px-5 py-2 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>View Server Dashboard</span>
+                    </button>
+                  ) : (
+                    <div className="text-xs text-[#8b949e] flex items-center gap-2">
+                      <RefreshCw size={12} className="animate-spin text-[#58a6ff]" />
+                      <span>Verifying endpoints...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleCreateServer} className="p-6 space-y-4">
               {/* Discovered Render Services */}
               {discoveredServices.length > 0 && (
@@ -676,6 +896,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

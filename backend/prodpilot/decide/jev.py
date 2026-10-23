@@ -17,8 +17,8 @@ from backend.prodpilot.decide.rules import decide as decide_rules
 logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Fast, low-cost default model on OpenRouter
-DEFAULT_MODEL = os.environ.get("JEV_MODEL", "google/gemini-2.5-flash")
+# Fast, independent decision model on OpenRouter (Gemini reserved exclusively for Antigravity SDK)
+DEFAULT_MODEL = os.environ.get("JEV_MODEL", "meta-llama/llama-3.3-70b-instruct")
 
 
 def decide_jev(

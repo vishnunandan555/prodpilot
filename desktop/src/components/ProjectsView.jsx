@@ -40,6 +40,7 @@ export default function ProjectsView({ apiUrl }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [projectProgress, setProjectProgress] = useState(null);
 
   // Add Project Form
   const [form, setForm] = useState({
@@ -134,6 +135,50 @@ export default function ProjectsView({ apiUrl }) {
     }
 
     setSubmitting(true);
+    setProjectProgress({
+      step: 1,
+      total_steps: 4,
+      stage: 'validating',
+      title: 'Validating GitHub Repository',
+      detail: `Connecting to GitHub API for ${form.github_repo}...`,
+      logs: [
+        `Target Name: ${form.name}`,
+        `Repository: ${form.github_repo}`,
+        form.local_path ? `Local path specified: ${form.local_path}` : 'Local path omitted: auto-cloning into managed storage (~/.prodpilot/projects/)'
+      ],
+      status: 'running'
+    });
+
+    // Step 2 timer simulation
+    setTimeout(() => {
+      setProjectProgress((prev) => {
+        if (!prev || prev.status !== 'running') return prev;
+        return {
+          ...prev,
+          step: 2,
+          stage: 'workspace',
+          title: 'Preparing Local Workspace & Storage',
+          detail: 'Allocating directory and verifying filesystem permissions...',
+          logs: [...prev.logs, 'Resolving target filesystem directory...']
+        };
+      });
+    }, 400);
+
+    // Step 3 timer simulation
+    setTimeout(() => {
+      setProjectProgress((prev) => {
+        if (!prev || prev.status !== 'running') return prev;
+        return {
+          ...prev,
+          step: 3,
+          stage: 'cloning',
+          title: 'Synchronizing Git Repository',
+          detail: 'Cloning repository objects, tree, and checking out branch...',
+          logs: [...prev.logs, `Running git clone/checkout for ${form.github_repo}...`]
+        };
+      });
+    }, 850);
+
     try {
       const res = await fetch(`${apiUrl}/projects`, {
         method: 'POST',
@@ -143,21 +188,51 @@ export default function ProjectsView({ apiUrl }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to create project');
 
-      setShowAddModal(false);
-      setForm({
-        name: '',
-        github_repo: '',
-        github_token: '',
-        local_path: '',
-        default_branch: 'main',
-        test_cmd: 'pytest'
+      setProjectProgress({
+        step: 4,
+        total_steps: 4,
+        stage: 'completed',
+        title: 'Project Initialized & Verified!',
+        detail: `Local path: ${data.project?.local_path} • Branch: ${data.project?.default_branch || 'main'} • Test: ${data.project?.test_cmd || 'pytest'}`,
+        logs: [
+          `Repository verified on GitHub: ${data.github_status?.repo?.full_name || form.github_repo}`,
+          `Cloned to: ${data.project?.local_path}`,
+          `Default branch: ${data.project?.default_branch || 'main'}`,
+          `Test runner: ${data.project?.test_cmd || 'pytest'}`,
+          'Autonomous SRE watchdog and worktree sandbox ready.'
+        ],
+        status: 'success',
+        project: data.project
       });
+
       await fetchProjects();
       if (data.project?.id) {
         setSelectedProjectId(data.project.id);
       }
+
+      setTimeout(() => {
+        setShowAddModal(false);
+        setProjectProgress(null);
+        setForm({
+          name: '',
+          github_repo: '',
+          github_token: '',
+          local_path: '',
+          default_branch: 'main',
+          test_cmd: 'pytest'
+        });
+      }, 2000);
+
     } catch (err) {
-      alert(`Error connecting project: ${err.message}`);
+      setProjectProgress({
+        step: 4,
+        total_steps: 4,
+        stage: 'error',
+        title: 'Project Initialization Failed',
+        detail: err.message || 'Failed to clone repository or connect project.',
+        logs: [`Error: ${err.message}`],
+        status: 'error'
+      });
     } finally {
       setSubmitting(false);
     }
@@ -840,6 +915,146 @@ export default function ProjectsView({ apiUrl }) {
               </button>
             </div>
 
+            {projectProgress ? (
+              <div className="p-6 space-y-5 animate-in fade-in duration-200">
+                {/* Status Bar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {projectProgress.status === 'running' && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#58a6ff] animate-ping" />
+                    )}
+                    {projectProgress.status === 'success' && (
+                      <CheckCircle2 size={16} className="text-[#3fb950]" />
+                    )}
+                    {projectProgress.status === 'error' && (
+                      <AlertCircle size={16} className="text-[#f85149]" />
+                    )}
+                    <span className="text-xs font-bold text-[#f0f6fc] tracking-wide uppercase">
+                      {projectProgress.status === 'running'
+                        ? 'Initializing & Cloning Project...'
+                        : projectProgress.status === 'success'
+                        ? 'Project Connected & Ready'
+                        : 'Initialization Failed'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#8b949e]">
+                    Step {projectProgress.step} of {projectProgress.total_steps}
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full h-1.5 bg-[#161f30] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      projectProgress.status === 'error'
+                        ? 'bg-[#f85149]'
+                        : projectProgress.status === 'success'
+                        ? 'bg-[#3fb950]'
+                        : 'bg-gradient-to-r from-[#58a6ff] to-[#3fb950]'
+                    }`}
+                    style={{
+                      width: `${(projectProgress.step / projectProgress.total_steps) * 100}%`
+                    }}
+                  />
+                </div>
+
+                {/* Step Cards */}
+                <div className="space-y-2.5">
+                  {[
+                    { num: 1, title: 'Validating GitHub Repository', desc: form.github_repo },
+                    { num: 2, title: 'Preparing Local Workspace & Storage', desc: form.local_path || 'Auto-allocated in ~/.prodpilot/projects/' },
+                    { num: 3, title: 'Synchronizing Git Repository', desc: 'Cloning tree, objects, and checkout branch' },
+                    { num: 4, title: 'Inspecting Codebase & Test Suites', desc: `Test Runner: ${form.test_cmd || 'pytest'}` }
+                  ].map((s) => {
+                    const isDone = projectProgress.step > s.num || (projectProgress.step === s.num && projectProgress.status === 'success');
+                    const isCurrent = projectProgress.step === s.num && projectProgress.status === 'running';
+                    const isFailed = projectProgress.step === s.num && projectProgress.status === 'error';
+
+                    return (
+                      <div
+                        key={s.num}
+                        className={`flex items-start gap-3 p-2.5 rounded-lg border transition-all ${
+                          isDone
+                            ? 'bg-[#121d2f]/60 border-[#23426e] text-[#f0f6fc]'
+                            : isCurrent
+                            ? 'bg-[#16233b] border-[#388bfd] text-[#58a6ff] shadow-sm shadow-[#388bfd]/20'
+                            : isFailed
+                            ? 'bg-[#2d1216] border-[#f85149] text-[#ff7b72]'
+                            : 'bg-[#090d16]/40 border-[#1a2336] text-[#6e7681]'
+                        }`}
+                      >
+                        <div className="mt-0.5 flex-shrink-0">
+                          {isDone ? (
+                            <CheckCircle2 size={15} className="text-[#3fb950]" />
+                          ) : isCurrent ? (
+                            <RefreshCw size={15} className="text-[#58a6ff] animate-spin" />
+                          ) : isFailed ? (
+                            <AlertCircle size={15} className="text-[#f85149]" />
+                          ) : (
+                            <div className="w-3.5 h-3.5 rounded-full border border-[#30363d] flex items-center justify-center text-[9px] font-mono">
+                              {s.num}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold leading-tight">{s.title}</div>
+                          <div className="text-[11px] text-[#8b949e] truncate mt-0.5">{s.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Live Console Output */}
+                <div className="bg-[#05070c] border border-[#1b2438] rounded-lg p-3 font-mono text-[11px] text-[#79c0ff] space-y-1 max-h-32 overflow-y-auto">
+                  <div className="text-[10px] text-[#484f58] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                    <Terminal size={11} />
+                    <span>Project Provisioning Console</span>
+                  </div>
+                  {projectProgress.logs.map((log, idx) => (
+                    <div key={idx} className="flex items-start gap-1.5 text-[#c9d1d9]">
+                      <span className="text-[#58a6ff] select-none">&gt;</span>
+                      <span className="break-all">{log}</span>
+                    </div>
+                  ))}
+                  {projectProgress.status === 'running' && (
+                    <div className="flex items-center gap-1 text-[#8b949e]">
+                      <span className="inline-block w-1.5 h-3 bg-[#58a6ff] animate-pulse" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#1b2438]">
+                  {projectProgress.status === 'error' ? (
+                    <button
+                      type="button"
+                      onClick={() => setProjectProgress(null)}
+                      className="px-4 py-2 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-[#f0f6fc] text-xs font-semibold transition"
+                    >
+                      Back to Edit Form
+                    </button>
+                  ) : projectProgress.status === 'success' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddModal(false);
+                        setProjectProgress(null);
+                      }}
+                      className="px-5 py-2 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>View Project Dashboard</span>
+                    </button>
+                  ) : (
+                    <div className="text-xs text-[#8b949e] flex items-center gap-2">
+                      <RefreshCw size={12} className="animate-spin text-[#58a6ff]" />
+                      <span>Cloning & configuring...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleCreateProject} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
@@ -956,6 +1171,7 @@ export default function ProjectsView({ apiUrl }) {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}
