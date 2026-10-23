@@ -1,0 +1,38 @@
+{
+  "id": "inc-20261023-001",
+  "service": "demo-prod",
+  "detected_at": "2026-10-23T14:30:00Z",
+  "status": "OPEN",
+  "health_url": "http://127.0.0.1:8000/health",
+  "trace": "Traceback (most recent call last):\n  File \"app.py\", line 45, in calculate_order\n    discount = order[\"discount\"]\nKeyError: 'discount'",
+  "log_tail": "2026-10-23 14:29:58 INFO Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2}]}\n2026-10-23 14:29:59 ERROR KeyError: 'discount' in /orders\n2026-10-23 14:30:00 WARN Healthcheck probe failed: 500 Internal Server Error\n2026-10-23 14:30:05 WARN Healthcheck probe failed: 500 Internal Server Error",
+  "recent_commits": [
+    {
+      "hash": "a1b2c3d",
+      "author": "Vishnu Nandan",
+      "date": "2026-10-23T14:15:00Z",
+      "message": "feat: add discount support to order checkout"
+    },
+    {
+      "hash": "e4f5g6h",
+      "author": "Vishnu Nandan",
+      "date": "2026-10-23T13:40:00Z",
+      "message": "fix: sanitize user input in auth"
+    },
+    {
+      "hash": "i7j8k9l",
+      "author": "Vishnu Nandan",
+      "date": "2026-10-23T12:00:00Z",
+      "message": "feat: initialize order calculation endpoints"
+    }
+  ],
+  "suspect_commit": {
+    "hash": "a1b2c3d",
+    "author": "Vishnu Nandan",
+    "date": "2026-10-23T14:15:00Z",
+    "message": "feat: add discount support to order checkout",
+    "suspect_file": "app.py",
+    "suspect_line": 45,
+    "minutes_ago": 15
+  }
+}

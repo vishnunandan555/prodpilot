@@ -1,0 +1,20 @@
+# ProdPilot Project Profile Contract
+# Version: 1.0 (Phase 0 Frozen Contract)
+
+name: "demo-prod"
+repo_path: "../demo-prod"
+test_cmd: "pytest -q"
+health_url: "http://127.0.0.1:8000/health"
+start_cmd: "python app.py"
+production_port: 8000
+
+staging:
+  fix_forward_port: 8001
+  rollback_port: 8002
+  health_timeout_sec: 10
+  poll_interval_sec: 1
+
+watcher:
+  poll_interval_sec: 5
+  consecutive_failures_threshold: 2
+  log_file: "../demo-prod/service.log"
