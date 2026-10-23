@@ -52,6 +52,7 @@ export default function App() {
   const [deploySuccess, setDeploySuccess] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [showMobileList, setShowMobileList] = useState(false);
+  const [logsNavParams, setLogsNavParams] = useState(null);
 
   // Real Platform Topology State
   const [connectedServers, setConnectedServers] = useState([]);
@@ -336,6 +337,39 @@ export default function App() {
     }
   };
 
+  const handleDeleteIncident = async (incidentId) => {
+    try {
+      const res = await fetch(`${apiUrl}/incidents/${incidentId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setIncidents((prev) => prev.filter((i) => i.id !== incidentId));
+        if (selectedIncident?.id === incidentId) {
+          const remaining = incidents.filter((i) => i.id !== incidentId);
+          setSelectedIncident(remaining.length > 0 ? remaining[0] : null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete incident:', err);
+    }
+  };
+
+  const handleClearIncidents = async (status = 'ALL') => {
+    try {
+      const res = await fetch(`${apiUrl}/incidents/clear?status=${status}`, { method: 'POST' });
+      if (res.ok) {
+        fetchIncidents(true);
+      }
+    } catch (err) {
+      console.error('Failed to clear incidents:', err);
+    }
+  };
+
+  const handleNavigate = (nav, params = null) => {
+    if (nav === 'logs' && params) {
+      setLogsNavParams(params);
+    }
+    setActiveNav(nav);
+  };
+
   return (
     <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden relative">
       {/* Top Ambient Activity Bar */}
@@ -371,6 +405,8 @@ export default function App() {
             incidentFilter={incidentFilter}
             setIncidentFilter={setIncidentFilter}
             isRefreshing={isRefreshing}
+            onDeleteIncident={handleDeleteIncident}
+            onClearIncidents={handleClearIncidents}
           />
         )}
 
@@ -380,7 +416,7 @@ export default function App() {
             <DashboardView
               incidents={incidents}
               onSelectIncident={handleSelectIncident}
-              onNavigate={(nav) => setActiveNav(nav)}
+              onNavigate={handleNavigate}
               apiConnected={apiConnected}
               apiUrl={apiUrl}
               currentUser={currentUser}
@@ -398,14 +434,17 @@ export default function App() {
               deploySuccess={deploySuccess}
               isStandaloneMobile={isMobileScreen}
               onBack={isMobileScreen ? () => setShowMobileList(true) : null}
-              onNavigate={(nav) => setActiveNav(nav)}
+              onNavigate={handleNavigate}
+              onDeleteIncident={handleDeleteIncident}
             />
           )}
 
           {(activeNav === 'logs' || activeNav === 'telemetry') && (
             <LogsView
               apiUrl={apiUrl}
-              onNavigate={(nav) => setActiveNav(nav)}
+              incidents={incidents}
+              initialSearch={logsNavParams?.searchTerm || ''}
+              onNavigate={handleNavigate}
               onSelectIncident={(inc) => {
                 handleSelectIncident(inc);
                 setActiveNav('incidents');

@@ -152,14 +152,20 @@ def classify_logs(
 
         # Extract specific error name and line if available
         specific_reason = None
-        if extracted_trace:
-            exc_line = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|IndexError|NameError|RuntimeError|Exception|Error):[^\n]+)", extracted_trace)
-            if exc_line:
-                specific_reason = exc_line.group(1).strip()
-            elif "FATAL APPLICATION CRASH:" in extracted_trace:
-                fc_m = re.search(r"FATAL APPLICATION CRASH:\s*([^\n]+)", extracted_trace)
-                if fc_m:
-                    specific_reason = fc_m.group(1).strip()
+        source_text = (extracted_trace or "") + "\n" + combined_text
+        if "FATAL APPLICATION CRASH:" in source_text:
+            fc_m = re.search(r"FATAL APPLICATION CRASH:\s*([^\n']+)", source_text)
+            if fc_m:
+                specific_reason = re.sub(r"\s+for transfer.*", "", fc_m.group(1).strip())
+
+        if not specific_reason:
+            exc_match = re.search(
+                r"\b(ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|IndexError|NameError|RuntimeError)(?::\s*[^\n]+|\s+[^\n]+|\([^\n]+\))",
+                source_text,
+            )
+            if exc_match:
+                specific_reason = exc_match.group(0).strip()
+                specific_reason = re.sub(r"\s+for transfer\s+%.*", "", specific_reason)
 
         if not specific_reason and suspected_area and suspected_area != service:
             specific_reason = f"Fatal unhandled exception in {suspected_area}"

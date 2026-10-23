@@ -356,20 +356,82 @@ def create_incident_with_fingerprint(
 
 
 def find_incident_by_fingerprint(fingerprint: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Returns an existing incident if its status is OPEN, DETECTED, or INVESTIGATING."""
+    """Returns an existing incident if its status is active (not resolved/deployed/rolled_back/dismissed)."""
     if not fingerprint:
         return None
     with get_db(db_path) as conn:
         cursor = conn.execute(
             """
             SELECT * FROM incidents
-            WHERE fingerprint = ? AND status IN ('OPEN', 'DETECTED', 'INVESTIGATING')
+            WHERE fingerprint = ? AND status NOT IN ('RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED')
             ORDER BY detected_at DESC LIMIT 1
             """,
             (fingerprint,)
         )
         row = cursor.fetchone()
         return dict_from_row(row)
+
+
+def find_active_incident_by_service(service: str, suspected_area: Optional[str] = None, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Finds any active, unresolved incident for the service to prevent duplicate incidents during ongoing triage/fixing."""
+    if not service:
+        return None
+    with get_db(db_path) as conn:
+        if suspected_area:
+            cursor = conn.execute(
+                """
+                SELECT * FROM incidents
+                WHERE service = ? AND suspected_area = ? AND status NOT IN ('RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED')
+                ORDER BY detected_at DESC LIMIT 1
+                """,
+                (service, suspected_area)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict_from_row(row)
+
+        cursor = conn.execute(
+            """
+            SELECT * FROM incidents
+            WHERE service = ? AND status IN ('OPEN', 'DETECTED', 'INVESTIGATING', 'TRIAGED', 'REPRODUCED', 'FIXING', 'STAGED', 'AWAITING_APPROVAL')
+            ORDER BY detected_at DESC LIMIT 1
+            """,
+            (service,)
+        )
+        row = cursor.fetchone()
+        return dict_from_row(row)
+
+
+def delete_incident(incident_id: str, db_path: Optional[str] = None) -> bool:
+    """Deletes an incident and all associated runs, events, artifacts, decisions, and approvals."""
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM approvals WHERE incident_id = ?", (incident_id,))
+        conn.execute("DELETE FROM decisions WHERE incident_id = ?", (incident_id,))
+        conn.execute("DELETE FROM artifacts WHERE incident_id = ?", (incident_id,))
+        conn.execute("DELETE FROM run_events WHERE incident_id = ?", (incident_id,))
+        conn.execute("DELETE FROM runs WHERE incident_id = ?", (incident_id,))
+        cursor = conn.execute("DELETE FROM incidents WHERE id = ?", (incident_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def clear_incidents_by_status(status_filter: Optional[str] = None, db_path: Optional[str] = None) -> int:
+    """Clears incidents by status (e.g. 'RESOLVED' or 'ALL')."""
+    with get_db(db_path) as conn:
+        if status_filter and status_filter.upper() != "ALL":
+            cursor = conn.execute("SELECT id FROM incidents WHERE status = ?", (status_filter,))
+        else:
+            cursor = conn.execute("SELECT id FROM incidents")
+        inc_ids = [row[0] for row in cursor.fetchall()]
+        for inc_id in inc_ids:
+            conn.execute("DELETE FROM approvals WHERE incident_id = ?", (inc_id,))
+            conn.execute("DELETE FROM decisions WHERE incident_id = ?", (inc_id,))
+            conn.execute("DELETE FROM artifacts WHERE incident_id = ?", (inc_id,))
+            conn.execute("DELETE FROM run_events WHERE incident_id = ?", (inc_id,))
+            conn.execute("DELETE FROM runs WHERE incident_id = ?", (inc_id,))
+            conn.execute("DELETE FROM incidents WHERE id = ?", (inc_id,))
+        conn.commit()
+        return len(inc_ids)
 
 
 def increment_incident_recurrence(incident_id: str, db_path: Optional[str] = None) -> Dict[str, Any]:

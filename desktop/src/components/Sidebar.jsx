@@ -10,7 +10,8 @@ import {
   Users,
   Settings,
   ChevronRight,
-  Filter
+  Filter,
+  Trash2
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -22,7 +23,9 @@ export default function Sidebar({
   apiConnected,
   incidentFilter = 'all',
   setIncidentFilter,
-  isRefreshing = false
+  isRefreshing = false,
+  onDeleteIncident,
+  onClearIncidents
 }) {
   const activeCount = incidents.filter(
     (i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK'
@@ -114,6 +117,20 @@ export default function Sidebar({
               Incidents
             </span>
             <span className="text-[11px] font-mono">({incidents.length})</span>
+            {incidents.length > 0 && onClearIncidents && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Clear all resolved/deployed incidents?")) {
+                    onClearIncidents("RESOLVED");
+                  }
+                }}
+                className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition"
+                title="Clear resolved incidents"
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center bg-[#07090f] rounded p-0.5 border border-[#1b2234]">
@@ -153,13 +170,13 @@ export default function Sidebar({
                 inc.status !== 'ROLLED_BACK';
 
               return (
-                <button
+                <div
                   key={inc.id}
                   onClick={() => {
                     onSelectIncident(inc);
                     setActiveNav('incidents');
                   }}
-                  className={`w-full text-left p-2.5 rounded-md transition border text-xs space-y-1 block ${
+                  className={`group w-full text-left p-2.5 rounded-md transition border text-xs space-y-1 block cursor-pointer select-none ${
                     isSelected
                       ? 'bg-[#151c2b] border-[#388bfd] text-[#f0f6fc]'
                       : 'bg-[#090d16] border-[#1b2234] hover:bg-[#111724] text-[#8b949e]'
@@ -169,15 +186,32 @@ export default function Sidebar({
                     <span className="text-xs font-mono font-semibold text-[#58a6ff]">
                       {inc.id}
                     </span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase border ${
-                        isPending
-                          ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                          : 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                      }`}
-                    >
-                      {inc.status}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase border ${
+                          isPending
+                            ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                            : 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                        }`}
+                      >
+                        {inc.status}
+                      </span>
+                      {onDeleteIncident && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete incident ${inc.id}?`)) {
+                              onDeleteIncident(inc.id);
+                            }
+                          }}
+                          className="p-0.5 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition opacity-20 group-hover:opacity-100"
+                          title="Delete incident record"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-[#c9d1d9] line-clamp-1 leading-snug font-medium">
                     {inc.title || inc.suspected_area || 'Production Outage'}
@@ -186,7 +220,7 @@ export default function Sidebar({
                     <span>{inc.service || 'Service Endpoint'}</span>
                     <span className="text-[#e3b341] font-semibold">{inc.severity || 'SEV-1'}</span>
                   </div>
-                </button>
+                </div>
               );
             })
           )}

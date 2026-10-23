@@ -40,6 +40,8 @@ from backend.prodpilot.db import (
     get_artifacts,
     record_approval,
     save_artifact,
+    delete_incident,
+    clear_incidents_by_status,
 )
 from backend.prodpilot.decide.rules import decide
 from backend.prodpilot.pipeline.brief import analyze_issue_readiness
@@ -277,6 +279,25 @@ def get_incident_detail(incident_id: str) -> Dict[str, Any]:
         "decision": decision_info,
         "events": events_list,
     }
+
+
+@app.delete("/incidents/{incident_id}")
+def delete_incident_endpoint(incident_id: str) -> Dict[str, Any]:
+    """Permanently deletes an incident and all associated telemetry runs, events, artifacts, and decisions."""
+    inc = get_incident(incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    ok = delete_incident(incident_id)
+    return {"ok": ok, "deleted_id": incident_id, "message": f"Incident {incident_id} deleted successfully"}
+
+
+@app.post("/incidents/clear")
+@app.delete("/incidents")
+def clear_incidents_endpoint(status: Optional[str] = Query(None, description="Optional status to filter by, or 'ALL'")) -> Dict[str, Any]:
+    """Clears multiple incidents by status (e.g. 'RESOLVED', 'FAILED', or 'ALL')."""
+    count = clear_incidents_by_status(status_filter=status)
+    return {"ok": True, "cleared_count": count, "filter": status or "ALL"}
 
 
 @app.get("/incidents/{incident_id}/events")

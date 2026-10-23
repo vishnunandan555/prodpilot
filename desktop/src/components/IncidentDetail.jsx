@@ -26,7 +26,8 @@ import {
   Info,
   Server,
   X,
-  Bot
+  Bot,
+  Trash2
 } from 'lucide-react';
 import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
@@ -44,6 +45,7 @@ export default function IncidentDetail({
   onBack,
   isStandaloneMobile = false,
   onNavigate,
+  onDeleteIncident,
 }) {
   const getInitialTab = () => {
     try {
@@ -228,6 +230,21 @@ export default function IncidentDetail({
             >
               {incident.status}
             </span>
+            {onDeleteIncident && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete incident ${incident.id}?`)) {
+                    onDeleteIncident(incident.id);
+                  }
+                }}
+                className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#261317] hover:bg-[#3d1822] text-[#ff7b72] border border-[#4a1c24] flex items-center gap-1 transition ml-1"
+                title="Delete this incident"
+              >
+                <Trash2 size={11} />
+                <span className="hidden sm:inline">Delete</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -418,6 +435,30 @@ export default function IncidentDetail({
                   <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Current Status</span>
                   <span className="font-semibold text-[#e3b341] text-xs mt-1 block">{incident.status}</span>
                 </div>
+              </div>
+
+              {/* Originating Log Link & Metadata */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[#1b2234] text-xs">
+                <div className="flex items-center gap-2 text-[#8b949e] flex-wrap">
+                  <span>Originating Target:</span>
+                  <code className="text-[#ff7b72] font-mono text-[11px] bg-[#160d10] px-1.5 py-0.5 rounded border border-[#3e1b23]">
+                    {incident.suspected_area || incident.service}
+                  </code>
+                </div>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('logs', {
+                      service: incident.service,
+                      searchTerm: incident.suspected_area || incident.service
+                    })}
+                    className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#1f2c45] border border-[#2b3a58] text-[11px] font-mono text-[#58a6ff] hover:text-[#fff] flex items-center gap-1.5 transition shrink-0"
+                    title="Jump to source in Logs Explorer"
+                  >
+                    <Terminal size={12} />
+                    <span>Jump to Source in Logs Explorer ➔</span>
+                  </button>
+                )}
               </div>
             </div>
 

@@ -21,19 +21,31 @@ import {
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
 
-export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate, onSelectIncident }) {
+export default function LogsView({
+  apiUrl = 'http://127.0.0.1:8765',
+  onNavigate,
+  onSelectIncident,
+  incidents = [],
+  initialSearch = '',
+}) {
   const [servers, setServers] = useState([]);
   const [selectedServerId, setSelectedServerId] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isSilentRefreshing, setIsSilentRefreshing] = useState(false);
   const [filterLevel, setFilterLevel] = useState('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearch || '');
   const [errorMsg, setErrorMsg] = useState('');
   const [streamConnected, setStreamConnected] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
   const [waking, setWaking] = useState(false);
   const [rateLimitInfo, setRateLimitInfo] = useState(null);
+
+  useEffect(() => {
+    if (initialSearch) {
+      setSearchTerm(initialSearch);
+    }
+  }, [initialSearch]);
 
   // Autonomous Triage & Jev Decision states
   const [triageSummary, setTriageSummary] = useState(null);
@@ -94,6 +106,27 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
   }, [apiUrl]);
 
   const currentServer = servers.find((s) => s.id === selectedServerId);
+
+  const matchingIncident = incidents.find(
+    (i) =>
+      (i.service === currentServer?.name ||
+        i.service === 'chunkstream' ||
+        (currentServer && i.service?.toLowerCase().includes(currentServer.name?.toLowerCase()))) &&
+      !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(i.status)
+  );
+
+  // Auto-trigger autonomous triage when anomaly detected if not already tracking an active incident
+  useEffect(() => {
+    if (
+      triageSummary &&
+      (triageSummary.is_crash || triageSummary.severity === 'HIGH') &&
+      !matchingIncident &&
+      !triaging &&
+      selectedServerId
+    ) {
+      handleTriggerTriage();
+    }
+  }, [triageSummary?.fingerprint, matchingIncident?.id]);
 
   // Fetch live logs from Render REST API or local ingest
   const fetchLogs = async (silent = false, overrideServerId = null, force = false) => {
@@ -396,15 +429,35 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
               <span className="hidden sm:inline">Export</span>
             </button>
 
-            <button
-              onClick={handleTriggerTriage}
-              disabled={triaging || !selectedServerId}
-              className="px-2.5 py-1.5 rounded-md bg-[#2d1218] hover:bg-[#3d1822] border border-[#ff4444]/40 text-xs font-semibold text-[#ff7b72] hover:text-[#ffa198] flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm"
-              title="Autonomous Triage & TypeSafe Jev Decision Engine"
-            >
-              <Sparkles size={13} className={triaging ? 'animate-spin text-[#ff7b72]' : 'text-[#ff4444]'} />
-              <span>{triaging ? 'Triaging...' : '⚡ Triage with Jev'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <div
+                className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition border ${
+                  triaging
+                    ? 'bg-[#2d1218] text-[#ff7b72] border-[#ff4444]/40'
+                    : matchingIncident
+                    ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                    : 'bg-[#121929] text-[#58a6ff] border-[#1f6feb]/30'
+                }`}
+                title="Continuous autonomous log watcher and triage engine"
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    triaging
+                      ? 'bg-[#ff7b72] animate-ping'
+                      : matchingIncident
+                      ? 'bg-[#3fb950] animate-pulse'
+                      : 'bg-[#58a6ff]'
+                  }`}
+                />
+                <span>
+                  {triaging
+                    ? 'Auto-Triaging...'
+                    : matchingIncident
+                    ? 'Autonomous Fix Active'
+                    : 'Autonomous Watcher Active'}
+                </span>
+              </div>
+            </div>
 
             <button
               onClick={() => fetchLogs(false, selectedServerId, true)}
@@ -545,14 +598,25 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={handleTriggerTriage}
-                disabled={triaging}
-                className="px-3.5 py-1.5 rounded-md bg-[#ff4444] hover:bg-[#ff5555] active:scale-95 text-[#0d1117] font-bold text-xs flex items-center gap-1.5 shadow-md transition disabled:opacity-50"
-              >
-                <Sparkles size={13} className={triaging ? 'animate-spin' : ''} />
-                <span>{triaging ? 'Jev Triaging...' : '⚡ Triage Incident with Jev'}</span>
-              </button>
+              {matchingIncident && onSelectIncident ? (
+                <button
+                  onClick={() => onSelectIncident(matchingIncident)}
+                  className="px-3.5 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition"
+                >
+                  <Sparkles size={13} className="text-[#fff]" />
+                  <span>Inspect Autonomous Fix ({matchingIncident.id.slice(0, 14)}...) ➔</span>
+                </button>
+              ) : triaging ? (
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-[#2d1218] border border-[#ff4444]/40 text-[#ff7b72] text-xs font-mono font-semibold">
+                  <Sparkles size={13} className="animate-spin text-[#ff7b72]" />
+                  <span>Auto-Triaging with Jev & Isolating Worktree...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono">
+                  <span className="w-2 h-2 rounded-full bg-[#3fb950] animate-pulse" />
+                  <span>Auto-Triage Dispatched</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -643,15 +707,26 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={handleTriggerTriage}
-                        disabled={triaging}
-                        className="px-2.5 py-1 rounded bg-[#ff4444]/20 hover:bg-[#ff4444]/30 border border-[#ff4444]/50 text-[#ff7b72] hover:text-[#fff] text-[11px] font-semibold flex items-center gap-1 transition"
-                        title="Triage this traceback with TypeSafe Jev"
-                      >
-                        <Sparkles size={11} />
-                        <span>Triage with Jev</span>
-                      </button>
+                      {matchingIncident && onSelectIncident ? (
+                        <button
+                          onClick={() => onSelectIncident(matchingIncident)}
+                          className="px-2.5 py-1 rounded bg-[#238636]/25 hover:bg-[#238636]/40 border border-[#238636]/50 text-[#3fb950] hover:text-[#fff] text-[11px] font-semibold flex items-center gap-1 transition"
+                          title="Open linked incident"
+                        >
+                          <Sparkles size={11} />
+                          <span>View Incident ➔</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleTriggerTriage}
+                          disabled={triaging}
+                          className="px-2.5 py-1 rounded bg-[#ff4444]/20 hover:bg-[#ff4444]/30 border border-[#ff4444]/50 text-[#ff7b72] hover:text-[#fff] text-[11px] font-semibold flex items-center gap-1 transition"
+                          title="Triage this traceback with TypeSafe Jev"
+                        >
+                          <Sparkles size={11} className={triaging ? 'animate-spin' : ''} />
+                          <span>{triaging ? 'Auto-Triaging...' : 'Triage Incident'}</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => toggleTraceback(logKey)}

@@ -35,6 +35,7 @@ from backend.prodpilot.db import (
     delete_server,
     delete_user,
     find_incident_by_fingerprint,
+    find_active_incident_by_service,
     get_active_project,
     get_active_repo,
     get_active_server,
@@ -553,17 +554,30 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
             "message": "No unhandled crash or high-severity anomaly detected in recent logs.",
         }
 
-    # High severity or crash detected! Check fingerprint
+    # High severity or crash detected! Check fingerprint & active incident deduplication
     fp = triage.fingerprint or compute_fingerprint(triage.trace or triage.log_tail)
     existing = find_incident_by_fingerprint(fp)
+    if not existing:
+        existing = find_active_incident_by_service(server.get("name", "production-service"), triage.suspected_area)
+
     if existing:
         inc = increment_incident_recurrence(existing["id"])
+        log_event(
+            run_id=None,
+            incident_id=existing["id"],
+            stage=existing.get("status", "INVESTIGATING"),
+            kind="recurrent_anomaly",
+            payload={
+                "message": f"Crash re-observed in live log stream: {triage.reason or 'Traceback detected'}. Recurrence count: {inc.get('recurrence_count', 2)}",
+                "suspected_area": triage.suspected_area,
+            },
+        )
         return {
             "ok": True,
             "incident_created": False,
             "status": "recurrent_incident",
             "incident": inc,
-            "message": f"Recurring incident detected (Fingerprint {fp[:8]}...)",
+            "message": f"Active incident {existing['id']} already tracking this issue (recurrence: {inc.get('recurrence_count', 2)}x).",
         }
 
     # Create new Incident
