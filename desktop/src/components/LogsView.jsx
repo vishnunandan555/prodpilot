@@ -107,7 +107,7 @@ export default function LogsView({
 
   const currentServer = servers.find((s) => s.id === selectedServerId);
 
-  const matchingIncident = incidents.find(
+  const activeIncident = incidents.find(
     (i) =>
       (i.service === currentServer?.name ||
         i.service === 'chunkstream' ||
@@ -115,18 +115,30 @@ export default function LogsView({
       !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(i.status)
   );
 
-  // Auto-trigger autonomous triage when anomaly detected if not already tracking an active incident
+  const resolvedIncident = incidents.find(
+    (i) =>
+      (i.service === currentServer?.name ||
+        i.service === 'chunkstream' ||
+        (currentServer && i.service?.toLowerCase().includes(currentServer.name?.toLowerCase()))) &&
+      ['RESOLVED', 'DEPLOYED'].includes(i.status)
+  );
+
+  const matchingIncident = activeIncident;
+
+  // Auto-trigger autonomous triage only for new, unhandled anomalies not already resolved
   useEffect(() => {
     if (
       triageSummary &&
       (triageSummary.is_crash || triageSummary.severity === 'HIGH') &&
-      !matchingIncident &&
+      !triageSummary.already_resolved &&
+      !activeIncident &&
+      !resolvedIncident &&
       !triaging &&
       selectedServerId
     ) {
       handleTriggerTriage();
     }
-  }, [triageSummary?.fingerprint, matchingIncident?.id]);
+  }, [triageSummary?.fingerprint, triageSummary?.already_resolved, activeIncident?.id, resolvedIncident?.id]);
 
   // Fetch live logs from Render REST API or local ingest
   const fetchLogs = async (silent = false, overrideServerId = null, force = false) => {
@@ -571,8 +583,11 @@ export default function LogsView({
           </div>
         )}
 
-        {/* Live Detected Anomaly / Crash Banner */}
-        {triageSummary && (triageSummary.is_crash || triageSummary.severity === 'HIGH') && (
+        {/* Live Detected Anomaly / Crash Banner (Only shown if unhandled and not already resolved) */}
+        {triageSummary &&
+          (triageSummary.is_crash || triageSummary.severity === 'HIGH') &&
+          !triageSummary.already_resolved &&
+          !resolvedIncident && (
           <div className="p-3.5 rounded-lg bg-gradient-to-r from-[#2a1318] to-[#180d12] border border-[#ff4444]/40 text-xs shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-lg bg-[#ff4444]/15 border border-[#ff4444]/30 flex items-center justify-center text-[#ff7b72] shrink-0">

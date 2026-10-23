@@ -92,7 +92,7 @@ def process_incident(
     update_incident_brief(incident_id, brief, db_path=db_path)
     logger.info(f"Generated brief: {brief['summary']} (suspect: {brief['suspected_area']})")
 
-    # Dispatch Stage 2 Telegram Alert (RCA & Remediation Strategy)
+    # Dispatch Stage 2 Telegram Alert (Incident Created / Analysis Complete -> Remediation Start)
     try:
         from backend.prodpilot.integrations.telegram_client import send_stage2_rca_plan_alert
         send_stage2_rca_plan_alert(
@@ -101,6 +101,8 @@ def process_incident(
             summary=brief.get("summary", ""),
             suspect_commit=incident.get("suspect_commit"),
             suspected_area=brief.get("suspected_area"),
+            brief=brief,
+            trace=incident.get("trace"),
         )
     except Exception as e:
         logger.warning(f"Telegram stage 2 alert error: {e}")
@@ -225,6 +227,8 @@ def process_incident(
             decision=decision,
             test_evidence=pipeline_res.test_evidence,
             staging_status=staging_status,
+            brief=brief,
+            suspected_area=brief.get("suspected_area"),
         )
     except Exception as e:
         logger.warning(f"Telegram stage 3 alert error: {e}")

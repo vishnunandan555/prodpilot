@@ -463,6 +463,20 @@ def probe_server_endpoint(server_id: str) -> Dict[str, Any]:
 
     probe = RenderClient.probe_health(server["health_url"])
     update_server_status(server_id, status=probe["status"], latency_ms=probe.get("latency_ms", 0.0))
+    try:
+        from backend.prodpilot.db import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                (
+                    "RENDER",
+                    "INFO" if probe["status"] == "HEALTHY" else "WARN",
+                    f"Live health probe '{server.get('name', 'server')}': {probe['status']} ({probe.get('latency_ms', 0):.0f}ms) at {server['health_url']}",
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+    except Exception:
+        pass
     return {"server_id": server_id, "probe": probe}
 
 
@@ -516,14 +530,44 @@ def get_server_render_logs_endpoint(server_id: str, limit: int = 100, force: boo
     try:
         from backend.prodpilot.triage.classifier import classify_logs
         triage = classify_logs(server.get("name", "production-service"), logs_res.get("logs", []))
+
+        is_crash = triage.is_crash
+        severity = triage.severity
+        already_resolved = False
+        resolved_inc_id = None
+
+        if is_crash or severity in ("HIGH", "INFRA"):
+            from backend.prodpilot.db import get_db, compute_fingerprint
+            fp = triage.fingerprint or compute_fingerprint(triage.trace or triage.log_tail)
+            with get_db() as conn:
+                res_row = conn.execute(
+                    """
+                    SELECT id, status, detected_at FROM incidents 
+                    WHERE (fingerprint = ? OR service = ?) AND status IN ('DEPLOYED', 'RESOLVED')
+                    ORDER BY detected_at DESC LIMIT 1
+                    """,
+                    (fp, server.get("name", "production-service"))
+                ).fetchone()
+                if res_row:
+                    already_resolved = True
+                    resolved_inc_id = res_row["id"]
+                    # If already resolved and server is currently healthy, do not flag as live crash
+                    health_url = server.get("health_url")
+                    probe = RenderClient.probe_health(health_url) if health_url else {"status": "HEALTHY"}
+                    if probe.get("status") == "HEALTHY":
+                        is_crash = False
+                        severity = "NORMAL"
+
         logs_res["triage_summary"] = {
-            "severity": triage.severity,
-            "is_crash": triage.is_crash,
+            "severity": severity,
+            "is_crash": is_crash,
             "reason": triage.reason,
             "suspected_area": triage.suspected_area,
+            "already_resolved": already_resolved,
+            "resolved_incident_id": resolved_inc_id,
         }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Triage summary attach note: {e}")
 
     return logs_res
 
@@ -547,6 +591,20 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
     triage = classify_logs(server.get("name", "production-service"), logs)
 
     if triage.severity not in (Severity.HIGH.value, Severity.INFRA.value) and not triage.is_crash:
+        try:
+            from backend.prodpilot.db import get_db
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                    (
+                        "WATCHDOG",
+                        "INFO",
+                        f"Audited {len(logs)} Render logs for '{server.get('name', 'service')}': 0 anomalies detected (status: NORMAL)",
+                        datetime.utcnow().isoformat(),
+                    ),
+                )
+        except Exception:
+            pass
         return {
             "ok": True,
             "incident_created": False,

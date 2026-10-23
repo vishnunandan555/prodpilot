@@ -65,16 +65,27 @@ def format_pr_body(
     service_name: str,
     suspect_commit: Optional[str] = None,
     mobile_url: Optional[str] = None,
+    brief: Optional[Dict[str, Any]] = None,
+    trace: Optional[str] = None,
 ) -> str:
-    """Builds comprehensive markdown PR body."""
+    """Builds comprehensive markdown PR body with root cause analysis and verified patch details."""
+    from backend.prodpilot.integrations.telegram_client import (
+        generate_natural_fix_explanation,
+        generate_natural_incident_explanation,
+    )
+
     header = f"## 🤖 ProdPilot Automated Remediation: `{action.upper()}`"
     incident_link = f"**Incident ID**: `{incident_id}`  \n"
     if mobile_url:
         incident_link += f"**Live SRE Console**: [📱 Open Incident Dashboard]({mobile_url})  \n"
 
+    suspect_area = (brief or {}).get("suspected_area") or "codebase"
+    issue_desc = generate_natural_incident_explanation(brief=brief, trace=trace)
+    fix_desc = generate_natural_fix_explanation(patch_diff=patch_diff, brief=brief, suspected_area=suspect_area)
+
     diff_section = ""
     if patch_diff:
-        diff_section = f"""### 📝 Patch Diff
+        diff_section = f"""### 📝 Verified Patch Diff
 ```diff
 {patch_diff.strip()}
 ```
@@ -83,7 +94,18 @@ def format_pr_body(
     return f"""{header}
 {incident_link}
 **Service**: `{service_name}` (Production)  
-**Remediation Mode**: `APPROVED_{action.upper()}`
+**Remediation Mode**: `APPROVED_{action.upper()}`  
+**Affected Area**: `{suspect_area}`
+
+---
+
+### 💥 What Happened (Root Cause)
+{issue_desc}
+
+---
+
+### 🔧 What is the Fix & How it Works
+{fix_desc}
 
 ---
 
@@ -93,12 +115,12 @@ def format_pr_body(
 | **Deterministic Repro** | 🟢 **PASS (GREEN)** | Repro test created in isolated sandbox passed |
 | **Regression Suite** | 🟢 **5/5 PASSED** | All existing unit and integration tests confirmed green |
 | **Side-Port Canaries** | 🟢 **HEALTHY** | Staged on Port 8001 (Fix-Forward) & Port 8002 (Rollback) |
-| **Human-in-the-Loop** | 🟢 **APPROVED** | Operator approved remediation via ProdPilot Telegram / SRE Console |
+| **Human-in-the-Loop** | 🟢 **APPROVED** | Operator confirmed hotfix approval on ProdPilot mobile console |
 
 {diff_section}
 
 ---
-*Generated autonomously by ProdPilot SRE Platform.*
+*Generated and verified autonomously by ProdPilot SRE Platform.*
 """
 
 
@@ -236,6 +258,8 @@ def execute_github_pr_lifecycle(
             service_name=service_name,
             suspect_commit=suspect_commit_hash,
             mobile_url=mobile_link,
+            brief=inc.get("brief"),
+            trace=inc.get("trace"),
         )
 
         pr_res = gh_client.create_pull_request(

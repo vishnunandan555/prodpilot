@@ -95,15 +95,13 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
         key_match = re.search(r"['\"](\w+)['\"]", error_msg)
         if key_match:
             key_name = key_match.group(1)
-        else:
-            key_name = "discount"
 
     # One sentence summary
     func_str = f" in {tb_info['func']}" if tb_info['func'] else ""
     summary = f"{error_repr}{func_str} in {suspect_file}:{suspect_line}."
 
     hypothesis = (
-        f"Suspect commit '{introduced_by}' introduced direct access to '{key_name or 'a field'}' "
+        f"Suspect commit '{introduced_by}' introduced direct access to '{key_name or 'a required field'}' "
         f"without fallback or null check, triggering unhandled {error_type} in {suspect_file}."
     )
 
@@ -113,7 +111,7 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
         "introduced_by": introduced_by,
         "error_type": error_type,
         "error_message": error_msg,
-        "key_name": key_name or "discount",
+        "key_name": key_name,
         "suspect_file": suspect_file,
         "suspect_line": suspect_line,
         "suspect_commit": suspect_commit,

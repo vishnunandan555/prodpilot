@@ -1,47 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Terminal,
-  Activity,
   Search,
-  Filter,
   Copy,
   Check,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
-  Bot,
-  Zap,
+  RotateCcw,
+  Pause,
   Play,
-  FileCode,
-  FileText,
-  ShieldAlert,
-  Server,
-  Layers,
-  Clock,
-  ArrowUpRight
+  ArrowDown
 } from 'lucide-react';
 
-export default function MasterLogsView({ apiUrl, onNavigate, onSelectIncident }) {
-  const [logs, setLogs] = useState([]);
+export default function MasterLogsView({ apiUrl }) {
+  const [consoleLines, setConsoleLines] = useState([]);
+  const [plainText, setPlainText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [expandedLogIds, setExpandedLogIds] = useState(new Set());
+  const [isStreaming, setIsStreaming] = useState(true);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [filterQuery, setFilterQuery] = useState('');
   const [copiedAll, setCopiedAll] = useState(false);
-  const [copiedIndex, setCopiedIndex] = useState(null);
+  const [copiedLineIdx, setCopiedLineIdx] = useState(null);
+
+  const consoleEndRef = useRef(null);
+  const terminalScrollRef = useRef(null);
 
   const fetchMasterLogs = async (isManual = false) => {
     if (isManual) setIsLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/platform/master-logs?limit=250`);
+      const res = await fetch(`${apiUrl}/platform/master-logs?limit=300`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data.logs || []);
+        setConsoleLines(data.console_lines || []);
+        setPlainText(data.plain_text || '');
       }
     } catch (err) {
-      console.warn('Failed to fetch master logs:', err);
+      console.warn('Failed to stream platform console logs:', err);
     } finally {
       if (isManual) setIsLoading(false);
     }
@@ -51,364 +43,231 @@ export default function MasterLogsView({ apiUrl, onNavigate, onSelectIncident })
     fetchMasterLogs(true);
   }, [apiUrl]);
 
+  // Periodic polling for live console stream
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!isStreaming) return;
     const interval = setInterval(() => {
       fetchMasterLogs(false);
-    }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [autoRefresh, apiUrl]);
+  }, [isStreaming, apiUrl]);
 
-  const toggleExpand = (id) => {
-    setExpandedLogIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const expandAll = () => {
-    setExpandedLogIds(new Set(logs.map((l) => l.id)));
-  };
-
-  const collapseAll = () => {
-    setExpandedLogIds(new Set());
-  };
+  // Auto-scroll to bottom on new logs
+  useEffect(() => {
+    if (autoScroll && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleLines, autoScroll]);
 
   const handleCopyAll = () => {
-    const text = JSON.stringify(logs, null, 2);
-    navigator.clipboard.writeText(text);
+    const textToCopy = filteredLines.map((l) => l.raw).join('\n') || plainText;
+    navigator.clipboard.writeText(textToCopy);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
-  const handleCopyEntry = (entry, idx) => {
-    navigator.clipboard.writeText(JSON.stringify(entry, null, 2));
-    setCopiedIndex(idx);
-    setTimeout(() => setCopiedIndex(null), 2000);
+  const handleCopyLine = (raw, idx) => {
+    navigator.clipboard.writeText(raw);
+    setCopiedLineIdx(idx);
+    setTimeout(() => setCopiedLineIdx(null), 1500);
   };
 
-  // Filter logs by search keyword and category
-  const filteredLogs = logs.filter((l) => {
-    const kind = (l.kind || '').toLowerCase();
-    const stage = (l.stage || '').toLowerCase();
-    const payloadStr = typeof l.payload === 'string' ? l.payload : JSON.stringify(l.payload || {});
-    const combined = `${l.incident_id || ''} ${l.service || ''} ${stage} ${kind} ${payloadStr}`.toLowerCase();
+  const handleClear = () => {
+    setConsoleLines([]);
+    setPlainText('');
+  };
 
-    if (searchTerm && !combined.includes(searchTerm.toLowerCase())) {
-      return false;
-    }
-
-    if (categoryFilter === 'all') return true;
-    if (categoryFilter === 'thoughts') return kind.includes('thought') || stage === 'understand';
-    if (categoryFilter === 'tools') return kind.includes('tool') || kind.includes('command') || kind.includes('read') || kind.includes('write');
-    if (categoryFilter === 'verifier') return kind.includes('test') || stage === 'verify';
-    if (categoryFilter === 'anomalies') return kind.includes('anomaly') || kind.includes('crash') || l.severity === 'HIGH';
-    if (categoryFilter === 'canary') return stage === 'stage' || stage === 'deploy' || kind.includes('canary') || kind.includes('resolved');
-    return true;
+  // Grep filter
+  const filteredLines = consoleLines.filter((line) => {
+    if (!filterQuery) return true;
+    return line.raw.toLowerCase().includes(filterQuery.toLowerCase());
   });
 
-  const getLogSubsystemBadge = (log) => {
-    const kind = (log.kind || '').toLowerCase();
-    const stage = (log.stage || '').toLowerCase();
+  const getLevelColor = (level) => {
+    switch ((level || '').trim()) {
+      case 'ERROR':
+      case 'FAIL':
+        return 'text-[#f85149] font-bold';
+      case 'WARN':
+        return 'text-[#d29922] font-semibold';
+      case 'PASS':
+        return 'text-[#3fb950] font-semibold';
+      case 'TOOL':
+        return 'text-[#a371f7] font-semibold';
+      case 'PR':
+        return 'text-[#58a6ff] font-semibold';
+      case 'JEV':
+        return 'text-[#bc8cff] font-semibold';
+      default:
+        return 'text-[#3fb950]';
+    }
+  };
 
-    if (kind.includes('tool') || kind.includes('thought')) {
-      return {
-        label: 'ANTIGRAVITY AGENT',
-        color: 'bg-[#1c122c] text-[#d2a8ff] border-[#3e2363]',
-        icon: Bot,
-      };
-    }
-    if (kind.includes('test') || stage === 'verify') {
-      return {
-        label: 'TEST VERIFIER',
-        color: 'bg-[#0f1f1d] text-[#3fb950] border-[#1d4638]',
-        icon: Play,
-      };
-    }
-    if (kind.includes('recurrent') || kind.includes('anomaly') || stage === 'understand') {
-      return {
-        label: 'WATCHDOG',
-        color: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]',
-        icon: AlertTriangle,
-      };
-    }
-    if (stage === 'deploy' || stage === 'stage') {
-      return {
-        label: 'CANARY PIPELINE',
-        color: 'bg-[#0e1f2f] text-[#58a6ff] border-[#1b3d63]',
-        icon: Server,
-      };
-    }
-    return {
-      label: 'SYSTEM',
-      color: 'bg-[#161b22] text-[#8b949e] border-[#30363d]',
-      icon: Terminal,
-    };
+  const getTagColor = (tag) => {
+    const t = (tag || '').trim().toUpperCase();
+    if (t.includes('WATCHDOG')) return 'text-[#ff7b72]';
+    if (t.includes('AGENT')) return 'text-[#d2a8ff]';
+    if (t.includes('VERIFIER')) return 'text-[#7ee787]';
+    if (t.includes('GITHUB')) return 'text-[#79c0ff]';
+    if (t.includes('JEV')) return 'text-[#ffa657]';
+    return 'text-[#8b949e]';
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] font-sans overflow-hidden">
-      {/* Header Bar */}
-      <div className="px-6 py-4 bg-[#0d111a] border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#161f30] border border-[#2b3a58] flex items-center justify-center text-[#58a6ff]">
-              <Terminal size={17} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-[#f0f6fc] tracking-tight">Platform Master Execution Log</h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161f30] text-[#58a6ff] border border-[#2b3a58] font-semibold">
-                  AUDIT STREAM
-                </span>
-              </div>
-              <p className="text-xs text-[#8b949e] mt-0.5">
-                Unified live feed of agent monologue, tool calls, bash commands, tests, watchdog probes & state transitions.
-              </p>
-            </div>
+    <div className="flex-1 flex flex-col h-full bg-[#090d16] text-[#c9d1d9] font-mono select-text overflow-hidden">
+      {/* Terminal Top Control Bar */}
+      <div className="h-11 px-3 bg-[#0d121f] border-b border-[#1b2333] flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 mr-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f]" />
           </div>
+          <Terminal size={14} className="text-[#58a6ff]" />
+          <span className="text-xs font-semibold text-[#f0f6fc] tracking-tight">
+            platform-master.log
+          </span>
+          {isStreaming ? (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-[#238636]/20 text-[#3fb950] border border-[#238636]/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
+              LIVE
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#30363d] text-[#8b949e]">
+              PAUSED
+            </span>
+          )}
+          <span className="text-[11px] text-[#6e7681]">
+            ({filteredLines.length} lines)
+          </span>
         </div>
 
-        {/* Global Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Console Controls */}
+        <div className="flex items-center gap-2 text-xs">
+          {/* Grep Search */}
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6e7681]" />
+            <input
+              type="text"
+              placeholder="grep / filter console..."
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              className="w-48 pl-7 pr-2 py-1 bg-[#161f30] border border-[#26354d] rounded text-[11px] text-[#f0f6fc] placeholder-[#6e7681] focus:outline-none focus:border-[#58a6ff] transition font-mono"
+            />
+          </div>
+
+          {/* Toggle Auto-scroll */}
           <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition ${
-              autoRefresh
-                ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                : 'bg-[#161b22] text-[#8b949e] border-[#30363d]'
+            onClick={() => setAutoScroll(!autoScroll)}
+            className={`px-2.5 py-1 rounded border text-[11px] flex items-center gap-1 transition ${
+              autoScroll
+                ? 'bg-[#1b2b48] border-[#388bfd]/40 text-[#58a6ff]'
+                : 'bg-[#161f30] border-[#26354d] text-[#8b949e] hover:text-[#c9d1d9]'
             }`}
+            title="Auto-scroll to bottom on new logs"
           >
-            <span className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-[#3fb950] animate-pulse' : 'bg-[#6e7681]'}`} />
-            <span>{autoRefresh ? 'Live Auto-Stream' : 'Paused'}</span>
+            <ArrowDown size={11} className={autoScroll ? 'animate-bounce' : ''} />
+            <span>Auto-scroll</span>
           </button>
 
+          {/* Pause / Resume */}
           <button
-            onClick={() => fetchMasterLogs(true)}
-            className="p-1.5 rounded-lg bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] text-xs transition"
-            title="Refresh now"
+            onClick={() => setIsStreaming(!isStreaming)}
+            className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#1f2b42] border border-[#26354d] text-[#c9d1d9] text-[11px] flex items-center gap-1 transition"
           >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin text-[#58a6ff]' : ''} />
+            {isStreaming ? <Pause size={11} /> : <Play size={11} />}
+            <span>{isStreaming ? 'Pause' : 'Resume'}</span>
           </button>
 
+          {/* Copy All */}
           <button
             onClick={handleCopyAll}
-            className="px-3 py-1.5 rounded-lg bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-xs font-semibold text-[#c9d1d9] flex items-center gap-1.5 transition"
+            className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#1f2b42] border border-[#26354d] text-[#c9d1d9] text-[11px] flex items-center gap-1 transition active:scale-95"
+            title="Copy all lines to clipboard"
           >
-            {copiedAll ? <Check size={13} className="text-[#3fb950]" /> : <Copy size={13} />}
-            <span>{copiedAll ? 'Copied' : 'Copy All'}</span>
+            {copiedAll ? <Check size={11} className="text-[#3fb950]" /> : <Copy size={11} />}
+            <span>{copiedAll ? 'Copied' : 'Copy'}</span>
           </button>
 
+          {/* Clear View */}
           <button
-            onClick={expandedLogIds.size === logs.length ? collapseAll : expandAll}
-            className="px-3 py-1.5 rounded-lg bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-xs font-semibold text-[#c9d1d9] flex items-center gap-1.5 transition"
+            onClick={handleClear}
+            className="px-2 py-1 rounded bg-[#161f30] hover:bg-[#261317] border border-[#26354d] hover:border-[#ff4444]/40 text-[#8b949e] hover:text-[#ff7b72] text-[11px] transition"
+            title="Clear current view"
           >
-            {expandedLogIds.size === logs.length ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            <span>{expandedLogIds.size === logs.length ? 'Collapse All' : 'Expand All'}</span>
+            <RotateCcw size={11} />
           </button>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="px-6 py-2.5 bg-[#0a0e17] border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-3">
-        {/* Search Input */}
-        <div className="relative flex-1 min-w-[240px] max-w-md">
-          <Search size={13} className="absolute left-3 top-2.5 text-[#6e7681]" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search commands, thoughts, file paths, incident IDs..."
-            className="w-full bg-[#05070a] border border-[#1b2234] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[#c9d1d9] placeholder-[#6e7681] focus:outline-none focus:border-[#58a6ff]"
-          />
-        </div>
-
-        {/* Category Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
-          {[
-            { id: 'all', label: 'All Events', count: logs.length },
-            { id: 'thoughts', label: 'Agent Thoughts', count: logs.filter((l) => (l.kind || '').includes('thought') || l.stage === 'UNDERSTAND').length },
-            { id: 'tools', label: 'Tools & Commands', count: logs.filter((l) => (l.kind || '').includes('tool') || (l.kind || '').includes('command')).length },
-            { id: 'verifier', label: 'Pytest Verifier', count: logs.filter((l) => (l.kind || '').includes('test') || l.stage === 'VERIFY').length },
-            { id: 'anomalies', label: 'Watchdog Crashes', count: logs.filter((l) => (l.kind || '').includes('anomaly') || l.severity === 'HIGH').length },
-            { id: 'canary', label: 'Canary & Deploys', count: logs.filter((l) => l.stage === 'STAGE' || l.stage === 'DEPLOY' || (l.kind || '').includes('resolved')).length },
-          ].map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategoryFilter(cat.id)}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1.5 ${
-                categoryFilter === cat.id
-                  ? 'bg-[#1f6feb] text-white shadow-xs'
-                  : 'bg-[#121824] hover:bg-[#1b2334] text-[#8b949e] border border-[#1b2234]'
-              }`}
-            >
-              <span>{cat.label}</span>
-              <span className="text-[10px] font-mono opacity-80">({cat.count})</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Main Stream Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-2 font-mono text-xs">
-        {filteredLogs.length === 0 ? (
-          <div className="p-12 text-center text-[#6e7681] space-y-3">
-            <Terminal size={32} className="mx-auto text-[#30363d]" />
-            <p className="text-sm">No platform events matched the selected filter.</p>
-            <button
-              onClick={() => { setSearchTerm(''); setCategoryFilter('all'); }}
-              className="text-xs text-[#58a6ff] hover:underline"
-            >
-              Reset Filters
-            </button>
+      {/* Pure Terminal Log Viewport */}
+      <div
+        ref={terminalScrollRef}
+        className="flex-1 p-3 overflow-y-auto overflow-x-auto text-[11.5px] leading-relaxed selection:bg-[#1f3a5f] selection:text-[#f0f6fc]"
+      >
+        {isLoading && consoleLines.length === 0 ? (
+          <div className="text-[#6e7681] italic py-4">Connecting to platform master console stream...</div>
+        ) : filteredLines.length === 0 ? (
+          <div className="text-[#6e7681] italic py-4">
+            {filterQuery ? `No console lines matching "${filterQuery}"` : 'No logs recorded yet.'}
           </div>
         ) : (
-          filteredLogs.map((log, idx) => {
-            const isExpanded = expandedLogIds.has(log.id);
-            const badge = getLogSubsystemBadge(log);
-            const SubsystemIcon = badge.icon;
-            const payload = log.payload || {};
-
-            // Extract primary message or summary
-            let headline = payload.message || payload.summary || payload.error || '';
-            if (!headline && payload.thought) headline = payload.thought;
-            if (!headline && payload.tool) headline = `Tool: ${payload.tool}`;
-
-            // Extract command line or specific action
-            const commandLine = payload.parameters?.CommandLine || payload.args?.CommandLine || payload.command;
-            const filePath = payload.parameters?.Path || payload.parameters?.TargetFile || payload.path;
-
-            const timeStr = log.ts ? new Date(log.ts).toLocaleTimeString() : 'N/A';
-
-            return (
+          <div className="space-y-0.5">
+            {filteredLines.map((line, idx) => (
               <div
-                key={log.id || idx}
-                className={`rounded-lg border transition ${
-                  isExpanded ? 'bg-[#0a0e17] border-[#2b3a58]' : 'bg-[#0a0e17]/60 hover:bg-[#0d121e] border-[#1b2234]'
-                }`}
+                key={line.id || idx}
+                onClick={() => handleCopyLine(line.raw, idx)}
+                className="group flex items-start gap-2 px-1.5 py-0.5 rounded hover:bg-[#161f30]/60 cursor-pointer transition"
+                title="Click line to copy"
               >
-                {/* Row Header */}
-                <div
-                  onClick={() => toggleExpand(log.id)}
-                  className="px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    {/* Timestamp */}
-                    <span className="text-[11px] text-[#6e7681] flex-shrink-0 font-mono">
-                      {timeStr}
-                    </span>
+                {/* Line Number */}
+                <span className="w-8 shrink-0 text-right text-[#484f58] group-hover:text-[#6e7681] select-none text-[10px]">
+                  {idx + 1}
+                </span>
 
-                    {/* Subsystem Badge */}
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-tight border flex items-center gap-1 flex-shrink-0 ${badge.color}`}>
-                      <SubsystemIcon size={11} />
-                      <span>{badge.label}</span>
-                    </span>
+                {/* Timestamp */}
+                <span className="text-[#6e7681] shrink-0 select-none">
+                  [{line.timestamp}]
+                </span>
 
-                    {/* Stage Tag */}
-                    {log.stage && (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-[#121620] text-[#8b949e] border border-[#21262d] flex-shrink-0">
-                        {log.stage}
-                      </span>
-                    )}
+                {/* Level */}
+                <span className={`w-12 shrink-0 ${getLevelColor(line.level)}`}>
+                  [{line.level}]
+                </span>
 
-                    {/* Incident Reference Link */}
-                    {log.incident_id && (
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onSelectIncident) {
-                            onSelectIncident({ id: log.incident_id, service: log.service });
-                          }
-                          if (onNavigate) onNavigate('incidents');
-                        }}
-                        className="text-[10px] font-bold text-[#58a6ff] hover:underline flex items-center gap-0.5 flex-shrink-0 cursor-pointer"
-                        title="Click to jump to incident"
-                      >
-                        <span>{log.incident_id}</span>
-                        <ArrowUpRight size={10} />
-                      </span>
-                    )}
+                {/* Tag / Stage */}
+                <span className={`w-28 shrink-0 truncate ${getTagColor(line.tag)}`}>
+                  [{line.tag}]
+                </span>
 
-                    {/* Main Headline / Message */}
-                    <span className="text-xs text-[#f0f6fc] truncate font-medium flex-1">
-                      {commandLine ? (
-                        <span className="text-[#3fb950] font-bold">$ {commandLine}</span>
-                      ) : headline ? (
-                        headline
-                      ) : (
-                        <span className="text-[#8b949e] italic">Event {log.kind} recorded</span>
-                      )}
-                    </span>
-                  </div>
+                {/* Message */}
+                <span className="text-[#e6edf3] whitespace-pre-wrap break-all flex-1">
+                  {line.message}
+                </span>
 
-                  {/* Right Status & Expand Toggle */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {log.kind && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-[#161b22] text-[#8b949e] border border-[#21262d]">
-                        {log.kind}
-                      </span>
-                    )}
-
-                    {isExpanded ? (
-                      <ChevronUp size={14} className="text-[#8b949e]" />
-                    ) : (
-                      <ChevronDown size={14} className="text-[#8b949e]" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Expanded Detail Panel */}
-                {isExpanded && (
-                  <div className="px-4 py-3 bg-[#05070a] border-t border-[#1b2234] space-y-2.5 text-xs">
-                    {/* Command Line Box */}
-                    {commandLine && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-[#6e7681] block mb-1">
-                          Terminal Command Line:
-                        </span>
-                        <div className="p-2 rounded bg-[#07090f] border border-[#1b263b] text-[#3fb950] font-mono whitespace-pre-wrap">
-                          $ {commandLine}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Target File */}
-                    {filePath && (
-                      <div className="text-[11px] text-[#8b949e]">
-                        <span className="font-bold text-[#6e7681]">Target File: </span>
-                        <code className="text-[#58a6ff] bg-[#121929] px-1.5 py-0.5 rounded border border-[#1f2d42]">
-                          {filePath}
-                        </code>
-                      </div>
-                    )}
-
-                    {/* Full Raw Payload Inspector */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold uppercase text-[#6e7681]">
-                          Event Raw Payload & Output:
-                        </span>
-                        <button
-                          onClick={() => handleCopyEntry(log, idx)}
-                          className="text-[10px] text-[#58a6ff] hover:underline flex items-center gap-1"
-                        >
-                          {copiedIndex === idx ? <Check size={11} className="text-[#3fb950]" /> : <Copy size={11} />}
-                          <span>{copiedIndex === idx ? 'Copied' : 'Copy Entry'}</span>
-                        </button>
-                      </div>
-
-                      <pre className="p-2.5 rounded bg-[#07090f] border border-[#151d2e] text-[#c9d1d9] text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-72 leading-relaxed">
-                        {typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
+                {/* Copy Indicator */}
+                <span className="opacity-0 group-hover:opacity-100 text-[10px] text-[#58a6ff] shrink-0 select-none transition">
+                  {copiedLineIdx === idx ? 'copied!' : 'copy'}
+                </span>
               </div>
-            );
-          })
+            ))}
+            <div ref={consoleEndRef} />
+          </div>
         )}
+      </div>
+
+      {/* Terminal Footer Status Bar */}
+      <div className="h-6 px-3 bg-[#0d121f] border-t border-[#1b2333] flex items-center justify-between text-[10px] text-[#6e7681] shrink-0 select-none">
+        <div className="flex items-center gap-3">
+          <span>UTF-8</span>
+          <span>•</span>
+          <span>ProdPilot Platform Master Stream</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span>Click any line to copy</span>
+          <span>•</span>
+          <span>Auto-scroll: {autoScroll ? 'ON' : 'OFF'}</span>
+        </div>
       </div>
     </div>
   );

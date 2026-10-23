@@ -283,14 +283,67 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         "events": events_list,
     }
 
-    # If mobile browser tapped link from Telegram, return responsive dark-mode HTML
+    action_param = request.query_params.get("action")
+    view_param = request.query_params.get("view") or request.query_params.get("tab")
+
+    if action_param == "hold":
+        update_incident_status(incident_id, "ON_HOLD")
+        inc["status"] = "ON_HOLD"
+        res_data["status"] = "ON_HOLD"
+        log_event(
+            run_id=None,
+            incident_id=incident_id,
+            stage="HOLD",
+            kind="on_hold",
+            payload={"message": "Incident put on hold by operator via Telegram/Mobile link"},
+        )
+    elif action_param in ("unhold", "resume"):
+        has_diff = bool(artifacts_map.get("patch_diff"))
+        new_st = "AWAITING_APPROVAL" if has_diff else "INVESTIGATING"
+        update_incident_status(incident_id, new_st)
+        inc["status"] = new_st
+        res_data["status"] = new_st
+        log_event(
+            run_id=None,
+            incident_id=incident_id,
+            stage="RESUME",
+            kind="resumed",
+            payload={"message": f"Incident resumed by operator, status set to {new_st}"},
+        )
+
+    # If mobile browser tapped link from Telegram, or if html=1 or view/action requested, return responsive dark-mode HTML
     accept_hdr = request.headers.get("accept", "")
-    if "text/html" in accept_hdr and not request.query_params.get("raw"):
+    is_html_request = (
+        ("text/html" in accept_hdr or bool(view_param) or bool(action_param) or request.query_params.get("html") == "1")
+        and not request.query_params.get("raw")
+    )
+    if is_html_request:
         from fastapi.responses import HTMLResponse
         from backend.prodpilot.api.mobile_renderer import render_mobile_incident_page
-        return HTMLResponse(content=render_mobile_incident_page(res_data))
+        return HTMLResponse(content=render_mobile_incident_page(res_data, view=view_param, action=action_param))
 
     return res_data
+
+
+@app.post("/incidents/{incident_id}/hold")
+def toggle_hold_endpoint(incident_id: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Toggles incident hold status between ON_HOLD and active."""
+    inc = get_incident(incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    action = (payload or {}).get("action", "hold")
+    if action == "hold":
+        update_incident_status(incident_id, "ON_HOLD")
+        log_event(None, incident_id, "HOLD", "on_hold", {"message": "Incident put on hold by operator"})
+        return {"status": "ON_HOLD", "incident_id": incident_id, "message": "Incident put on hold"}
+    else:
+        artifacts = get_artifacts(incident_id)
+        has_diff = any(a.get("kind") == "patch_diff" for a in artifacts)
+        new_st = "AWAITING_APPROVAL" if has_diff else "INVESTIGATING"
+        update_incident_status(incident_id, new_st)
+        log_event(None, incident_id, "RESUME", "resumed", {"message": f"Incident resumed to {new_st}"})
+        return {"status": new_st, "incident_id": incident_id, "message": f"Incident resumed to {new_st}"}
 
 
 @app.delete("/incidents/{incident_id}")
@@ -669,8 +722,8 @@ def clarify_issue_endpoint(issue_id: str, body: Optional[IssueClarifyRequest] = 
 
 
 @app.get("/platform/master-logs")
-def get_master_platform_logs(limit: int = 150) -> Dict[str, Any]:
-    """Returns a unified master activity stream across all platform systems."""
+def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
+    """Returns a unified master activity stream across all platform systems as pure console lines."""
     from backend.prodpilot.db import get_db
     with get_db() as conn:
         rows = conn.execute(
@@ -679,22 +732,110 @@ def get_master_platform_logs(limit: int = 150) -> Dict[str, Any]:
                    i.service, i.status as incident_status, i.severity
             FROM run_events e
             LEFT JOIN incidents i ON e.incident_id = i.id
-            ORDER BY e.id DESC
+            ORDER BY e.id ASC
             LIMIT ?
             """,
             (limit,)
         ).fetchall()
+
+        # Also fetch any service_logs
+        svc_rows = conn.execute(
+            "SELECT id, timestamp as ts, service, level, message FROM service_logs ORDER BY id ASC LIMIT 50"
+        ).fetchall()
+
+    console_lines = []
+    
+    # Add service_logs if any
+    for sr in svc_rows:
+        ts_clean = (sr["ts"] or "").replace("T", " ").split(".")[0]
+        lvl = (sr["level"] or "INFO").upper()
+        svc = (sr["service"] or "CORE").upper()
+        msg = sr["message"] or ""
+        raw = f"[{ts_clean}] [{lvl:<5}] [{svc:<12}] {msg}"
+        console_lines.append({
+            "id": f"svc-{sr['id']}",
+            "timestamp": ts_clean,
+            "level": lvl,
+            "tag": svc,
+            "message": msg,
+            "raw": raw,
+        })
+
+    # Add run_events
+    for r in rows:
+        d = dict(r)
+        ts_clean = (d.get("ts") or "").replace("T", " ").split(".")[0]
+        stage = (d.get("stage") or "SYSTEM").upper()
+        kind = (d.get("kind") or "INFO").upper()
+        svc = (d.get("service") or "SYSTEM").upper()
+        inc_id = d.get("incident_id") or ""
         
-        events = []
-        for r in rows:
-            d = dict(r)
-            if isinstance(d.get("payload"), str):
-                try:
-                    d["payload"] = json.loads(d["payload"])
-                except Exception:
-                    pass
-            events.append(d)
-            
-        return {"ok": True, "count": len(events), "logs": events}
+        payload = d.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {"message": payload}
+
+        lvl = "INFO"
+        tag = stage
+        msg = payload.get("message") or ""
+
+        if kind in ("ERROR", "EXCEPTION", "FAILED"):
+            lvl = "ERROR"
+            msg = payload.get("error") or msg or "Failure encountered"
+        elif kind == "TOOL_CALL":
+            lvl = "TOOL"
+            tag = "AGENT_TOOL"
+            msg = payload.get("summary") or f"{payload.get('tool')}({payload.get('args')})"
+        elif kind == "TEST_RESULT":
+            passed = payload.get("passed", False)
+            lvl = "PASS" if passed else "FAIL"
+            tag = "VERIFIER"
+            msg = f"{payload.get('phase')}: {payload.get('summary') or ('PASSED' if passed else 'FAILED')}"
+        elif kind == "DECISION":
+            lvl = "JEV"
+            tag = "TYPESAFE_JEV"
+            prob = int(payload.get("confidence", 0.95) * 100) if payload.get("confidence") else 95
+            msg = f"Recommendation: {payload.get('recommendation', '').upper()} ({prob}% prob) - {payload.get('reason', '')}"
+        elif kind in ("PR_MERGED", "PR_OPENED"):
+            lvl = "PR"
+            tag = "GITHUB_PR"
+            msg = f"Pull Request #{payload.get('pr_number')} on branch {payload.get('branch')} -> merged={payload.get('merged')}"
+        elif kind == "RECURRENT_ANOMALY":
+            lvl = "WARN"
+            tag = "WATCHDOG"
+            msg = payload.get("message") or "Anomaly detected in log stream"
+        elif not msg:
+            msg = json.dumps(payload)
+
+        # Truncate very long stack traces to keep terminal console readable
+        if len(msg) > 300:
+            msg = msg[:300] + "..."
+
+        inc_label = f"[{inc_id[:16]}] " if inc_id else ""
+        raw = f"[{ts_clean}] [{lvl:<5}] [{tag:<12}] {inc_label}{msg}"
+        
+        console_lines.append({
+            "id": d.get("id"),
+            "timestamp": ts_clean,
+            "level": lvl,
+            "tag": tag,
+            "service": svc,
+            "incident_id": inc_id,
+            "message": f"{inc_label}{msg}",
+            "raw": raw,
+        })
+
+    # Sort console lines chronologically
+    console_lines.sort(key=lambda x: str(x.get("timestamp", "")))
+    plain_text = "\n".join(c["raw"] for c in console_lines)
+
+    return {
+        "ok": True,
+        "count": len(console_lines),
+        "console_lines": console_lines,
+        "plain_text": plain_text,
+    }
 
 

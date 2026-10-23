@@ -51,7 +51,6 @@ export default function Sidebar({
       badge: activeCount.length > 0 ? `${activeCount.length}` : null,
       badgeColor: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
     },
-    { id: 'master_logs', label: 'Platform Master Log', icon: Activity },
     { id: 'logs', label: 'Logs Explorer', icon: Terminal },
     { id: 'servers', label: 'Production Servers', icon: Server },
     { id: 'projects', label: 'Projects', icon: FolderGit2 },
@@ -227,6 +226,30 @@ export default function Sidebar({
             })
           )}
         </div>
+      </div>
+
+      {/* Docked Platform Master Log at Bottom */}
+      <div className="p-2 border-t border-[#1b2234] bg-[#090d16]">
+        <button
+          onClick={() => setActiveNav('master_logs')}
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-mono font-medium transition ${
+            activeNav === 'master_logs'
+              ? 'bg-[#171f30] text-[#f0f6fc] font-semibold border border-[#293652]'
+              : 'text-[#8b949e] hover:bg-[#121824] hover:text-[#c9d1d9] border border-transparent'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Terminal
+              size={14}
+              className={activeNav === 'master_logs' ? 'text-[#58a6ff]' : 'text-[#6e7681]'}
+            />
+            <span className="font-sans text-xs">Platform Master Log</span>
+          </div>
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
+            <span className="text-[10px] text-[#6e7681]">LIVE</span>
+          </span>
+        </button>
       </div>
 
       {/* Footer Info */}
