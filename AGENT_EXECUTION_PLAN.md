@@ -1,7 +1,7 @@
 # ProdPilot 3-Agent Execution Plan & Runbook
 
 This document defines the 3-agent parallel operating procedure for ProdPilot.
-Each agent operates in its own isolated git worktree with strict folder ownership.
+Each agent operates in its own isolated worktree or branch with strict folder ownership.
 
 ---
 
@@ -10,33 +10,42 @@ Each agent operates in its own isolated git worktree with strict folder ownershi
 ```
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
 │     Agent 1: Stream A           │   │     Agent 2: Stream B           │   │     Agent 3: Stream C           │
-│     (The Brain / Engine)        │   │     (The Body & UI)             │   │     (Telegram Bot)              │
+│     (The Brain / Engine)        │   │     (The Body & UI)             │   │     (Visihot Telegram Bot)      │
 ├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
-│ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Worktree: prodpilot-c         │
-│ • Branch: stream-a              │   │ • Branch: stream-b              │   │ • Branch: stream-c              │
-│ • Pipeline & Agent loop         │   │ • demo-prod (buggy service)     │   │ • backend/prodpilot/telegram/   │
+│ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Directory: prodpilot/telegram │
+│ • Branch: stream-a              │   │ • Branch: stream-b              │   │ • Branch: telegram (root-level) │
+│ • Pipeline & Agent loop         │   │ • demo-prod (buggy service)     │   │ • Untracked by main git repo    │
 │ • Repro-test & Verifier         │   │ • Watcher + Git Blame           │   │ • python-telegram-bot           │
 │ • Staging & Deploy Adapter      │   │ • Reset & trigger scripts       │   │ • Inline Action Buttons         │
-│ • FastAPI & SSE API (port 8765) │   │ • Electron + React Dashboard    │   │ • Server hosting files (Docker) │
+│ • FastAPI & SSE API (port 8765) │   │ • Electron + React Dashboard    │   │ • Deploys directly on Visihot   │
 └─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
 ```
 
 ### Strict Folder Ownership:
 | Agent | Directory / Scope Owned | Strictly Forbidden |
 |---|---|---|
-| **Agent 1** (Brain) | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`backend/prodpilot/decide/`<br>`backend/prodpilot/api/`<br>`backend/prodpilot/db.py` | `demo-prod/`<br>`backend/prodpilot/watcher/`<br>`desktop/`<br>`scripts/`<br>`backend/prodpilot/telegram/` |
-| **Agent 2** (Body & UI) | `demo-prod/` (separate git repo inside `demo-prod`)<br>`backend/prodpilot/watcher/`<br>`desktop/` (Electron + React)<br>`scripts/` | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`backend/prodpilot/telegram/` |
-| **Agent 3** (Telegram) | `backend/prodpilot/telegram/` | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/watcher/`<br>`desktop/` |
+| **Agent 1** (Brain) | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`backend/prodpilot/decide/`<br>`backend/prodpilot/api/`<br>`backend/prodpilot/db.py` | `demo-prod/`<br>`backend/prodpilot/watcher/`<br>`desktop/`<br>`scripts/`<br>`telegram/` |
+| **Agent 2** (Body & UI) | `demo-prod/` (separate git repo inside `demo-prod`)<br>`backend/prodpilot/watcher/`<br>`desktop/` (Electron + React)<br>`scripts/` | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`telegram/` |
+| **Agent 3** (Telegram) | `telegram/` (on branch `telegram`, untracked by `main`) | Any file outside `telegram/` |
 
 ---
 
-## 2. Directory & Git Worktrees Setup
+## 2. Directory & Git Setup
 
-All 3 worktrees are already set up and linked to their branches:
+All worktrees and branches are initialized:
 - **Main Coordinator**: `/home/vishnunandan555/Projects/prodpilot` (branch: `main`)
 - **Window 1 (Agent 1)**: `/home/vishnunandan555/Projects/prodpilot-a` (branch: `stream-a`)
 - **Window 2 (Agent 2)**: `/home/vishnunandan555/Projects/prodpilot-b` (branch: `stream-b`)
-- **Window 3 (Agent 3)**: `/home/vishnunandan555/Projects/prodpilot-c` (branch: `stream-c`)
+- **Window 3 (Agent 3)**: `/home/vishnunandan555/Projects/prodpilot/telegram` (branch: `telegram`)
+
+### How Visihot Telegram Deployment Works:
+1. Agent 3 works entirely inside `/home/vishnunandan555/Projects/prodpilot/telegram`.
+2. When Agent 3 commits and pushes:
+   ```bash
+   cd /home/vishnunandan555/Projects/prodpilot/telegram
+   git push origin telegram
+   ```
+3. In the Visihot dashboard, select repository: `vishnunandan555/prodpilot`, choose branch: `telegram`, and click **Deploy**! Visihot will run `bot.py` right from the root of that branch.
 
 ---
 
@@ -56,7 +65,7 @@ Your workspace is `prodpilot-a`. Your job is to build the backend pipeline, agen
 
 STRICT BOUNDARY:
 - You ONLY work in `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, `backend/prodpilot/decide/`, `backend/prodpilot/api/`, and `backend/prodpilot/db.py`.
-- DO NOT touch `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, or `backend/prodpilot/telegram/`.
+- DO NOT touch `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, or `telegram/`.
 - Contracts in `contracts/` are FROZEN. Read `contracts/schema.sql`, `contracts/incident.example.json`, `contracts/api.md`, and `contracts/agent_interface.py`.
 
 TASKS TO EXECUTE:
@@ -110,7 +119,7 @@ Your workspace is `prodpilot-b`. Your job is to build the fake production servic
 
 STRICT BOUNDARY:
 - You ONLY work in `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, and `scripts/`.
-- DO NOT touch `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, or `backend/prodpilot/telegram/`.
+- DO NOT touch `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, or `telegram/`.
 - Use `backend/prodpilot/db.py` to insert incidents into SQLite.
 
 TASKS TO EXECUTE:
@@ -159,26 +168,28 @@ Start `demo-prod`, run `trigger-crash.sh`, verify watcher creates populated inci
 
 ---
 
-### Window 3: Agent 3 (Stream C – The Telegram Bot)
-**Working Directory**: `/home/vishnunandan555/Projects/prodpilot-c`  
-**Git Branch**: `stream-c`
+### Window 3: Agent 3 (Stream C – Visihot Hosted Telegram Bot)
+**Working Directory**: `/home/vishnunandan555/Projects/prodpilot/telegram`  
+**Git Branch**: `telegram` (Standalone branch for Visihot deployment)
 
 ```markdown
-You are Agent 3 (Stream C - Telegram Bot) for ProdPilot.
-Your workspace is `prodpilot-c`. Your job is to build the Telegram bot package inside `backend/prodpilot/telegram/` that provides phone control over production incidents and is ready to run either locally or on a remote server (Visihot VPS).
+You are Agent 3 (Stream C - Visihot Hosted Telegram Bot) for ProdPilot.
+Your workspace is `/home/vishnunandan555/Projects/prodpilot/telegram`.
+This workspace is on a dedicated git branch called `telegram` and is completely untracked by the main repository. When committed and pushed to `origin telegram`, Visihot will deploy this branch directly!
 
 STRICT BOUNDARY:
-- You ONLY work inside `backend/prodpilot/telegram/`.
-- DO NOT edit `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/watcher/`, or `desktop/`.
-- You communicate with ProdPilot through the REST/SSE API described in `contracts/api.md` (or directly via `backend/prodpilot/db.py` when running co-located).
+- You ONLY work inside `/home/vishnunandan555/Projects/prodpilot/telegram`.
+- All bot files MUST stay at the root of this folder (`bot.py`, `requirements.txt`, etc.) because Visihot executes from root.
+- You communicate with ProdPilot through the REST/SSE API described in `contracts/api.md` (default: `http://127.0.0.1:8765` or configured via `PRODPILOT_API_URL`).
 
 TASKS TO EXECUTE:
-1. Telegram Bot Core (`backend/prodpilot/telegram/bot.py`):
-   - Built using `python-telegram-bot` (v20+ async) or `aiogram`.
-   - Environment settings:
+1. Standalone Telegram Bot (`bot.py`):
+   - Build with `python-telegram-bot` (v20+ async) or `aiogram`.
+   - Read configurations from `.env` or environment variables:
      - `TELEGRAM_BOT_TOKEN`: Bot token from @BotFather.
-     - `TELEGRAM_CHAT_ID`: Restrict bot strictly to your own chat ID for security.
+     - `TELEGRAM_ALLOWED_CHAT_ID`: Restrict bot strictly to your own chat ID for security.
      - `PRODPILOT_API_URL`: URL to ProdPilot backend (default `http://127.0.0.1:8765`).
+     - `POLL_INTERVAL`: Interval in seconds to poll for incidents needing approval (default: 3).
 
 2. Incident Notification Card:
    - When an incident reaches `AWAITING_APPROVAL`:
@@ -210,29 +221,26 @@ TASKS TO EXECUTE:
    - `/logs`: Fetches last 20 lines of service log for the active incident.
    - `/report`: Sends the markdown incident report summary.
 
-5. Visihot Server Deploy Package (`backend/prodpilot/telegram/`):
-   - `Dockerfile`: Minimal Python container to run the bot on Visihot server.
-   - `docker-compose.yml`: Simple compose file.
-   - `requirements.txt`: `python-telegram-bot`, `httpx`, `python-dotenv`.
-   - `.env.example`: Template for token, chat ID, API URL.
-   - `README.md`: Step-by-step instructions for running locally or deploying to Visihot VPS.
-
-6. Mock API Mode for Development:
-   - Include a lightweight mock mode (`python -m prodpilot.telegram.bot --mock`) so you can test sending notifications and pressing buttons immediately without waiting for Agent 1.
+5. Visihot Server Execution Package:
+   - Ensure `requirements.txt` has: `python-telegram-bot>=20.0`, `httpx>=0.25.0`, `python-dotenv>=1.0.0`.
+   - Ensure `start.sh` is executable (`chmod +x start.sh`).
+   - Include a lightweight mock mode (`python3 bot.py --mock`) so the bot can be tested immediately with sample incidents and interactive buttons before Agent 1 launches the API.
 
 EXIT CHECK:
-Run `python -m prodpilot.telegram.bot --mock` (or against live API), verify the bot sends the interactive incident card with Deploy and Rollback buttons to your Telegram chat, and tapping the button confirms the action. Commit all code to `stream-c`.
+Run `python3 bot.py --mock` (or against live API), verify the bot sends the interactive incident card with Deploy and Rollback buttons to your Telegram chat, and tapping the button confirms the action.
+Commit all code to the `telegram` branch:
+`git add . && git commit -m "feat(telegram): complete interactive incident bot for Visihot" && git push origin telegram`
 ```
 
 ---
 
 ## 4. Gate Merging Protocol
 
-When the agents finish their Phase tasks:
+When Agent 1 and Agent 2 finish their Phase tasks:
 ```bash
 # In /home/vishnunandan555/Projects/prodpilot (main)
 git merge stream-a -m "merge: Stream A Phase 1 complete"
 git merge stream-b -m "merge: Stream B Phase 1 complete"
-git merge stream-c -m "merge: Stream C Phase 1 complete"
 git tag gate-1-passed
 ```
+Agent 3 pushes directly to the `telegram` branch (`git push origin telegram`), which Visihot deploys directly.
