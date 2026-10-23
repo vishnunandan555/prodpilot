@@ -67,7 +67,7 @@ class AntigravityAdapter:
                     "payload": {
                         "model": "google-antigravity/gemini-2.5",
                         "prompt": task,
-                        "message": f"Calling LLM Antigravity agent: {task[:120]}...",
+                        "message": f"Calling LLM Antigravity agent: {task}",
                     },
                 })
 
@@ -193,7 +193,10 @@ class AntigravityAdapter:
             on_event({
                 "stage": stage,
                 "kind": "stage_started",
-                "payload": {"message": f"Antigravity agent starting task in {workdir}: {task[:100]}..."},
+                "payload": {
+                    "message": f"Antigravity agent starting task in {workdir}:\n{task}",
+                    "task": task,
+                },
             })
 
         env = os.environ.copy()

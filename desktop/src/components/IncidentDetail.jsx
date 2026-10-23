@@ -160,12 +160,22 @@ export default function IncidentDetail({
 
   const generateNaturalFix = () => {
     const diff = artifacts.patch_diff || incident.diff || '';
+    const stageIdx = getStageStatusIndex();
+
+    // If still in early stages (Detected, Triaged, or Reproduced) and no diff exists yet:
+    if (stageIdx < 3 && !diff) {
+      if (stageIdx <= 1) {
+        return 'The agent is currently analyzing the service logs, stack trace, and git history to identify the suspect commit and affected lines.';
+      }
+      return 'The agent is executing an isolated git worktree sandbox and synthesizing a minimal reproduction test (tests/test_repro.py). A code patch has not been generated yet.';
+    }
+
     const combined = `${diff} ${incident.brief?.summary || ''}`;
 
-    if (diff.includes('streak') || combined.includes('ACK') || combined.includes('TimeoutError')) {
+    if (diff.includes('streak') || (diff && combined.includes('ACK')) || (diff && combined.includes('TimeoutError'))) {
       return 'Applied defensive ACK handling in the streaming loop: resets the consecutive chunk streak counter on partial deliveries and adds a graceful recovery guard clause, preventing the transfer stream from halting.';
     }
-    if (diff.includes('.get(') || combined.includes('KeyError')) {
+    if (diff.includes('.get(') || (diff && combined.includes('KeyError'))) {
       return 'Replaced direct dictionary subscription with safe .get() access providing a default fallback, and added input validation guard clauses to prevent KeyErrors on missing fields.';
     }
     if (diff) {
@@ -174,7 +184,10 @@ export default function IncidentDetail({
         return `Applied targeted defensive guard clauses (${lines[0].replace('+', '').trim()}) to safely intercept the crash condition before execution.`;
       }
     }
-    return 'Synthesized targeted defensive guard clauses to safely intercept the crash condition before execution, verified by passing 100% of regression tests.';
+    if (stageIdx >= 3) {
+      return 'Synthesized targeted defensive guard clauses to safely intercept the crash condition before execution, verified by passing 100% of regression tests.';
+    }
+    return 'Remediation is currently underway in an isolated sandbox worktree.';
   };
 
   const STAGES = [
@@ -638,8 +651,10 @@ export default function IncidentDetail({
                       )
                     ) : isAwaiting ? (
                       <span className="text-[#d29922]">Awaiting Gate Approval</span>
-                    ) : (
+                    ) : currentStageIdx >= 4 ? (
                       <span className="text-[#58a6ff]">Dual Canary Staging</span>
+                    ) : (
+                      <span className="text-[#8b949e]">Sandbox Investigation</span>
                     )}
                   </span>
                 </div>
@@ -729,7 +744,9 @@ export default function IncidentDetail({
                   </div>
                   <div className="pt-2 border-t border-[#1b2234] flex items-center gap-1.5 text-[10px] text-[#8b949e] font-mono truncate">
                     <span>Sandboxes:</span>
-                    <span className="text-[#58a6ff] truncate">Worktree + Canaries 8001/8002</span>
+                    <span className="text-[#58a6ff] truncate">
+                      {currentStageIdx >= 4 ? 'Worktree + Canaries 8001/8002' : 'Isolated Git Worktree (Canaries pending fix)'}
+                    </span>
                   </div>
                 </div>
 

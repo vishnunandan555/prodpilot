@@ -395,7 +395,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden relative">
+    <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans overflow-hidden relative select-text">
       {/* Top Ambient Activity Bar */}
       <GlobalProgressBar active={isRefreshing} />
 

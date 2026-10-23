@@ -40,6 +40,7 @@ export default function AgentExecutionConsole({
 }) {
   const [activeViewMode, setActiveViewMode] = useState('unified'); // 'unified' | 'terminal' | 'thoughts'
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'thoughts' | 'tools' | 'tests'
+  const [wrapTerminalLines, setWrapTerminalLines] = useState(true);
   const [expandedIndices, setExpandedIndices] = useState(new Set());
   const [copiedIndex, setCopiedIndex] = useState(null);
 
@@ -67,6 +68,12 @@ export default function AgentExecutionConsole({
 
     let headline = payload.message || payload.summary || payload.error || '';
     if (!headline && payload.thought) headline = payload.thought;
+    if (payload.task && (!headline || headline.length < payload.task.length)) headline = payload.task;
+
+    // Hydrate truncated tasks if brief summary is available
+    if (headline.includes('Summary: Timeo...') && incident.brief?.summary) {
+      headline = headline.replace('Summary: Timeo...', `Summary: ${incident.brief.summary}`);
+    }
 
     const params = payload.parameters || payload.args || {};
     const commandLine = params.CommandLine || params.command || payload.command;
@@ -112,6 +119,23 @@ export default function AgentExecutionConsole({
   const handleCopy = (text, idx) => {
     navigator.clipboard.writeText(typeof text === 'string' ? text : JSON.stringify(text, null, 2));
     setCopiedIndex(idx);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const handleCopyAllTerminal = () => {
+    const fullText = unifiedStream.map((item) => {
+      let line = `[${item.ts}] [${item.stage}] `;
+      if (item.isThought) line += `🧠 ${item.headline}`;
+      else if (item.commandLine) line += `$ ${item.commandLine}`;
+      else if (item.targetFile) line += `⚙️ [${item.toolName}] ${item.targetFile}`;
+      else line += item.headline || item.toolName;
+      if (item.result) {
+        line += `\nOutput: ${typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)}`;
+      }
+      return line;
+    }).join('\n');
+    navigator.clipboard.writeText(fullText);
+    setCopiedIndex('all-terminal');
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
@@ -223,46 +247,85 @@ export default function AgentExecutionConsole({
       )}
 
       {/* Main Stream Area */}
-      <div className="p-4 bg-[#080b11]">
+      <div className="p-4 bg-[#080b11] select-text">
         {activeViewMode === 'terminal' ? (
           /* Live Terminal Feed Mode */
-          <div className="rounded-lg bg-[#05070a] border border-[#1b2234] p-3 font-mono text-xs text-[#c9d1d9] space-y-2 max-h-[500px] overflow-y-auto">
-            <div className="text-[11px] text-[#58a6ff] pb-1 border-b border-[#1b2234] flex items-center justify-between">
-              <span>=== Antigravity Execution Session Terminal ===</span>
-              <span>Worktree Sandbox</span>
+          <div className="rounded-lg bg-[#05070a] border border-[#1b2234] p-3 font-mono text-xs text-[#c9d1d9] space-y-2 max-h-[550px] overflow-y-auto select-text">
+            <div className="text-[11px] text-[#58a6ff] pb-2 border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-2 select-none">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[#58a6ff]">=== Antigravity Execution Session Terminal ===</span>
+                <span className="text-[10px] text-[#8b949e] font-mono px-1.5 py-0.2 rounded bg-[#0e1420] border border-[#1e2a40]">
+                  Worktree Sandbox
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWrapTerminalLines(!wrapTerminalLines)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition border ${
+                    wrapTerminalLines
+                      ? 'bg-[#161f30] text-[#58a6ff] border-[#2b3a58]'
+                      : 'bg-[#0b0e14] text-[#8b949e] border-[#1b2234]'
+                  }`}
+                  title="Toggle Word Wrap"
+                >
+                  {wrapTerminalLines ? 'Wrap: ON' : 'Wrap: OFF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyAllTerminal}
+                  className="px-2 py-0.5 rounded bg-[#161f30] hover:bg-[#1f2c45] border border-[#2b3a58] text-[10px] font-mono text-[#58a6ff] hover:text-white flex items-center gap-1 transition"
+                  title="Copy complete terminal stream to clipboard"
+                >
+                  {copiedIndex === 'all-terminal' ? <Check size={11} className="text-[#3fb950]" /> : <Copy size={11} />}
+                  <span>{copiedIndex === 'all-terminal' ? 'Copied All' : 'Copy All'}</span>
+                </button>
+              </div>
             </div>
+
             {unifiedStream.length === 0 ? (
-              <div className="text-[#6e7681] italic">Waiting for agent process output...</div>
+              <div className="text-[#6e7681] italic py-4">Waiting for agent process output...</div>
             ) : (
-              unifiedStream.map((item, idx) => (
-                <div key={idx} className="space-y-1">
-                  {item.isThought && (
-                    <div className="text-[#a371f7] text-[11px]">
-                      <span className="text-[#6e7681]">[{item.ts}]</span> 🧠 {item.headline}
-                    </div>
-                  )}
-                  {item.commandLine && (
-                    <div className="text-[#3fb950] font-bold">
-                      <span className="text-[#6e7681]">[{item.ts}]</span> $ {item.commandLine}
-                    </div>
-                  )}
-                  {item.targetFile && !item.commandLine && (
-                    <div className="text-[#58a6ff]">
-                      <span className="text-[#6e7681]">[{item.ts}]</span> ⚙️ [{item.toolName}] {item.targetFile}
-                    </div>
-                  )}
-                  {item.result && (
-                    <pre className="text-[#8b949e] text-[10px] pl-4 whitespace-pre-wrap max-h-36 overflow-y-auto">
-                      {typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              ))
+              <div className={`space-y-1.5 pt-1 ${wrapTerminalLines ? 'break-words' : 'overflow-x-auto'}`}>
+                {unifiedStream.map((item, idx) => (
+                  <div key={idx} className="space-y-1 select-text group relative rounded hover:bg-[#0c0f18] p-1 transition">
+                    {item.isThought && (
+                      <div className={`text-[#a371f7] text-[11px] leading-relaxed select-text ${wrapTerminalLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
+                        <span className="text-[#6e7681] mr-1.5 select-none">[{item.ts}]</span>
+                        <span className="mr-1 select-none">🧠</span>
+                        <span className="select-text">{item.headline}</span>
+                      </div>
+                    )}
+                    {item.commandLine && (
+                      <div className={`text-[#3fb950] font-bold text-[11px] leading-relaxed select-text ${wrapTerminalLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
+                        <span className="text-[#6e7681] font-normal mr-1.5 select-none">[{item.ts}]</span>
+                        <span className="text-[#58a6ff] mr-1 select-none">$</span>
+                        <span className="select-text">{item.commandLine}</span>
+                      </div>
+                    )}
+                    {item.targetFile && !item.commandLine && (
+                      <div className={`text-[#58a6ff] text-[11px] leading-relaxed select-text ${wrapTerminalLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
+                        <span className="text-[#6e7681] mr-1.5 select-none">[{item.ts}]</span>
+                        <span className="mr-1 select-none">⚙️</span>
+                        <span className="text-[#8b949e] select-none">[{item.toolName}] </span>
+                        <span className="select-text font-mono">{item.targetFile}</span>
+                      </div>
+                    )}
+                    {item.result && (
+                      <div className="pl-4 group/res relative">
+                        <pre className="text-[#8b949e] text-[10px] whitespace-pre-wrap max-h-48 overflow-y-auto select-text p-1.5 rounded bg-[#070a10] border border-[#141a26]">
+                          {typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         ) : (
           /* Unified Interactive Stream Mode */
-          <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1 select-text">
             {filteredStream.length === 0 ? (
               <div className="p-8 text-center text-[#6e7681] text-xs">
                 No events match the selected category.
@@ -275,7 +338,7 @@ export default function AgentExecutionConsole({
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-lg border transition overflow-hidden ${
+                    className={`rounded-lg border transition overflow-hidden select-text ${
                       item.isThought
                         ? 'bg-[#0d111a] border-[#1f2738]'
                         : item.isTest
@@ -286,16 +349,16 @@ export default function AgentExecutionConsole({
                     {/* Header Row */}
                     <div
                       onClick={() => toggleExpand(item.index)}
-                      className="px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-[#0f1422] transition"
+                      className="px-3.5 py-2.5 flex items-start sm:items-center justify-between gap-3 cursor-pointer hover:bg-[#0f1422] transition select-text"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
                         {/* Type Icon */}
                         {item.isThought ? (
-                          <div className="w-5 h-5 rounded-full bg-[#161226] border border-[#2e2350] flex items-center justify-center text-[#a371f7] flex-shrink-0">
+                          <div className="w-5 h-5 rounded-full bg-[#161226] border border-[#2e2350] flex items-center justify-center text-[#a371f7] flex-shrink-0 mt-0.5 sm:mt-0 select-none">
                             <Sparkles size={11} />
                           </div>
                         ) : (
-                          <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 ${
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0 select-none ${
                             item.state === 'FAIL'
                               ? 'bg-[#261317] border border-[#4a1c24] text-[#ff7b72]'
                               : 'bg-[#0f1f1d] border border-[#1b3d2b] text-[#3fb950]'
@@ -305,35 +368,46 @@ export default function AgentExecutionConsole({
                         )}
 
                         {/* Timestamp */}
-                        <span className="text-[10px] text-[#6e7681] font-mono flex-shrink-0">
+                        <span className="text-[10px] text-[#6e7681] font-mono flex-shrink-0 select-none">
                           {item.ts}
                         </span>
 
                         {/* Stage Tag */}
-                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[#161b24] text-[#8b949e] border border-[#21262d] flex-shrink-0">
+                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[#161b24] text-[#8b949e] border border-[#21262d] flex-shrink-0 select-none">
                           {item.stage}
                         </span>
 
                         {/* Main Title / Command Line */}
-                        <div className="text-xs truncate font-medium flex-1">
+                        <div className="text-xs font-medium flex-1 break-words select-text leading-relaxed">
                           {item.commandLine ? (
-                            <span className="text-[#3fb950] font-mono font-bold">
+                            <span className="text-[#3fb950] font-mono font-bold select-text">
                               $ {item.commandLine}
                             </span>
                           ) : item.headline ? (
-                            <span className={item.isThought ? 'text-[#c9d1d9]' : 'text-[#f0f6fc]'}>
+                            <span className={`${item.isThought ? 'text-[#c9d1d9]' : 'text-[#f0f6fc]'} select-text`}>
                               {item.headline}
                             </span>
                           ) : (
-                            <span className="text-[#8b949e]">
+                            <span className="text-[#8b949e] select-text">
                               {item.toolName} {item.targetFile || ''}
                             </span>
                           )}
                         </div>
                       </div>
 
-                      {/* Right-hand Status & Chevron */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* Right-hand Status, Copy button & Chevron */}
+                      <div className="flex items-center gap-2 flex-shrink-0 select-none ml-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopy(item.headline || item.commandLine || item.targetFile, item.index);
+                          }}
+                          className="p-1 rounded text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#161f30] transition"
+                          title="Copy line text"
+                        >
+                          {copiedIndex === item.index ? <Check size={11} className="text-[#3fb950]" /> : <Copy size={11} />}
+                        </button>
                         {item.state && (
                           <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
                             item.state === 'FAIL'
