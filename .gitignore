@@ -39,8 +39,5 @@ dist-electron/
 # Worktree scratch
 .worktree/
 
-# External / Sub-repos (managed separately, server-hosted)
-telegram-bot/
-prodpilot-telegram/
-prodpilot-telegram-bot/
+# External / Sub-repos
 demo-prod/
