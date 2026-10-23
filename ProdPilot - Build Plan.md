@@ -17,10 +17,10 @@
 | **Phase 1: Core Pipeline** | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
 | **Phase 2: Staging, Orchestrator, Telegram** | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2** | ✅ **PASSED (Tag: `gate-2-passed`)** |
 | **Phase 3: Desktop Base & Daemon Runner** | Completed | Desktop Mission Control base, unified runner daemon, branding unified | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
-| **Phase 4: Model 1 Hardening & Render Deploy**<br>*(6:30 PM – 1:30 AM)* | **7.0 hours** | Render log ingestion, immediate Telegram alert, Render frontend deploy + Cloudflare Tunnel, 10s watchdog | **Gate 4** | 🟡 **IN PROGRESS (3 AGENTS ACTIVE)** |
-| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(1:30 AM – 3:30 AM)* | **2.0 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video | **Gate 5**<br>*(Freeze)* | ⚪ Queued |
-| **Rest & Buffer Window**<br>*(3:30 AM – 8:00 AM)* | **4.5 hours** | Rest & sleep buffer (prevents demo-day fatigue) | — | ⚪ Scheduled |
-| **Phase 6: Pitch Slides & Devfolio Submit**<br>*(8:00 AM – 11:00 AM)* | **3.0 hours** | Fresh clone dry-run, pitch deck polish, Devfolio submission freeze | **Ship** | ⚪ Queued |
+| **Phase 4: Model 1 Hardening & Render Deploy** | Completed | Render log ingestion, immediate Telegram alert, Render frontend deploy + Cloudflare Tunnel, 10s watchdog | **Gate 4** | ✅ **PASSED (Tag: `gate-4-passed`)** |
+| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(7:00 PM – 1:30 AM)* | **6.5 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video | **Gate 5**<br>*(Freeze)* | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Rest & Buffer Window**<br>*(1:30 AM – 7:30 AM)* | **6.0 hours** | Rest & sleep buffer (prevents demo-day fatigue) | — | ⚪ Scheduled |
+| **Phase 6: Pitch Slides & Devfolio Submit**<br>*(7:30 AM – 11:00 AM)* | **3.5 hours** | Fresh clone dry-run, pitch deck polish, Devfolio submission freeze | **Ship** | ⚪ Queued |
 
 ---
 
@@ -30,7 +30,7 @@
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
 │ Stream A: Laptop Ingest & Triage│   │ Stream B: Laptop Fixing & Guard │   │ Stream C: Render Web & Tunnel   │
 ├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
-│ • Status: 🟡 RUNNING (Agent 1)   │   │ • Status: 🟡 RUNNING (Agent 2)   │   │ • Status: 🟡 RUNNING (Agent 3)   │
+│ • Status: ✅ MERGED & VERIFIED   │   │ • Status: ✅ MERGED & VERIFIED   │   │ • Status: ✅ MERGED & VERIFIED   │
 │ • Branch: stream-triage         │   │ • Branch: stream-agent          │   │ • Branch: stream-ui             │
 │ • Render Log API Ingest         │   │ • Antigravity SDK Fix Loop      │   │ • Vite Build for Render Static  │
 │ • Fast Rule Filter              │   │ • Git Worktree Isolation        │   │ • Cloudflare Tunnel Bridge      │
@@ -46,58 +46,58 @@
 
 ---
 
-## 3. Active Phase: Phase 4 (6:30 PM – 1:30 AM) – Gate 4
-
-**Current Status**: 3 Agents actively executing in parallel across isolated workstreams.
+## 3. Passed Phase: Phase 4 – Gate 4 (Model 1 Hardening & Render Ready)
 
 **Goal**: Production monitoring on laptop pulls Render/Local logs $\rightarrow$ Outage triggers immediate Telegram alert with link to Render-hosted incident webpage $\rightarrow$ Antigravity agent on laptop investigates and crafts verified fix $\rightarrow$ Developer approves from phone $\rightarrow$ Cloudflare Tunnel forwards approval to laptop $\rightarrow$ 10s watchdog verifies production restored.
 
 ### Stream A Tasks (Agent 1 - Laptop Ingestion, Triage & Anti-Looping):
-- [ ] **Render & Forwarder Log Ingest (`backend/prodpilot/ingest/`)**:
-  - Implement `/ingest` REST endpoint receiving batched log lines with timestamps and levels.
-  - Add `scripts/forwarder.py` to tail local service logs or fetch from Render REST API (`/services/{serviceId}/logs`).
-- [ ] **Lightweight Triage & Severity Classifier (`backend/prodpilot/triage/`)**:
+- [x] **Render & Forwarder Log Ingest (`backend/prodpilot/ingest/`)**:
+  - Implemented `/ingest` REST endpoint receiving batched log lines with timestamps and levels.
+  - Added `scripts/forwarder.py` to tail local service logs or fetch from Render REST API (`/services/{serviceId}/logs`).
+- [x] **Lightweight Triage & Severity Classifier (`backend/prodpilot/triage/`)**:
   - Fast rule filter: extracts 5xx, unhandled exceptions, and `/health` failures.
   - Classifies events into `HIGH` (Severe Outage) vs `LOW` (Minor Issue).
   - Safety Override: any fatal crash or service exit is unconditionally forced to `HIGH`.
-- [ ] **Low-Severity Issue Creator**:
-  - On `LOW` classification, synthesize diagnostic brief and create a non-urgent GitHub Issue with `severity:low` tag.
-- [ ] **Anti-Looping Fingerprint Store (`backend/prodpilot/db.py`)**:
-  - Normalize stack traces and compute SHA-256 fingerprint.
-  - If fingerprint already exists in status `OPEN` or `INVESTIGATING`, increment `recurrence_count` without triggering duplicate agent runs.
+- [x] **Low-Severity Issue Creator**:
+  - On `LOW` classification, synthesizes diagnostic brief and creates a non-urgent record with status `WAITING_FOR_DEVELOPER` and `severity:low` tag.
+- [x] **Anti-Looping Fingerprint Store (`backend/prodpilot/db.py`)**:
+  - Normalizes stack traces and computes SHA-256 fingerprint.
+  - If fingerprint already exists in status `OPEN`, `DETECTED`, or `INVESTIGATING`, increments `recurrence_count` without triggering duplicate agent runs.
+  - Verified with `scripts/test_ingest_triage.py` (Exit Code 0)!
 
-### Stream B Tasks (Laptop Agent Fixing, Context & Safety Guard):
-- [ ] **Investigation & Root Cause Report Generator (`backend/prodpilot/pipeline/investigate.py`)**:
-  - Collect stack trace, `git blame` suspect commit, and PR review discussion.
-  - Generate structured RCA report (summary, severity, timeline, evidence, root cause, suspected commit, recommendation, confidence).
-- [ ] **Recovery Decision & Rollback Staging (`backend/prodpilot/staging/recovery.py`)**:
-  - Evaluate rollback eligibility; stage clean revert canary on port 8002.
-- [ ] **Automated GitHub PR Creation (`backend/prodpilot/pipeline/pr_opener.py`)**:
-  - Run Antigravity fixing loop in isolated git worktree: repro test Red $\rightarrow$ Green + full suite pass.
-  - Stage fix-forward canary on port 8001.
-  - Push branch `prodpilot-fix-<id>` to GitHub and open a Draft Pull Request with test evidence.
-- [ ] **10-Second Post-Deploy Watchdog & Auto-Revert (`backend/prodpilot/staging/deploy.py`)**:
-  - When approved, swap chosen build to production port 8000.
-  - Monitor `/health` for 10 seconds.
-  - If health check fails or errors occur, trigger immediate rollback to previous build and mark `AUTO_REVERTED`.
-  - Cap automatic remediation attempts at 1.
+### Stream B Tasks (Agent 2 - Laptop Agent Fixing, Context & Safety Guard):
+- [x] **Investigation & Root Cause Report Generator (`backend/prodpilot/pipeline/investigate.py`)**:
+  - Collects stack trace, `git blame` suspect commit, and PR review discussion.
+  - Generates structured RCA report (summary, severity, timeline, evidence, root cause, suspected commit, recommendation, confidence).
+- [x] **Recovery Decision & Rollback Staging (`backend/prodpilot/staging/recovery.py`)**:
+  - Evaluates rollback eligibility; stages clean revert canary on port 8002.
+- [x] **Automated GitHub PR Creation (`backend/prodpilot/pipeline/pr_opener.py`)**:
+  - Runs Antigravity fixing loop in isolated git worktree: repro test Red $\rightarrow$ Green + full suite pass.
+  - Stages fix-forward canary on port 8001.
+  - Pushes branch `prodpilot-fix-<id>` to GitHub and opens a Draft Pull Request with test evidence.
+- [x] **10-Second Post-Deploy Watchdog & Auto-Revert (`backend/prodpilot/staging/deploy.py`)**:
+  - When approved, promotes chosen build to production port 8000.
+  - Monitors `/health` for 10 seconds.
+  - If health check fails or errors occur, triggers immediate rollback to previous build and marks `AUTO_REVERTED`.
+  - Strictly caps automatic remediation attempts at 1 before escalating to human on-call.
+  - Verified with `scripts/test_watchdog_revert.py` (Exit Code 0)!
 
-### Stream C Tasks (Render Web Deploy, Cloudflare Tunnel & Telegram):
-- [ ] **Vite Web App Build & Render Static Site Config (`desktop/`)**:
-  - Configure `desktop/` to build for web deployment (`npm run build`).
-  - Add environment variable `VITE_API_URL` to point to the active Cloudflare Tunnel URL.
-  - Add `render.yaml` or static site build settings for one-click Render deployment.
-- [ ] **Mobile Incident Webpage (`/incidents/{id}`)**:
-  - Ensure the incident view is fully responsive for mobile screens.
-  - Render: Overview, Live Timeline (SSE), Evidence Drawer, Recovery Canaries (8001 vs 8002), and 1-tap mobile action buttons:
-    - **`[🚀 Approve & Deploy Fix]`**
-    - **`[⏪ Instant Rollback]`**
-    - **`[🛑 Take Over]`**
-- [ ] **Immediate Telegram Alert on Detection (`telegram/bot.py`)**:
-  - On Stage 1 (`DETECTED`), immediately send Telegram alert card with incident summary and direct link to the Render website (`https://prodpilot.onrender.com/incidents/{id}` or Cloudflare Tunnel URL).
-  - Do not wait for the investigation report to send the initial page.
-- [ ] **Cloudflare Tunnel Runner Script (`scripts/start-tunnel.sh`)**:
-  - Ensure persistent Cloudflare Tunnel forwards to `http://127.0.0.1:8765`.
+### Stream C Tasks (Agent 3 - Render Web Deploy, Cloudflare Tunnel & Telegram):
+- [x] **Purge Copilot Dead Views (`desktop/src/components/`)**:
+  - Deleted `SessionView.jsx`, `IssuesView.jsx`, `AutomationsView.jsx`, `CustomizeView.jsx`, and `discord_bot.py`.
+  - Streamlined navigation to: **Incidents**, **Telemetry & Logs**, and **Settings**.
+- [x] **Vite Web App Build & Render Static Site Config (`desktop/`)**:
+  - Configured `desktop/` for static web export with `VITE_API_URL` pointing to Cloudflare Tunnel URL.
+  - Added `desktop/render.yaml` and `RENDER_DEPLOY.md` for 1-click Render Static Site deployment.
+  - Verified `npm run build` generates clean production assets in 1.22s!
+- [x] **Mobile Incident Webpage (`/incidents/{id}`)**:
+  - Ensured incident detail view is fully responsive for mobile screens.
+  - Prominent 1-tap mobile action buttons: `[🚀 Approve & Deploy Fix]`, `[⏪ Instant Rollback]`, and `[🛑 Take Over]`.
+- [x] **Immediate Telegram Alert on Detection (`telegram/bot.py`)**:
+  - Sends immediate Telegram alert card on Stage 1 (`DETECTED`) with direct Render incident webpage link.
+  - Added inline `[⏪ Revert Commit (8002)]` button directly next to `[🚀 Deploy Fix (8001)]`.
+- [x] **Cloudflare Tunnel Runner Script (`scripts/start-tunnel.sh`)**:
+  - Persistent Cloudflare Tunnel forwarding to `http://127.0.0.1:8765`.
 
 ---
 
