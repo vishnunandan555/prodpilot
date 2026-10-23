@@ -33,8 +33,10 @@ from backend.prodpilot.db import (
     get_events,
     get_artifacts,
     record_approval,
+    save_artifact,
 )
 from backend.prodpilot.decide.rules import decide
+from backend.prodpilot.pipeline.brief import analyze_issue_readiness
 from backend.prodpilot.staging.deploy import DeployAdapter, generate_incident_report
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,43 @@ class RejectRequest(BaseModel):
 class FollowupRequest(BaseModel):
     instruction: str
     source: str = "desktop_ui"
+
+
+class IssueAnalyzeRequest(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    author: Optional[str] = "contributor"
+    repo: Optional[str] = "demo-prod"
+
+
+class IssueClarifyRequest(BaseModel):
+    comment: Optional[str] = None
+    questions: Optional[List[str]] = None
+    source: str = "desktop_ui"
+
+
+# Seed / cache for known issues and analyzed briefs
+ISSUE_BRIEF_CACHE: Dict[str, Dict[str, Any]] = {
+    "1": {
+        "title": "[BUG] Missing discount key in order payload causes 500 crash",
+        "body": "When calling POST /orders without a discount field, the service crashes with KeyError: discount.\n\nSteps to reproduce:\n1. POST /orders with payload: {\"items\": [{\"id\": \"1\", \"price\": 20.0}]}\n\nError log:\nTraceback (most recent call last):\n  File \"app.py\", line 8, in calculate_order\n    discount = order[\"discount\"]\nKeyError: 'discount'\n\nExpected behavior:\nEndpoint should safely default missing discount to 0 and return 20.0 instead of crashing.",
+        "author": "vishnunandan555",
+        "repo": "vishnunandan555/demo-prod",
+    },
+    "2": {
+        "title": "[CHORE] Refactor auth context and update dependencies",
+        "body": "We should probably clean up auth context sometime soon.",
+        "author": "vishnunandan555",
+        "repo": "vishnunandan555/care_app",
+    },
+    "3": {
+        "title": "[FEATURE] Create UI for MayFly Dashboard",
+        "body": "Create a very simple UI Dashboard for Linux, which will basically show a GUI equivalent for MayFly TUI Main Dashboard.\n\nReproduction:\nRun npm run dev to open GUI.\n\nError logs:\nNone\n\nExpected behavior:\nShow dashboard with CPU/RAM metrics.",
+        "author": "vishnunandan555",
+        "repo": "vishnunandan555/mayfly",
+    },
+}
+
 
 
 @app.on_event("startup")
@@ -424,3 +463,129 @@ def followup_incident(incident_id: str, body: FollowupRequest) -> Dict[str, Any]
     )
 
     return {"status": "FIXING", "attempt": 2, "incident_id": incident_id}
+
+
+@app.post("/issues/{issue_id}/analyze")
+def analyze_issue_endpoint(issue_id: str, body: Optional[IssueAnalyzeRequest] = None) -> Dict[str, Any]:
+    """8. Issue Readiness Gate: Analyzes issue text, evaluates readiness, and caches brief."""
+    # Look up issue data from request body or cache
+    issue_dict = {}
+    if body and (body.title or body.body):
+        issue_dict = {
+            "id": issue_id,
+            "title": body.title or f"Issue #{issue_id}",
+            "body": body.body or "",
+            "author": body.author or "contributor",
+            "repo": body.repo or "demo-prod",
+        }
+        ISSUE_BRIEF_CACHE[str(issue_id)] = issue_dict
+    elif str(issue_id) in ISSUE_BRIEF_CACHE:
+        issue_dict = ISSUE_BRIEF_CACHE[str(issue_id)]
+    else:
+        # Check if an incident exists with this ID
+        inc = get_incident(issue_id)
+        if inc:
+            issue_dict = {
+                "id": issue_id,
+                "title": f"Incident {issue_id}: {inc.get('service', 'service')}",
+                "body": f"Trace:\n{inc.get('trace') or ''}\nLogs:\n{inc.get('log_tail') or ''}",
+                "author": "watcher",
+                "repo": inc.get("service", "demo-prod"),
+            }
+        else:
+            issue_dict = {
+                "id": issue_id,
+                "title": f"Issue #{issue_id}",
+                "body": "",
+                "author": "contributor",
+                "repo": "demo-prod",
+            }
+
+    # Run readiness analysis
+    analysis = analyze_issue_readiness(issue_dict)
+    ISSUE_BRIEF_CACHE[f"{issue_id}_analysis"] = analysis
+
+    # Persist brief to DB artifacts
+    try:
+        artifact_id = f"art-issue-{issue_id}-{os.urandom(3).hex()}"
+        save_artifact(
+            artifact_id=artifact_id,
+            run_id=None,
+            incident_id=issue_id,
+            kind="issue_brief",
+            content=json.dumps(analysis, indent=2),
+        )
+    except Exception as e:
+        logger.debug(f"Artifact persistence note for issue {issue_id}: {e}")
+
+    return {
+        "issue_id": str(issue_id),
+        "ready": analysis["ready"],
+        "clarifying_questions": analysis["clarifying_questions"],
+        "task_summary": analysis["task_summary"],
+        "suspected_area": analysis["suspected_area"],
+        "draft_comment": analysis["draft_comment"],
+    }
+
+
+@app.post("/issues/{issue_id}/clarify")
+def clarify_issue_endpoint(issue_id: str, body: Optional[IssueClarifyRequest] = None) -> Dict[str, Any]:
+    """9. Issue Clarification: Posts clarifying questions back to GitHub/DB."""
+    cached_analysis = ISSUE_BRIEF_CACHE.get(f"{issue_id}_analysis") or {}
+
+    comment = None
+    questions = []
+    source = "desktop_ui"
+
+    if body:
+        comment = body.comment
+        questions = body.questions or []
+        source = body.source or "desktop_ui"
+
+    if not comment and cached_analysis:
+        comment = cached_analysis.get("draft_comment")
+    if not questions and cached_analysis:
+        questions = cached_analysis.get("clarifying_questions", [])
+
+    if not comment:
+        comment = f"Clarification requested for issue #{issue_id}: please provide reproduction steps and logs."
+
+    # Persist clarification into DB artifacts
+    try:
+        artifact_id = f"art-clarify-{issue_id}-{os.urandom(3).hex()}"
+        save_artifact(
+            artifact_id=artifact_id,
+            run_id=None,
+            incident_id=issue_id,
+            kind="issue_clarification",
+            content=comment,
+        )
+    except Exception as e:
+        logger.debug(f"Artifact clarification persistence note for issue {issue_id}: {e}")
+
+    # Emit event if related to an incident
+    try:
+        log_event(
+            run_id=None,
+            incident_id=issue_id,
+            stage="UNDERSTAND",
+            kind="clarification_requested",
+            payload={
+                "issue_id": issue_id,
+                "questions": questions,
+                "comment": comment,
+                "source": source,
+            },
+        )
+    except Exception as e:
+        logger.debug(f"Event logging note: {e}")
+
+    return {
+        "status": "posted",
+        "issue_id": str(issue_id),
+        "posted_to": "db",
+        "comment": comment,
+        "clarifying_questions": questions,
+        "source": source,
+    }
+

@@ -6,7 +6,7 @@ from backend.prodpilot.pipeline.worktree import (
     WorktreeContext,
     WorktreeManager,
 )
-from backend.prodpilot.pipeline.brief import create_brief, extract_traceback_info
+from backend.prodpilot.pipeline.brief import analyze_issue_readiness, create_brief, extract_traceback_info
 from backend.prodpilot.pipeline.repro_runner import (
     DeterministicVerifier,
     PipelineResult,
@@ -20,6 +20,7 @@ __all__ = [
     "WorktreeManager",
     "create_brief",
     "extract_traceback_info",
+    "analyze_issue_readiness",
     "DeterministicVerifier",
     "PipelineResult",
     "TestResult",

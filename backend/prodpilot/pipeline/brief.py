@@ -121,3 +121,116 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     return brief
+
+
+def analyze_issue_readiness(issue_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluates whether an incoming GitHub issue has sufficient context for autonomous reproduction.
+
+    Checks:
+    1. Reproduction steps (commands, curl requests, endpoints, payloads, or clear steps).
+    2. Error logs (traceback, exception type, HTTP 500, crash details, or service log snippet).
+    3. Expected behavior (expected return values, status codes, or safe outcome).
+
+    Returns:
+        dict: {
+            "ready": bool,
+            "clarifying_questions": List[str],
+            "task_summary": str,
+            "suspected_area": str,
+            "draft_comment": str
+        }
+    """
+    title = str(issue_data.get("title") or "").strip()
+    body = str(
+        issue_data.get("body")
+        or issue_data.get("description")
+        or issue_data.get("content")
+        or issue_data.get("text")
+        or ""
+    ).strip()
+    author = issue_data.get("author") or "contributor"
+    full_text = f"{title}\n{body}".strip()
+    lower_text = full_text.lower()
+
+    # 1. Check reproduction steps
+    repro_indicators = [
+        "steps to reproduce", "reproduction steps", "to reproduce",
+        "how to reproduce", "repro:", "step 1", "curl ", "post /", "get /",
+        "put /", "delete /", "payload", "when calling", "when sending",
+        "steps:", "reproduce", "trigger"
+    ]
+    has_repro = any(k in lower_text for k in repro_indicators)
+
+    # 2. Check error logs / trace
+    error_indicators = [
+        "traceback", "stack trace", "stacktrace", "error log", "error message",
+        "error:", "exception:", "keyerror", "valueerror", "typeerror",
+        "attributeerror", "runtimeerror", "500 internal server error",
+        "status 500", "status code 500", "http 500", "crashed with",
+        "crash:", "service.log", "failed with exception", "logs:"
+    ]
+    has_error = any(k in lower_text for k in error_indicators)
+
+    # 3. Check expected behavior
+    expected_indicators = [
+        "expected behavior", "expected outcome", "expected:", "expected response",
+        "should return", "should be", "should not", "instead of",
+        "what should happen", "should safely", "expected that", "expected to"
+    ]
+    has_expected = any(k in lower_text for k in expected_indicators)
+
+    clarifying_questions: List[str] = []
+    if not has_repro:
+        clarifying_questions.append(
+            "Could you provide step-by-step reproduction instructions or a minimal payload (e.g. sample JSON or curl command) to trigger the issue?"
+        )
+    if not has_error:
+        clarifying_questions.append(
+            "Could you provide the exact error message, stack trace, or server log snippet when the failure occurs?"
+        )
+    if not has_expected:
+        clarifying_questions.append(
+            "Could you clarify the expected behavior or response status/payload when the request is valid?"
+        )
+
+    ready = bool(has_repro and has_error and has_expected)
+
+    # Suspected area extraction
+    suspected_area = "app.py"
+    tb_info = extract_traceback_info(full_text)
+    if tb_info.get("file"):
+        if tb_info.get("line"):
+            suspected_area = f"{tb_info['file']}:{tb_info['line']}"
+        else:
+            suspected_area = tb_info["file"]
+    else:
+        file_match = re.search(r'([a-zA-Z0-9_\-\./]+\.py)(?::(\d+))?', full_text)
+        if file_match:
+            f = file_match.group(1)
+            line = file_match.group(2)
+            suspected_area = f"{f}:{line}" if line else f
+        elif "order" in lower_text:
+            suspected_area = "app.py:calculate_order"
+
+    task_summary = title if title else (body[:120] + "..." if len(body) > 120 else body)
+
+    draft_comment = ""
+    if not ready:
+        questions_markdown = "\n".join(f"- {q}" for q in clarifying_questions)
+        draft_comment = (
+            f"Hi @{author}! 👋\n\n"
+            f"Thank you for reporting this issue. To help ProdPilot autonomously reproduce, "
+            f"verify, and fix this issue, could you please clarify the following details?\n\n"
+            f"{questions_markdown}\n\n"
+            f"Once these details are provided, our autonomous pipeline will create a minimal "
+            f"reproduction test and verify the fix."
+        )
+
+    return {
+        "ready": ready,
+        "clarifying_questions": clarifying_questions,
+        "task_summary": task_summary,
+        "suspected_area": suspected_area,
+        "draft_comment": draft_comment,
+    }
+
