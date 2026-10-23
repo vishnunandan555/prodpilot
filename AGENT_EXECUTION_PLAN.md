@@ -1,121 +1,120 @@
-# ProdPilot Multi-Agent Execution Plan & Runbook
+# ProdPilot 3-Agent Execution Plan & Runbook
 
-This document defines the strict multi-agent parallel operating procedure for ProdPilot.
-Each agent operates in its own isolated git worktree / terminal window with hard directory boundaries.
-
----
-
-## 1. Ground Rules (Zero Conflicts)
-
-1. **Folder Ownership**:
-   - **Stream A (The Brain)**: `backend/prodpilot/pipeline/`, `agents/`, `staging/`, `decide/`, `api/`, `db.py`
-   - **Stream B (The Body/Comms)**: `demo-prod/` (separate git repo), `backend/prodpilot/watcher/`, `telegram/`, `desktop/`, `scripts/`
-2. **Frozen Contracts**: All interfaces live in `contracts/`. No agent may edit files in `contracts/` without approval.
-3. **Mock-Driven Decoupling**:
-   - Stream A builds against `contracts/incident.example.json` without waiting for Stream B's watcher.
-   - Stream B builds Telegram and UI against mock database rows and SQLite without waiting for Stream A's LLM pipeline.
-4. **Merge Only at Gates**:
-   - Work happens in branches `stream-a` and `stream-b`.
-   - Merges happen at Gate 0, Gate 1, Gate 2, and Gate 3.
+This document defines the 3-agent parallel operating procedure for ProdPilot.
+Each agent operates in its own isolated git worktree / repo / terminal window with strict boundaries.
 
 ---
 
-## 2. Worktree Setup (Execute Once in Terminal)
-
-Run these commands in your bash terminal to create isolated worktrees for the two agent windows:
-
-```bash
-# 1. Commit Phase 0 contracts to main
-git add .
-git commit -m "chore(contracts): freeze Phase 0 contracts, db schema and directory layout"
-
-# 2. Create branches
-git branch -f stream-a main
-git branch -f stream-b main
-
-# 3. Create independent worktrees outside the main repo folder
-git worktree add ../prodpilot-a stream-a
-git worktree add ../prodpilot-b stream-b
-```
-
-- **Window 1 (Agent 1 - Stream A)**: Open directory `../prodpilot-a`
-- **Window 2 (Agent 2 - Stream B)**: Open directory `../prodpilot-b`
-
----
-
-## 3. Phase Timeline & Gates
+## 1. Multi-Agent Architecture & Isolation (Zero Conflicts)
 
 ```
-Phase 0 (0-2h)   ──► Gate 0: SDK spike passes, Telegram hello button works, demo-prod crashed & reset
-Phase 1 (2-8h)   ──► Gate 1: Incident auto-captured, CLI pipeline generates verified repro test & fix
-Phase 2 (8-14h)  ──► Gate 2: (DEMO FLOOR) Crash service -> Phone Telegram message -> Tap Deploy Fix -> Service healthy
-Phase 3 (14-19h) ──► Gate 3: Desktop UI & live SSE stream drive the same incident resolution
-Phase 4 (19-22h) ──► Gate 4: 3 clean consecutive runs from reset without manual code edits
+┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
+│     Agent 1: Stream A           │   │     Agent 2: Stream B           │   │     Agent 3: Stream C           │
+│     (The Brain / Engine)        │   │     (The Body & UI)             │   │     (Hosted Telegram Bot)       │
+├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
+│ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Folder: telegram-bot/         │
+│ • Branch: stream-a              │   │ • Branch: stream-b              │   │   (Gitignored separate repo)    │
+│ • Pipeline & Agent loop         │   │ • demo-prod (buggy service)     │   │ • python-telegram-bot           │
+│ • Repro-test & Verifier         │   │ • Watcher + Git Blame           │   │ • Inline Action Buttons         │
+│ • Staging & Deploy Adapter      │   │ • Reset & trigger scripts       │   │ • Visihot Server Deploy files   │
+│ • FastAPI & SSE API (port 8765) │   │ • Electron + React Dashboard    │   │ • Calls ProdPilot REST API      │
+└─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
 ```
+
+### Strict Folder Boundaries:
+| Agent | Directory / Scope Owned | Strictly Forbidden |
+|---|---|---|
+| **Agent 1** (Brain) | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`backend/prodpilot/decide/`<br>`backend/prodpilot/api/`<br>`backend/prodpilot/db.py` | `demo-prod/`<br>`backend/prodpilot/watcher/`<br>`desktop/`<br>`scripts/`<br>`telegram-bot/` |
+| **Agent 2** (Body & UI) | `demo-prod/` (separate git repo)<br>`backend/prodpilot/watcher/`<br>`desktop/` (Electron + React)<br>`scripts/` | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`telegram-bot/` |
+| **Agent 3** (Telegram) | `telegram-bot/` (cloned or created inside workspace, gitignored by main repo) | Any file inside `backend/prodpilot/` or `contracts/` |
 
 ---
 
-## 4. Agent 1 (Stream A: The Brain) Execution Prompts
+## 2. Directory & Git Worktrees
 
-### Agent 1 - Prompt for Phase 0 & Phase 1
-> **Working Directory**: `../prodpilot-a`  
-> **Copy-paste this prompt into Agent 1's window:**
+The workspace is configured as follows:
+- Main Repo: `/home/vishnunandan555/Projects/prodpilot` (on `main`)
+- Window 1: `/home/vishnunandan555/Projects/prodpilot-a` (worktree on `stream-a`)
+- Window 2: `/home/vishnunandan555/Projects/prodpilot-b` (worktree on `stream-b`)
+- Window 3: `/home/vishnunandan555/Projects/prodpilot/telegram-bot` (standalone git repo, gitignored)
+
+---
+
+## 3. Prompts for the 3 Agent Windows
+
+Copy-paste the exact prompt into each respective agent terminal / window:
+
+---
+
+### Window 1: Agent 1 (Stream A – The Brain / Engine)
+**Directory**: `/home/vishnunandan555/Projects/prodpilot-a`  
+**Git Branch**: `stream-a`
 
 ```markdown
 You are Agent 1 (Stream A - The Brain) for ProdPilot.
-Your workspace is `prodpilot-a`. Your job is to build the backend pipeline, agent loop, and deterministic verifier.
+Your workspace is `prodpilot-a`. Your job is to build the backend pipeline, agent loop, deterministic verifier, staging canaries, and the FastAPI/SSE server.
 
 STRICT BOUNDARY:
-- You ONLY work in `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/db.py`, and test scripts.
-- DO NOT touch or create files in `demo-prod/`, `backend/prodpilot/watcher/`, `backend/prodpilot/telegram/`, or `desktop/`.
-- Contracts in `contracts/` are FROZEN. Read `contracts/schema.sql`, `contracts/incident.example.json`, and `contracts/agent_interface.py`.
+- You ONLY work in `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, `backend/prodpilot/decide/`, `backend/prodpilot/api/`, and `backend/prodpilot/db.py`.
+- DO NOT touch `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, or `telegram-bot/`.
+- Contracts in `contracts/` are FROZEN. Read `contracts/schema.sql`, `contracts/incident.example.json`, `contracts/api.md`, and `contracts/agent_interface.py`.
 
 TASKS TO EXECUTE:
-1. Phase 0 Spike:
-   - Check if `google-antigravity` or `google-genai` is available.
-   - Implement `backend/prodpilot/agents/antigravity_adapter.py` conforming to `contracts/agent_interface.py`.
-   - Provide a fallback tool loop in `backend/prodpilot/agents/gemini_adapter.py` that supports tools: `read_file`, `write_file`, `list_dir`, `grep_search`. Gate/restrict arbitrary shell execution.
+1. Agent Adapter (`backend/prodpilot/agents/`):
+   - Implement `antigravity_adapter.py` conforming to `contracts/agent_interface.py`.
+   - Provide fallback `gemini_adapter.py` supporting `read_file`, `write_file`, `list_dir`, `grep_search`. Gate arbitrary shell commands so verifier remains deterministic.
 
 2. Worktree Manager (`backend/prodpilot/pipeline/worktree.py`):
-   - Helper to create a temporary git worktree for a target repo (e.g. `git worktree add <temp_dir> HEAD`) and cleanly remove it (`git worktree remove --force <temp_dir>`).
+   - Helper to create temporary git worktrees (`git worktree add <dir> HEAD`) and cleanly remove them.
 
-3. Context Brief Step (`backend/prodpilot/pipeline/brief.py`):
-   - Given an incident JSON (like `contracts/incident.example.json`), generate structured JSON: summary, suspect_area, suspect_commit_analysis, proposed_repro_approach.
+3. Context Brief & Repro-First Pipeline (`backend/prodpilot/pipeline/`):
+   - `brief.py`: Extract structured brief from incident JSON (suspect area, suspect commit analysis).
+   - `repro_runner.py`:
+     1. Agent writes minimal reproduction test (`tests/test_repro.py`).
+     2. Verifier runs test: MUST FAIL on baseline code (if it passes, re-prompt).
+     3. Agent modifies code in worktree to fix bug.
+     4. Verifier runs repro test AND full test suite.
+     5. Bounded retry: max 2 attempts on test failure with error logs fed back to agent.
 
-4. Repro-First Pipeline (`backend/prodpilot/pipeline/repro_runner.py`):
-   - Step 1: Instruct agent to write a minimal failing reproduction test (e.g. `tests/test_repro.py`) based on traceback/logs.
-   - Step 2: Deterministic Verifier runs `pytest tests/test_repro.py`. It MUST FAIL on baseline code. If it passes, discard and reprompt.
-   - Step 3: Agent edits application code to fix the bug.
-   - Step 4: Deterministic Verifier runs `pytest tests/test_repro.py` AND the full test suite.
-   - Step 5: If full suite fails, feed error back to agent (max 2 retries).
+4. Staging & Deploy Adapter (`backend/prodpilot/staging/`):
+   - `manager.py`:
+     - Fix-forward: Runs patched build on side port 8001, verifies canary `http://127.0.0.1:8001/health`.
+     - Rollback: In a worktree, runs `git revert <suspect_commit>` without committing, runs tests, starts on side port 8002, verifies canary `http://127.0.0.1:8002/health`.
+   - `deploy.py`: On approval, swaps build onto production port 8000, checks health for 10s, auto-reverts if health fails.
 
-5. CLI Entrypoint (`backend/prodpilot/pipeline/cli.py`):
-   - Run: `python -m prodpilot.pipeline.cli --incident contracts/incident.example.json --repo <repo_path>`
-   - Print proof: Test FAILED before fix, PASSED after fix, and output diff.
+5. Decision Layer (`backend/prodpilot/decide/rules.py`):
+   - `decide(incident, staging_status)` -> recommendations ("fix_forward" vs "rollback"), probabilities, and reason.
+
+6. FastAPI REST & SSE Server (`backend/prodpilot/api/`):
+   - Run on port 8765 matching `contracts/api.md`:
+     - `GET /health`
+     - `GET /incidents`
+     - `GET /incidents/{id}`
+     - `GET /incidents/{id}/events` (SSE stream from `run_events`)
+     - `POST /incidents/{id}/approve` (executes deploy adapter for "fix_forward" or "rollback")
+     - `POST /incidents/{id}/reject`
 
 EXIT CHECK:
-Run the CLI against a sample test repository and prove that a failing test is written first, verified failing, patched, and verified passing. Commit all code to `stream-a`.
+Run a complete test script: create mock incident in DB -> run pipeline -> stage on 8001/8002 -> trigger approval via API endpoint -> verify clean deployment. Commit all code to `stream-a`.
 ```
 
 ---
 
-## 5. Agent 2 (Stream B: The Body & Comms) Execution Prompts
-
-### Agent 2 - Prompt for Phase 0 & Phase 1
-> **Working Directory**: `../prodpilot-b`  
-> **Copy-paste this prompt into Agent 2's window:**
+### Window 2: Agent 2 (Stream B – The Body / Fake Production & UI)
+**Directory**: `/home/vishnunandan555/Projects/prodpilot-b`  
+**Git Branch**: `stream-b`
 
 ```markdown
-You are Agent 2 (Stream B - The Body & Comms) for ProdPilot.
-Your workspace is `prodpilot-b`. Your job is to build the fake production service (`demo-prod`), the health watcher with git blame capture, and the Telegram bot.
+You are Agent 2 (Stream B - The Body & UI) for ProdPilot.
+Your workspace is `prodpilot-b`. Your job is to build the fake production service (`demo-prod`), demo control scripts, the health watcher with git blame capture, and the Electron+React dashboard.
 
 STRICT BOUNDARY:
-- You ONLY work in `demo-prod/`, `backend/prodpilot/watcher/`, `backend/prodpilot/telegram/`, and `scripts/`.
-- DO NOT edit `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, or `contracts/`.
-- Use `backend/prodpilot/db.py` to insert incidents and log events.
+- You ONLY work in `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, and `scripts/`.
+- DO NOT touch `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, or `telegram-bot/`.
+- Use `backend/prodpilot/db.py` to insert incidents into SQLite.
 
 TASKS TO EXECUTE:
-1. Build `demo-prod` Service (`../demo-prod` or subfolder `demo-prod/`):
+1. Build `demo-prod` Service (`demo-prod/`):
    - A standalone FastAPI/Flask microservice (Order Total service).
    - Initialize as a git repo with 5 realistic commits:
      1: init order api
@@ -124,106 +123,117 @@ TASKS TO EXECUTE:
      4: add authentication middleware
      5: feat: add discount support to order checkout (PLANTED BUG: accessing order['discount'] directly causing KeyError on standard orders without discounts).
    - Endpoints: `GET /health`, `POST /orders`, `GET /orders/history`.
-   - Tests: `pytest` test suite covering basic orders (which pass on commit 4, fail on bad payload).
+   - Tests: `pytest` suite covering standard orders.
    - Logging: writes to `service.log` with timestamp, level, tracebacks.
 
 2. Demo Scripts (`scripts/`):
-   - `scripts/trigger-crash.sh`: Sends a POST request without `discount` key, causing an unhandled 500 error and healthcheck failure.
+   - `scripts/trigger-crash.sh`: Sends POST request without `discount` key, causing an unhandled 500 error and healthcheck failure.
    - `scripts/reset-demo.sh`: Resets `demo-prod` git repo back to the buggy commit and restarts the service on port 8000.
 
-3. Health Watcher & Incident Capture (`backend/prodpilot/watcher/watcher.py`):
+3. Health Watcher & Git Blame Capture (`backend/prodpilot/watcher/watcher.py`):
    - Polls `GET http://127.0.0.1:8000/health` every 5 seconds.
-   - 2 consecutive failures OR process death triggers incident capture.
+   - 2 consecutive failures OR process exit triggers incident creation.
    - Capture engine:
-     - Extracts the traceback from `service.log`.
-     - Grabs last 200 lines of `service.log`.
+     - Extracts traceback from `service.log`.
+     - Pulls last 200 lines of `service.log`.
      - Runs `git log -n 5 --oneline` in `demo-prod`.
-     - Runs `git blame` on the traceback file/line in `demo-prod` to identify `suspect_commit`, author, and minutes elapsed since commit.
+     - Runs `git blame` on traceback file/line in `demo-prod` to identify `suspect_commit`, author, and minutes elapsed since commit.
    - Saves incident to SQLite via `backend/prodpilot/db.py:create_incident(...)`.
 
-4. Telegram Bot Skeleton (`backend/prodpilot/telegram/bot.py`):
-   - Uses `python-telegram-bot` with long polling.
-   - Reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from environment.
-   - Sends a test alert message with inline buttons: `[Deploy Fix]`, `[Rollback]`, `[Reject]`.
-   - Clicking a button prints the callback data.
+4. Desktop Dashboard (`desktop/`):
+   - Electron shell wrapping React (Vite + React + Vanilla CSS or Tailwind).
+   - Talks to backend API at `http://127.0.0.1:8765`.
+   - Screens:
+     - Incident List: Shows open incidents, status badges.
+     - Incident View:
+       - Incident Brief card & suspect commit badge.
+       - Live Event Timeline (subscribing to `/incidents/{id}/events` SSE).
+       - Before / After test evidence card.
+       - Diff viewer for generated patch.
+       - Decision Recommendation Card (probabilities for fix-forward vs rollback).
+       - `[Deploy Fix]` and `[Rollback]` approval buttons calling `POST /incidents/{id}/approve`.
 
 EXIT CHECK:
-1. Start `demo-prod`, run `trigger-crash.sh`, ensure the watcher detects failure within 10s and writes a populated incident row to SQLite with the suspect commit identified.
-2. Run `python -m prodpilot.telegram.bot` and receive an inline button on Telegram.
-Commit all code to `stream-b`.
+Start `demo-prod`, run `trigger-crash.sh`, verify watcher creates populated incident row in SQLite with suspect commit within 10s. Start desktop app to display incident view. Commit all code to `stream-b`.
 ```
 
 ---
 
-## 6. Phase 2 Prompts (Staging, Decisions, Telegram Action Loop)
+### Window 3: Agent 3 (Stream C – The Hosted Telegram Bot)
+**Directory**: `/home/vishnunandan555/Projects/prodpilot/telegram-bot` (or `../prodpilot-telegram-bot`)  
+**Type**: Standalone Git Repo (Server-Ready for Visihot Hosting)
 
-### Agent 1 - Prompt for Phase 2 (Staging & Decisions)
 ```markdown
-You are Agent 1 (Stream A). Goal: Phase 2 Staging & Deploy Adapter.
-Workspace: `../prodpilot-a`
+You are Agent 3 (Stream C - Hosted Telegram Bot) for ProdPilot.
+Your workspace is `telegram-bot/`. This is a standalone, server-ready Python project that will run on a hosted server (Visihot VPS) or locally to provide phone control over production incidents.
 
-TASKS:
-1. Staging Manager (`backend/prodpilot/staging/manager.py`):
-   - Fix-forward staging: Runs the patched code in a worktree on side port 8001. Polls `http://127.0.0.1:8001/health` to confirm canary health.
-   - Rollback staging: In a separate worktree, runs `git revert <suspect_commit>` without committing. Runs tests and launches on side port 8002. Polls `http://127.0.0.1:8002/health`.
-2. Decision Layer (`backend/prodpilot/decide/rules.py`):
-   - `decide(incident_data, staging_status)` -> returns recommendation ("fix_forward" vs "rollback"), probabilities, and reason.
-   - Rules: If patch diff <= 10 lines and repro test passes -> fix_forward (85%). If diff is massive or touches migrations/auth -> rollback.
-3. Deploy Adapter (`backend/prodpilot/staging/deploy.py`):
-   - On approval ("fix_forward" or "rollback"):
-     - Shuts down production port 8000 process.
-     - Deploys the selected build to production port 8000.
-     - Monitors health for 10s. If health fails, automatically triggers emergency rollback!
-   - Saves final Incident Report in markdown (`artifacts/` table).
+STRICT BOUNDARY:
+- You ONLY work inside `telegram-bot/`. This folder is gitignored by the main ProdPilot repository.
+- You do NOT modify files in `backend/` or `contracts/`.
+- You communicate with ProdPilot exclusively over HTTP REST and SSE APIs defined in `contracts/api.md` (default: `http://127.0.0.1:8765` or configured via `PRODPILOT_API_URL`).
+
+TASKS TO EXECUTE:
+1. Standalone Telegram Bot Architecture (`telegram-bot/`):
+   - Build with `python-telegram-bot` (v20+ with async/await) or `aiogram`.
+   - Configuration via `.env` / environment variables:
+     - `TELEGRAM_BOT_TOKEN`: Bot token from @BotFather.
+     - `TELEGRAM_ALLOWED_CHAT_ID`: Restrict bot strictly to your own chat ID for security.
+     - `PRODPILOT_API_URL`: URL to ProdPilot backend (e.g. `http://127.0.0.1:8765` or tunnel URL).
+     - `POLL_INTERVAL`: Interval to poll for incidents needing approval (or listen to SSE `/incidents/{id}/events`).
+
+2. Incident Notification Card:
+   - When an incident reaches `AWAITING_APPROVAL`:
+     - Send formatted Telegram message with Markdown/HTML:
+       - 🚨 **PRODUCTION INCIDENT DETECTED**
+       - **Service**: `demo-prod`
+       - **Root Cause**: `KeyError: 'discount'` in `app.py:45`
+       - **Suspect Commit**: `a1b2c3d` by Vishnu Nandan (15 min ago)
+       - **Evidence**: Repro test failed before fix, passed after. 100% test suite green.
+       - **Canary Status**: Staged Fix (Port 8001: 🟢 Healthy) | Staged Rollback (Port 8002: 🟢 Healthy)
+       - **Recommendation**: Fix-Forward (85% confidence) vs Rollback (15%)
+     - Inline Keyboard Buttons:
+       - `[🚀 Deploy Fix (8001)]` (callback: `approve_fix_<id>`)
+       - `[⏪ Rollback (8002)]` (callback: `approve_rollback_<id>`)
+       - `[❌ Reject]` (callback: `reject_<id>`)
+
+3. Interactive Button Actions:
+   - When user taps `[🚀 Deploy Fix]`:
+     - Call `POST ${PRODPILOT_API_URL}/incidents/{id}/approve` with `{"action": "fix_forward", "source": "telegram"}`.
+     - Update message to show "⏳ Deploying fix to port 8000...".
+     - When API responds ok: Edit message to "✅ **PROD RESTORED** - Healthcheck 200 OK. Fix deployed successfully."
+   - When user taps `[⏪ Rollback]`:
+     - Call `POST .../approve` with `{"action": "rollback", "source": "telegram"}`.
+     - Update message to show "✅ **ROLLED BACK** - Reverted suspect commit. Healthcheck 200 OK."
+
+4. Telegram Commands:
+   - `/start`: Welcome message with current connection status to ProdPilot.
+   - `/status`: Queries `GET /health` and `GET /incidents` to show active incident status.
+   - `/logs`: Fetches last 20 lines of service log for the active incident.
+   - `/report`: Sends the markdown incident report summary.
+
+5. Server Hosting Package (For Visihot Deployment):
+   - `Dockerfile`: Minimal Python 3.11/3.12 alpine or slim container.
+   - `docker-compose.yml`: For easy deployment on Visihot VPS.
+   - `requirements.txt`: `python-telegram-bot`, `httpx`, `python-dotenv`.
+   - `.env.example`: Template for credentials.
+   - `README.md`: Clear setup guide and deploy instructions for Visihot.
+
+6. Mock API Mode for Development:
+   - Include a lightweight mock server or mock mode (`python bot.py --mock`) so you can test notifications and button taps immediately without waiting for Agent 1.
 
 EXIT CHECK:
-Run test script that stages both builds on 8001 and 8002, produces a recommendation, and verifies the deploy adapter swaps the ports cleanly. Commit to `stream-a`.
-```
-
-### Agent 2 - Prompt for Phase 2 (Telegram Approval & End-to-End Gate 2)
-```markdown
-You are Agent 2 (Stream B). Goal: Complete Gate 2 (Demo Floor: Phone tap restores prod).
-Workspace: `../prodpilot-b`
-
-TASKS:
-1. Wire Telegram Bot (`backend/prodpilot/telegram/bot.py`) to incident events:
-   - When an incident reaches `AWAITING_APPROVAL`, send message with:
-     - Root Cause & Suspect Commit info.
-     - Recommendation card with probability.
-     - Inline buttons: `[Deploy Fix (Canary OK: 8001)]` and `[Rollback (Canary OK: 8002)]`.
-2. When the user taps a button on Telegram:
-   - Call the approval logic (or deploy adapter) to execute the deploy.
-   - Send confirmation message to Telegram: "Production restored successfully! Health: 200 OK. Report attached."
-3. Add Telegram commands `/status` (shows health) and `/logs` (shows last 20 log lines).
-
-EXIT CHECK (GATE 2 - DEMO FLOOR):
-1. Crash `demo-prod` with `trigger-crash.sh`.
-2. Watch phone receive Telegram incident alert with Deploy/Rollback buttons.
-3. Tap Deploy Fix on phone.
-4. Verify `demo-prod` on port 8000 is healthy again and Telegram receives confirmation.
-Commit to `stream-b`.
+Run `python bot.py --mock` (or against live API), verify the bot sends the interactive incident card with Deploy and Rollback buttons to your Telegram chat, and tapping the button confirms the action.
 ```
 
 ---
 
-## 7. Gate Merging Runbook
+## 4. Gate Merging Protocol
 
-When a Phase finishes, execute this sequence in the main repo:
-
+When Agent 1 and Agent 2 finish their Phase 1 tasks:
 ```bash
-# In /home/vishnunandan555/Projects/prodpilot:
-git checkout main
-
-# Merge Stream A
-git merge stream-a -m "merge: Stream A Phase complete"
-
-# Merge Stream B
-git merge stream-b -m "merge: Stream B Phase complete"
-
-# Tag the gate
+# In /home/vishnunandan555/Projects/prodpilot (main)
+git merge stream-a -m "merge: Stream A Phase 1 complete"
+git merge stream-b -m "merge: Stream B Phase 1 complete"
 git tag gate-1-passed
-
-# Push or update worktrees for next phase
-cd ../prodpilot-a && git rebase main
-cd ../prodpilot-b && git rebase main
 ```
+Agent 3's repo (`telegram-bot/`) runs independently on its Visihot server or locally and needs no git merging into `main`.
