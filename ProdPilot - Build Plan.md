@@ -1,119 +1,132 @@
 # ProdPilot - Build Plan
 
-Realm Hack 2026 | Deadline: Tomorrow, 11:00 AM | Vishnu Nandan
+**Realm Hack 2026 | Deadline: Tomorrow, 11:00 AM (24 Oct 2026) | Vishnu Nandan**  
+**Version**: 2.0 (Transformed Architecture & Execution Plan)
 
-> **Current Time**: Friday, 4:07 PM (23 Oct 2026)  
+> **Current Time**: Friday, 6:20 PM (23 Oct 2026)  
 > **Submission Deadline**: Saturday, 11:00 AM (24 Oct 2026)  
-> **Total Time Remaining**: **~19 Hours (18h 53m)**
-
-Build in six phases across three decoupled parallel streams. Each phase ends at a verified gate; do not start the next phase until the gate passes. The demo floor is Gate 2: crash the service, tap Deploy on your phone, the service is healthy again. Everything after Gate 2 is a bonus.
+> **Total Time Remaining**: **~16.5 Hours**
 
 ---
 
-## 1. Timeline & Phase Schedule (19-Hour Countdown)
+## 1. Timeline & Phase Schedule (16.5-Hour Countdown)
 
 | Phase & Timeline | Duration | Goal | Gate | Status |
 |---|---|---|---|---|
-| **Phase 0: Setup & Spikes**<br>*(Passed)* | Completed | SDK works, Telegram talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
-| **Phase 1: Core Pipeline**<br>*(Passed)* | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
-| **Phase 2: Staging, Orchestrator, Telegram**<br>*(Passed)* | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2**<br>*(Demo Floor)* | ✅ **PASSED (Tag: `gate-2-passed`)** |
-| **Phase 3: Copilot Desktop & Issue Readiness**<br>*(Passed)* | Completed | Pixel-accurate GitHub Copilot Linux UI, Issue-to-PR readiness gate, unified runner daemon | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
-| **Phase 4: Rehearsal & Sponsor Hardening**<br>*(5:20 PM – 9:30 PM)* | **4.0 hours** | 3 clean runs in a row; backup demo recording; Adaption AI eval | **Gate 4** | 🟡 **IN PROGRESS (ACTIVE)** |
-| **Sleep / Buffer Window**<br>*(1:00 AM – 7:00 AM)* | **6.0 hours** | Team rest & buffer time | — | ⚪ Scheduled |
-| **Phase 5: Freeze, Backup Video & Pitch**<br>*(7:00 AM – 9:30 AM)* | **2.5 hours** | Record 3-min backup video, polish pitch slides, rehearse demo | **Done** | ⚪ Queued |
-| **Final Submission Freeze**<br>*(9:30 AM – 11:00 AM)* | **1.5 hours** | Final clean demo run, Devfolio submission, project freeze | **Ship** | ⚪ Queued |
+| **Phase 0: Setup & Spikes** | Completed | SDK verified, Telegram bot talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
+| **Phase 1: Core Pipeline** | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
+| **Phase 2: Staging, Orchestrator, Telegram** | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2** | ✅ **PASSED (Tag: `gate-2-passed`)** |
+| **Phase 3: Desktop Base & Daemon Runner** | Completed | Desktop Mission Control base, unified runner daemon, branding unified | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
+| **Phase 4: Platform Hardening & Ingestion Tier**<br>*(6:30 PM – 1:30 AM)* | **7.0 hours** | Render log ingestion, Adaption AI triage, Firecrawl context, mobile incident web page, 10s auto-revert watchdog | **Gate 4** | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(1:30 AM – 3:30 AM)* | **2.0 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video | **Gate 5**<br>*(Freeze)* | ⚪ Queued |
+| **Rest & Buffer Window**<br>*(3:30 AM – 8:00 AM)* | **4.5 hours** | Rest & sleep buffer (prevents demo-day fatigue) | — | ⚪ Scheduled |
+| **Phase 6: Pitch Slides & Devfolio Submit**<br>*(8:00 AM – 11:00 AM)* | **3.0 hours** | Fresh clone dry-run, pitch deck polish, Devfolio submission freeze | **Ship** | ⚪ Queued |
 
 ---
 
-## 2. Architecture & Stream Division (Zero Conflicts)
+## 2. Architecture & Workstream Division
 
 ```
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│     Stream A (The Brain)        │   │     Stream B (The Copilot Body) │   │     Stream C (The Comms)        │
+│ Stream A: Ingest & Triage Tier  │   │ Stream B: Fixing & Safety Guard │   │ Stream C: Mobile & Web Comms    │
 ├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
-│ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Directory: prodpilot/telegram │
-│ • Branch: stream-a              │   │ • Branch: stream-b              │   │ • Branch: telegram (root-level) │
-│ • Pipeline & Antigravity SDK    │   │ • demo-prod (buggy service)     │   │ • Hosted on Visihot cloud server│
-│ • Repro-test & Verifier         │   │ • Watcher + Git Blame           │   │ • python-telegram-bot v22.8     │
-│ • Orchestrator Daemon           │   │ • Reset & trigger scripts       │   │ • Inline Action Buttons         │
-│ • Staging Canaries (8001/8002)  │   │ • GitHub Copilot App Clone UI   │   │ • Public Cloudflare Tunnel link │
-│ • FastAPI & SSE API (port 8765) │   │ • Strict GitHub Dark aesthetic  │   │ • 1-Tap Deploy / Rollback       │
+│ • Branch: stream-triage         │   │ • Branch: stream-agent          │   │ • Branch: stream-ui             │
+│ • Render Log API Ingest         │   │ • Antigravity SDK Fix Loop      │   │ • Telegram Mobile Incident Link │
+│ • Adaption AI Labs Classifier   │   │ • Firecrawl Error Doc Scraper   │   │ • Mobile Incident Webpage       │
+│ • Low-Severity Issue Handler    │   │ • Isolated Worktree & PR Opener │   │ • 1-Tap Mobile Actions          │
+│ • SQLite Fingerprint & Anti-Loop│   │ • 10s Post-Deploy Watchdog Guard│   │ • n8n Webhook Dispatcher        │
 └─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
 ```
 
 ### Folder Ownership:
-- **Stream A**: `backend/prodpilot/pipeline/`, `agents/`, `staging/`, `decide/`, `api/`, `db.py`
-- **Stream B**: `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, `scripts/`
-- **Stream C**: `telegram/` (on branch `telegram`, untracked by `main`, deployed directly by Visihot)
+- **Stream A**: `backend/prodpilot/ingest/`, `backend/prodpilot/triage/`, `backend/prodpilot/db.py`
+- **Stream B**: `backend/prodpilot/agents/`, `backend/prodpilot/pipeline/`, `backend/prodpilot/staging/deploy.py`
+- **Stream C**: `backend/prodpilot/api/`, `telegram/`, `desktop/`
 
 ---
 
-## 3. Current Phase: Phase 2 (4:00 PM – 7:30 PM) – Gate 2 (The Demo Floor)
+## 3. Active Phase: Phase 4 (6:30 PM – 1:30 AM) – Gate 4
 
-**Goal**: Crash the service with `./scripts/trigger-crash.sh` -> Phone buzzes on Telegram with diagnosis and canary status -> Tap **`[🚀 Deploy Fix (8001)]`** on phone -> Service on port 8000 restored healthy, and an Incident Post-Mortem Report is saved.
+**Goal**: Production monitoring connects to Render/Local logs $\rightarrow$ Adaption AI triages events $\rightarrow$ High-severity outage triggers Telegram alert with mobile web link $\rightarrow$ Antigravity agent crafts verified fix with Firecrawl docs $\rightarrow$ Developer resolves from phone $\rightarrow$ 10s watchdog confirms health or auto-reverts.
 
-### Stream A Tasks (Agent 1 - Brain & Orchestrator):
-- [ ] **Orchestrator Daemon (`backend/prodpilot/pipeline/orchestrator.py`)**:
-  - Continuously polls SQLite for new incidents in status `OPEN`.
-  - Runs Context Brief (`brief.py`) and advances status to `INVESTIGATING`.
-  - Runs Repro-First Pipeline (`repro_runner.py` via `AntigravityAdapter`) to generate reproduction test, verify failure on baseline, generate patch, and verify repro + full suite pass.
-  - Spawns live canary instances: Fix-forward on `http://127.0.0.1:8001` and Rollback on `http://127.0.0.1:8002`.
-  - Runs Decision Engine (`decide/rules.py`) to compute recommendation and confidence.
-  - Advances incident status to `AWAITING_APPROVAL` and emits SSE event.
-- [x] **Post-Mortem Report Generator (`backend/prodpilot/staging/deploy.py`)**:
-  - Implemented `generate_incident_report(...)` saving comprehensive markdown report to SQLite `artifacts` table.
-- [ ] **Deploy Adapter Verification**:
-  - On `/incidents/{id}/approve`, promotes the chosen canary onto production port 8000.
-  - Monitors health for 10s (triggers automatic emergency rollback if health check fails).
+### Stream A Tasks (Ingestion, Triage & Anti-Looping):
+- [ ] **Render & Forwarder Log Ingest (`backend/prodpilot/ingest/`)**:
+  - Implement `/ingest` REST endpoint receiving batched log lines with timestamps and levels.
+  - Add `scripts/forwarder.py` to tail local service logs or fetch from Render REST API (`/services/{serviceId}/logs`).
+- [ ] **Adaption AI Labs Triage Engine (`backend/prodpilot/triage/`)**:
+  - Fast rule filter: extracts 5xx, unhandled exceptions, and `/health` failures.
+  - Route anomaly logs to Adaption AI Labs endpoint to classify as `HIGH` (Severe Outage) vs `LOW` (Minor Issue) vs `INFRA` (Config/Env Drift).
+  - Safety Override: any fatal crash or service exit is unconditionally forced to `HIGH`.
+- [ ] **Low-Severity Issue Creator**:
+  - On `LOW` classification, synthesize diagnostic brief and create a non-urgent GitHub Issue (or local DB entry) with `severity:low` tag.
+- [ ] **Anti-Looping Fingerprint Store (`backend/prodpilot/db.py`)**:
+  - Normalize stack traces and compute SHA-256 fingerprint.
+  - If fingerprint already exists in status `OPEN` or `INVESTIGATING`, increment `recurrence_count` without triggering duplicate agent runs.
 
-### Stream B Tasks (Agent 2 - Desktop Live Experience):
-- [ ] **Live SSE Timeline Integration (`desktop/src/`)**:
-  - Connect `desktop/src/App.jsx` and `Timeline.jsx` to live SSE endpoint `GET http://127.0.0.1:8765/incidents/{id}/events`.
-  - Animate stages dynamically: `UNDERSTAND` -> `REPRODUCE` -> `FIX` -> `VERIFY` -> `STAGE` -> `DECIDE` -> `AWAITING_APPROVAL` -> `DEPLOY` -> `RESOLVED`.
-  - Render live tool calls, test execution outputs, and patch diff in real time.
-- [ ] **One-Tap Desktop Approvals & Controls**:
-  - Wire Desktop `[Deploy Fix]` and `[Rollback]` buttons to call `POST http://127.0.0.1:8765/incidents/{id}/approve`.
-  - Add demo triggers in `Header.jsx`: `[💥 Trigger Test Crash]` and `[🔄 Reset Demo]`.
-- [ ] **Post-Mortem Report Viewer**:
-  - Render the generated post-mortem report when incident reaches `DEPLOYED`.
+### Stream B Tasks (Agent Fixing, Context & Safety Guard):
+- [ ] **Firecrawl Error Documentation Scraper (`backend/prodpilot/pipeline/docs.py`)**:
+  - On unhandled exception, invoke Firecrawl API to scrape relevant documentation and community solutions.
+  - Inject verified API recommendations into the fixing agent prompt.
+- [ ] **Automated GitHub PR Creation (`backend/prodpilot/pipeline/pr_opener.py`)**:
+  - After repro test and full regression suite pass, push branch `prodpilot-fix-<id>` to GitHub.
+  - Open a Draft Pull Request containing reproduction test evidence and diff.
+- [ ] **10-Second Post-Deploy Watchdog & Auto-Revert (`backend/prodpilot/staging/deploy.py`)**:
+  - When approved, swap chosen build to production port 8000.
+  - Monitor `/health` for 10 seconds.
+  - If health check fails or errors occur, trigger immediate rollback to previous build and mark `AUTO_REVERTED`.
+  - Cap automatic remediation attempts at 1.
 
-### Stream C Tasks (Agent 3 - Visihot Telegram Cloud Bot):
-- [x] **Visihot Entrypoint**: Added `app.py` forwarding to `bot.py` for Pterodactyl container.
-- [ ] **Live Approval Action via Cloudflare Tunnel**:
-  - Receive proactive alert when incident enters `AWAITING_APPROVAL`.
-  - Tapping `[🚀 Deploy Fix (8001)]` calls public tunnel `/approve` endpoint, updates message to `⏳ Deploying...`, and confirms with `✅ PROD RESTORED`.
-  - Command `/report` sends the markdown post-mortem report summary.
-
-### Gate 2 Verification:
-1. Run `./scripts/reset-demo.sh` to ensure `demo-prod` is clean on port 8000.
-2. Run `./scripts/trigger-crash.sh` to cause the `discount` crash.
-3. Phone receives Telegram alert card within 30 seconds.
-4. Tap **Deploy Fix** on phone.
-5. Service on port 8000 returns `200 OK` (healthy) and Telegram confirms restoration.
-6. Run twice consecutively to verify repeatability.
-
----
-
-## 4. Phase 3: Desktop Dashboard & Polish (7:30 PM – 11:30 PM)
-
-- Desktop Electron app packaging / dev mode verification.
-- Agent Follow-Up Panel: allows operator to submit extra instructions ("use dict.get instead of removing schema") and re-runs pipeline on same worktree.
-- Read-only GitHub issue sync (if time permits).
+### Stream C Tasks (Mobile Web View, Telegram & n8n):
+- [ ] **Mobile-Responsive Incident Web Page (`backend/prodpilot/api/`)**:
+  - Create a clean, fast mobile web view accessible at `/incidents/{id}/mobile` over the active Cloudflare Tunnel.
+  - Render Root-Cause summary, Firecrawl doc snippet, diff preview, test evidence, and 3 mobile buttons:
+    - **`[🚀 Approve & Deploy Fix]`**
+    - **`[⏪ Instant Rollback]`**
+    - **`[🛑 Take Over]`**
+- [ ] **Telegram Alert Enhancement (`telegram/bot.py`)**:
+  - Include the direct Cloudflare Tunnel mobile web link in every alert card.
+  - Add inline `[⏪ Revert Commit (8002)]` button directly next to `[🚀 Deploy Fix (8001)]`.
+- [ ] **n8n Webhook Dispatcher (`backend/prodpilot/pipeline/n8n.py`)**:
+  - Post incident webhook payload to n8n workflow for multi-channel incident dispatch.
 
 ---
 
-## 5. Phase 4: Harden & Sponsor Integrations (11:30 PM – 4:00 AM)
+## 4. Phase 5: Rehearsals, Seeded Bugs & Demo Freeze (1:30 AM – 3:30 AM)
 
-- **3 Consecutive Clean Runs**: Trigger crash -> autonomous fix -> deploy -> verify 3 times in a row without manual code edits.
-- **Browser Use (Hero Sponsor)**: Autonomous browser-based canary check on `http://localhost:8001/checkout` ensuring visual checkout completion without error screens.
-- **Adaption AI ($500 Credits)**: Route LLM brief synthesis and evaluation benchmarking through Adaption AI endpoints.
-- **Render (Innovation Partner)**: Optional remote deploy webhook adapter.
+- [ ] **3 Consecutive Clean Runs**:
+  - Trigger crash $\rightarrow$ autonomous triage $\rightarrow$ repro test $\rightarrow$ fix verified $\rightarrow$ mobile approval $\rightarrow$ healthy production.
+  - Run 3 times consecutively without manual intervention.
+- [ ] **Seeded Bug Suite**:
+  - Test against 5 distinct failure modes:
+    1. `KeyError` (missing dict key in order calculations).
+    2. `TypeError` / `NoneType` (unhandled null response).
+    3. `IndexError` (empty array access).
+    4. Infrastructure / Missing ENV (triggers "Not a Code Bug" escape hatch).
+    5. Recurrent crash loop (confirms de-duplication counter works).
+- [ ] **Record 3-Minute Backup Demo Video**:
+  - High-definition recording showing the mobile approval and desktop timeline, ready as an offline fallback for the judges.
+- [ ] **Feature Freeze (1:30 AM Sharp)**: Zero new features past this point.
 
 ---
 
-## 6. Phase 5: Freeze, Backup Video & Pitch (7:00 AM – 11:00 AM)
+## 5. Phase 6: Pitch Slides & Submission (8:00 AM – 11:00 AM)
 
-- **7:00 AM – 8:30 AM**: Record 3-minute demo backup video showing the phone approval and desktop timeline.
-- **8:30 AM – 9:30 AM**: Polish pitch slides (highlighting problem, last-mile restart-ready innovation, sponsor tracks, and roadmap).
-- **9:30 AM – 10:30 AM**: Dry run pitch twice with the backup video on standby.
-- **10:30 AM – 11:00 AM**: Final freeze and Devfolio project submission!
+- **8:00 AM – 9:15 AM**: Clean clone test from GitHub to verify seamless fresh installation.
+- **9:15 AM – 10:15 AM**: Polish pitch deck:
+  - Slide 1: The Problem (The 2026 Verification Bottleneck & 3 AM On-Call Burnout).
+  - Slide 2: ProdPilot: The Autonomous Production Incident Response Platform.
+  - Slide 3: The Secret Sauce (Repro-first verification, Firecrawl context, mitigation-first rollback).
+  - Slide 4: Sponsor Power (Render + Adaption AI + Firecrawl + n8n + Google Antigravity).
+  - Slide 5: Live Demo Walkthrough (Mobile-first resolution).
+- **10:15 AM – 10:45 AM**: Final dry-run presentation.
+- **10:45 AM – 11:00 AM**: Final Devfolio submission!
+
+---
+
+## 6. Demo Script (3-Minute Winning Beat)
+
+1. **0:00 – 0:30**: Show Mission Control connected to Render/Local server. Trigger Low-severity warning $\rightarrow$ shows non-urgent GitHub Issue created without midnight paging.
+2. **0:30 – 1:15**: Trigger severe crash (`./scripts/trigger-crash.sh`). Production goes down. Adaption AI triages High. Blame isolates commit, Firecrawl finds doc, and Telegram alerts phone with mobile link.
+3. **1:15 – 2:00**: Show Antigravity agent in worktree proving the fix: `test_repro.py` turns Red $\rightarrow$ Green. Canaries 8001 and 8002 stand ready. GitHub PR opens.
+4. **2:00 – 2:40**: Tap mobile link on phone. Show responsive mobile incident page. Tap **Deploy Fix** directly from bed.
+5. **2:40 – 3:00**: Production port 8000 restores healthy. Show auto-generated post-mortem report and wrap up.
