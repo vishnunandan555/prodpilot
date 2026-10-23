@@ -64,24 +64,42 @@ This document defines the Phase 4 multi-agent operating procedure for ProdPilot 
 
 ---
 
-## 3. Done Check & Verification Commands per Stream
+## 3. Phase 4 Verification & Done Checks (All Passed ✅)
 
 - **Stream A Done Check**:
   ```bash
   python3 scripts/test_ingest_triage.py
-  # Asserts that 500 error triggers High classification & fingerprint stored;
-  # Asserts that warning log triggers Low classification & issue brief.
+  # PASSED: 500 error triggered High classification & fingerprint stored;
+  # PASSED: warning log triggered Low classification & issue brief.
   ```
 
 - **Stream B Done Check**:
   ```bash
   python3 scripts/test_watchdog_revert.py
-  # Asserts that broken deployment triggers 10s health failure and automatic rollback.
+  # PASSED: broken deployment triggered 10s health failure and automatic rollback.
+  python3 -m unittest backend/prodpilot/tests/test_e2e_exit_check.py
+  # PASSED: full end-to-end incident lifecycle test passed.
   ```
 
 - **Stream C Done Check**:
   ```bash
   cd desktop && npm run build
-  # Asserts Vite builds successfully to dist/ for Render Static Sites.
-  # Asserts /incidents/{id} renders with mobile action buttons over Cloudflare Tunnel.
+  # PASSED: Vite built successfully to dist/ in 1.22s for Render Static Sites.
+  # PASSED: /incidents/{id} rendered with mobile action buttons over Cloudflare Tunnel.
   ```
+
+**All 3 streams merged to `main` at `d082c09` and tagged `gate-4-passed`.**
+
+---
+
+## 4. Current Workstream: UI Operations Platform Overhaul (Gate UI)
+
+Before starting Phase 5 (Rehearsals & Recording the 3-minute Backup Video), the UI is being transformed into an authentic SRE Operations Platform inspired by Splunk and Epok.
+
+### Deliverables:
+1. **Sidebar Navigation**: 8 sections (`Dashboard`, `Incidents`, `Logs`, `Services`, `Repositories`, `Agents`, `Team`, `Settings`).
+2. **Dashboard View**: Metric cards (error rates, active incidents, log volume), service health grid, and live event activity feed.
+3. **Incident Details (The Hero Screen)**: 6 internal tabs (`Overview`, `Logs & Traces`, `Investigation & RCA`, `Recovery & Canaries`, `Changes & Diffs`, `Timeline & Audit`) + 1-tap mobile action bar (`[🚀 Deploy Fix]`, `[⏪ Rollback]`, `[🛑 Take Over]`).
+4. **Logs Explorer View**: Real-time log search, level filters, service filtering.
+5. **Supporting Views**: `ServicesView`, `RepositoriesView`, `AgentsView`, `TeamView`.
+6. **Zero-Error Validation**: Electron launch check & `npm run build` verification.

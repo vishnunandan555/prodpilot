@@ -18,7 +18,8 @@
 | **Phase 2: Staging, Orchestrator, Telegram** | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2** | ✅ **PASSED (Tag: `gate-2-passed`)** |
 | **Phase 3: Desktop Base & Daemon Runner** | Completed | Desktop Mission Control base, unified runner daemon, branding unified | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
 | **Phase 4: Model 1 Hardening & Render Deploy** | Completed | Render log ingestion, immediate Telegram alert, Render frontend deploy + Cloudflare Tunnel, 10s watchdog | **Gate 4** | ✅ **PASSED (Tag: `gate-4-passed`)** |
-| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(7:00 PM – 1:30 AM)* | **6.5 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video | **Gate 5**<br>*(Freeze)* | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Active Milestone: Operations UI Overhaul**<br>*(7:05 PM – 8:30 PM)* | **1.5 hours** | 8-Section SRE Operations Platform + 6-Tab Incident Details Hero Screen (Splunk/Epok-inspired) | **Gate UI** | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(8:30 PM – 1:30 AM)* | **5.0 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video on final UI | **Gate 5**<br>*(Freeze)* | ⚪ Next Up (After UI) |
 | **Rest & Buffer Window**<br>*(1:30 AM – 7:30 AM)* | **6.0 hours** | Rest & sleep buffer (prevents demo-day fatigue) | — | ⚪ Scheduled |
 | **Phase 6: Pitch Slides & Devfolio Submit**<br>*(7:30 AM – 11:00 AM)* | **3.5 hours** | Fresh clone dry-run, pitch deck polish, Devfolio submission freeze | **Ship** | ⚪ Queued |
 
@@ -101,17 +102,36 @@
 
 ---
 
-## 4. UI Review & Alignment (Current Milestone)
+## 4. Active Milestone: UI Operations Platform Overhaul (Gate UI)
 
-**Focus**: Reviewing and aligning the platform UI architecture across Desktop (Electron) and Web/Mobile (Render) before entering final demo hardening.
+**Goal**: Transform ProdPilot into an authentic, production-grade SRE Operations Platform inspired by Splunk Observability and Epok Log Anomaly Detection, supporting both Desktop (Electron) and Web/Mobile (Render) before running Phase 5 rehearsals.
 
-- [x] Streamlined navigation: purged dead Copilot views (`SessionView`, `IssuesView`, `AutomationsView`, `CustomizeView`).
-- [ ] Align on core platform views:
-  1. **Incidents & Operations**: Active incidents, severity badges, live investigation timeline, and mobile resolution buttons.
-  2. **Live Telemetry & Logs**: Real-time log stream from Render/Local forwarder with error filtering.
-  3. **Repository & Issue Intelligence**: View all repository issues, commit timeline, and PR correlation.
-  4. **Team & Service Context**: Multi-service / microservice selector and on-call team roster.
-  5. **Platform Settings & Access**: Connected Repo (GitHub PAT), Connected Server (Render API Key / URL), and Cloudflare Tunnel status.
+> **Strategic Decision**: Complete the UI overhaul *before* Phase 5 rehearsals and demo video recording so that the recorded 3-minute video and automated runs capture the polished, final platform.
+
+### A. 8 Primary Navigation Sections
+- [ ] **1. Dashboard**: High-level production health overview, active SEV-1 incident alerts, live error rate metrics, log volume timeline, monitored services status cards, and recent autonomous activity stream.
+- [ ] **2. Incidents**: Comprehensive incident catalog with status filters (`Active`, `Investigating`, `Awaiting Approval`, `Resolved`), severity tags (`SEV-1 Critical`, `SEV-2 High`, `SEV-3 Low`), search bar, and one-click demo crash trigger simulation.
+- [ ] **3. Incident Details (The Hero Screen)**: The central operational hub for a single incident featuring 6 internal tabs:
+  - **Tab 1: Overview** (Incident metadata, affected service, timeline overview, quick actions, blast radius).
+  - **Tab 2: Logs & Traces** (Extracted stack traces, panic logs, surrounding log context, copy/export).
+  - **Tab 3: Investigation & RCA** (Hypothesis vs confirmed facts, suspect commit, `git blame` attribution, confidence score).
+  - **Tab 4: Recovery & Canaries** (Canary 8001 fix-forward, Canary 8002 rollback, health status, 1-tap mobile approval buttons).
+  - **Tab 5: Changes & Diffs** (Unified syntax-highlighted git diff, PR branch link, repro test case).
+  - **Tab 6: Timeline & Audit** (Real-time SSE event stream, transition history, agent actions, watchdog verification).
+- [ ] **4. Logs Explorer**: Searchable log stream with live auto-scroll, log-level filters (ERROR, WARN, INFO, DEBUG), service picker, and regex search.
+- [ ] **5. Services**: Monitored microservices overview (`order_service`, `demo-prod`, etc.) displaying uptime, latency, health endpoint status, and active canaries.
+- [ ] **6. Repositories**: Source code repo intelligence (connected GitHub repo, active branches, recent commits, blame history, and automated PR links).
+- [ ] **7. Agents**: Multi-agent fleet monitor (Antigravity SDK status, isolated git worktrees, active runs, token/cost telemetry, and safety guardrails).
+- [ ] **8. Team**: SRE on-call rotation roster, escalation tiers, Slack/Telegram notification status, and access control.
+- [ ] **9. Settings**: Infrastructure connection panel (Render API Key, Render Service ID, Cloudflare Tunnel URL, GitHub PAT, Telegram Bot token).
+
+### B. Implementation Checklist
+- [ ] Update `Sidebar.jsx` with the 8 primary navigation tabs and status badges.
+- [ ] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and Epok-style activity stream.
+- [ ] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive 1-tap mobile action bar (`[🚀 Deploy Fix]`, `[⏪ Rollback]`, `[🛑 Take Over]`).
+- [ ] Implement `LogsView.jsx` (interactive log explorer).
+- [ ] Implement `ServicesView.jsx`, `RepositoriesView.jsx`, `AgentsView.jsx`, and `TeamView.jsx`.
+- [ ] Verify both Desktop Electron and Render Web views render with 0 console errors and pass `npm run build`.
 
 ---
 

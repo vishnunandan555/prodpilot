@@ -192,18 +192,35 @@ For non-critical issues (handled exceptions, recoverable warnings, single 404 sp
 
 ---
 
-### 7. Mobile-First Incident Webpage (`/incidents/{id}`)
+### 7. UI Architecture: SRE Operations Platform & Mobile Incident Experience
 
-Render hosts the mobile-responsive interface that connects to the laptop backend via Cloudflare Tunnel:
-1. **Header**: Incident ID, Status Badge (`AWAITING_APPROVAL`), Severity (`HIGH`), Service Name.
-2. **Live SSE Timeline**: Real-time progress through the 10 stages.
-3. **RCA Summary**: Clear root-cause explanation and blamed commit attribution.
-4. **Evidence & Diff**: Collapsible stack trace, PR discussion context, and git patch diff.
-5. **Canary Inspector**: Side-by-side status of Canary 8001 (Fix) and Canary 8002 (Rollback).
-6. **Action Controls**:
-   - `[🚀 Approve & Deploy Fix]`
-   - `[⏪ Instant Rollback]`
-   - `[🛑 Take Over]`
+ProdPilot provides a dual-environment UI (Native Desktop Electron & Render-Hosted Web/Mobile) styled with a dark, high-contrast SRE operations aesthetic inspired by Splunk Observability and Epok Log Anomaly Detection.
+
+#### A. 8 Primary Navigation Sections
+1. **Dashboard**: High-level production health overview, active incident count, system error rates, log volume timeline, service status grid, and Epok-style live event activity stream.
+2. **Incidents**: Incident triage table with severity badges (`SEV-1 Critical`, `SEV-2 High`, `SEV-3 Low`), status filters (`Active`, `Investigating`, `Awaiting Approval`, `Resolved`), search bar, and one-click demo incident simulator.
+3. **Incident Details (The Hero Screen)**: Complete operational workspace for a single incident featuring 6 internal tabs:
+   - **Tab 1: Overview** (Metadata, affected service, timeline summary, blast radius, quick actions).
+   - **Tab 2: Logs & Traces** (Extracted stack traces, surrounding log lines, panic traces).
+   - **Tab 3: Investigation & RCA** (Hypothesis vs confirmed facts, suspect commit, `git blame` attribution, confidence rating).
+   - **Tab 4: Recovery & Canaries** (Canary 8001 fix-forward, Canary 8002 rollback, health status, 1-tap mobile approval buttons).
+   - **Tab 5: Changes & Diffs** (Syntax-highlighted git diff, PR branch link, repro test case).
+   - **Tab 6: Timeline & Audit** (Real-time SSE event stream, transition history, agent actions, watchdog verification).
+4. **Logs Explorer**: Real-time log streamer with level filtering (ERROR, WARN, INFO, DEBUG), service filtering, and text/regex search.
+5. **Services**: Service health catalog (`order_service`, `demo-prod`, etc.) displaying uptime, latency, health endpoint status, and active canaries.
+6. **Repositories**: Connected source repo intelligence (GitHub repo link, active branch, recent commits, blame history, and automated PR links).
+7. **Agents**: Autonomous agent fleet monitor (Antigravity SDK status, isolated git worktrees, active runs, token/cost telemetry, and safety guardrails).
+8. **Team**: On-call rotation roster, escalation tiers, Slack/Telegram notification status, and access control.
+9. **Settings**: Connection settings for Render API Key, Render Service ID, Cloudflare Tunnel URL, GitHub PAT, and Telegram Bot token.
+
+#### B. Mobile Incident Experience (`/incidents/{id}`)
+On mobile devices (accessed via the Telegram notification link), the Incident Details Hero Screen optimizes for single-hand operational triage:
+- Sticky header with severity (`SEV-1`) and status badge.
+- Compact 6-tab selector.
+- Prominent 1-tap mobile action bar fixed to the bottom:
+  - `[🚀 Approve & Deploy Fix]` (Promotes Canary 8001 to prod)
+  - `[⏪ Instant Rollback]` (Reverts to Canary 8002)
+  - `[🛑 Take Over]` (Pauses agents for manual developer intervention)
 
 ---
 
