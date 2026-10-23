@@ -41,6 +41,7 @@ export default function IncidentDetail({
   deploySuccess = false,
   onBack,
   isStandaloneMobile = false,
+  onNavigate,
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [copiedTrace, setCopiedTrace] = useState(false);
@@ -53,13 +54,30 @@ export default function IncidentDetail({
   if (!incident) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#6e7681]">
-        <div className="w-12 h-12 rounded-full bg-[#10141f] border border-[#1b2234] flex items-center justify-center text-[#6e7681] mb-3">
-          <ShieldAlert size={22} className="text-[#58a6ff]" />
+        <div className="w-14 h-14 rounded-2xl bg-[#101726] border border-[#1b263b] flex items-center justify-center text-[#3fb950] mb-4 shadow-lg">
+          <ShieldCheck size={28} className="text-[#3fb950]" />
         </div>
-        <h2 className="text-sm font-semibold text-[#f0f6fc]">No Incident Selected</h2>
-        <p className="text-xs text-[#8b949e] mt-1 max-w-sm leading-relaxed">
-          Select an incident from the sidebar to inspect root cause attribution, telemetry, and automated remediation.
+        <h2 className="text-base font-bold text-[#f0f6fc]">No Active Incidents</h2>
+        <p className="text-xs text-[#8b949e] mt-1.5 max-w-md leading-relaxed">
+          All systems are healthy. When an outage or error is detected on your connected production servers, it will appear here in real time with root cause attribution and automated remediation pipelines.
         </p>
+        {onNavigate && (
+          <div className="mt-5 flex items-center gap-3">
+            <button
+              onClick={() => onNavigate('servers')}
+              className="px-3.5 py-1.5 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs font-semibold text-[#f0f6fc] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <Server size={13} className="text-[#58a6ff]" />
+              <span>Connect Production Server</span>
+            </button>
+            <button
+              onClick={() => onNavigate('dashboard')}
+              className="px-3.5 py-1.5 bg-[#1f6feb]/15 hover:bg-[#1f6feb]/25 border border-[#1f6feb]/30 text-xs font-semibold text-[#58a6ff] rounded-lg transition-colors"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
       </div>
     );
   }

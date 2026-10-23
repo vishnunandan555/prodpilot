@@ -1,69 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users,
-  ShieldCheck,
-  PhoneCall,
-  Send,
-  Bell,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
-  Radio,
-  Calendar,
+  User,
   Plus,
   RefreshCw,
-  User,
-  ShieldAlert,
+  Trash2,
+  Phone,
+  Mail,
+  Clock,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
   X
 } from 'lucide-react';
 
-export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser = null }) {
+export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser = null, onOpenProfile = null }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Form states
-  const [username, setUsername] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('sre');
-  const [password, setPassword] = useState('');
+  const [form, setForm] = useState({
+    username: '',
+    full_name: '',
+    email: '',
+    phone: '',
+    password: ''
+  });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(null);
-
-  // Auto-dismiss addSuccess toast
-  useEffect(() => {
-    if (!addSuccess) return;
-    const timer = setTimeout(() => setAddSuccess(null), 3500);
-    return () => clearTimeout(timer);
-  }, [addSuccess]);
-
-  // Auto-dismiss addError toast
-  useEffect(() => {
-    if (!addError) return;
-    const timer = setTimeout(() => setAddError(null), 6000);
-    return () => clearTimeout(timer);
-  }, [addError]);
-
-  const handleOpenAddModal = () => {
-    setAddError(null);
-    setAddSuccess(null);
-    setShowAddModal(true);
-  };
-
-  const handleCloseAddModal = () => {
-    setAddError(null);
-    setAddSuccess(null);
-    setShowAddModal(false);
-  };
-
-  const handleUserFieldChange = (setter, val) => {
-    setter(val);
-    if (addError) setAddError(null);
-    if (addSuccess) setAddSuccess(null);
-  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -84,8 +50,26 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
     fetchUsers();
   }, [apiUrl]);
 
+  const handleOpenAddModal = () => {
+    setAddError(null);
+    setAddSuccess(null);
+    setForm({
+      username: '',
+      full_name: '',
+      email: '',
+      phone: '',
+      password: ''
+    });
+    setShowAddModal(true);
+  };
+
   const handleAddUser = async (e) => {
     e.preventDefault();
+    if (!form.username.trim() || !form.full_name.trim()) {
+      setAddError('Username and Full Name are required.');
+      return;
+    }
+
     setAddLoading(true);
     setAddError(null);
     setAddSuccess(null);
@@ -95,28 +79,24 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: username.trim(),
-          full_name: fullName.trim(),
-          email: email.trim() || undefined,
-          role,
-          password: password || 'prodpilot123',
+          username: form.username.trim(),
+          full_name: form.full_name.trim(),
+          email: form.email.trim() || undefined,
+          phone: form.phone.trim() || undefined,
+          password: form.password || 'prodpilot123',
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || 'Failed to create team member');
+        throw new Error(data.detail || 'Failed to add team member');
       }
 
-      setAddSuccess(`Team member '${data.user?.full_name || username}' created successfully`);
+      setAddSuccess(`Team member '${data.user?.full_name || form.username}' added successfully`);
       setTimeout(() => {
         setShowAddModal(false);
-        setUsername('');
-        setFullName('');
-        setEmail('');
-        setPassword('');
         fetchUsers();
-      }, 700);
+      }, 600);
     } catch (err) {
       setAddError(err.message || 'Failed to add user');
     } finally {
@@ -124,296 +104,288 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
     }
   };
 
+  const handleDeleteUser = async (userId, memberName) => {
+    if (!window.confirm(`Are you sure you want to remove ${memberName} from the on-call team?`)) return;
+    try {
+      const res = await fetch(`${apiUrl}/users/${userId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchUsers();
+      }
+    } catch (err) {
+      alert('Failed to remove user: ' + err.message);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
-      {/* Header */}
-      <div className="border-b border-[#1b2234] bg-[#0d111a] px-5 py-3 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
-              <Users size={15} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  On-Call Team & Team Accounts
-                </h1>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
-                  {users.length} MEMBERS
-                </span>
-              </div>
-              <p className="text-xs text-[#8b949e] mt-0.5">
-                Operator credentials, escalation privileges, and SRE on-call rotation
-              </p>
-            </div>
+      {/* Top Header */}
+      <div className="h-14 border-b border-[#1b2234] bg-[#0d111a] px-6 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#161f30] border border-[#263550] flex items-center justify-center text-[#58a6ff]">
+            <Users size={18} />
           </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-bold text-[#f0f6fc]">On-Call Team Roster</h1>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono">
+                {users.length} {users.length === 1 ? 'Member' : 'Members'}
+              </span>
+            </div>
+            <p className="text-[11px] text-[#8b949e]">
+              Manually registered team operators and on-call escalation contacts
+            </p>
+          </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleOpenAddModal}
-              className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
-            >
-              <Plus size={14} />
-              <span>Add Member</span>
-            </button>
-            <button
-              onClick={fetchUsers}
-              className="p-1.5 rounded-md bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
-              title="Refresh team members"
-            >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            </button>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={fetchUsers}
+            title="Refresh team members"
+            className="p-1.5 rounded-md bg-[#121824] border border-[#222f47] text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#1a2334] transition"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin text-[#58a6ff]' : ''} />
+          </button>
+
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold shadow-sm transition"
+          >
+            <Plus size={14} />
+            <span>Add Member</span>
+          </button>
         </div>
       </div>
 
-      <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
-        {/* Escalation Policy Matrix */}
-        <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-3">
-          <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
-            <h2 className="text-xs uppercase tracking-wider text-[#8b949e] font-semibold flex items-center gap-2">
-              <Bell size={14} className="text-[#58a6ff]" />
-              <span>Automated Incident Escalation Ladder</span>
-            </h2>
-            <span className="text-xs font-mono text-[#58a6ff]">Target MTTA &lt; 5s · MTTD &lt; 10s</span>
+      {/* Main Content */}
+      <div className="p-6 max-w-4xl w-full mx-auto space-y-4">
+        {users.length === 0 ? (
+          /* Empty State */
+          <div className="p-12 text-center rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
+            <div className="w-12 h-12 rounded-xl bg-[#121824] border border-[#222f47] flex items-center justify-center text-[#8b949e] mx-auto">
+              <Users size={22} />
+            </div>
+            <h3 className="text-sm font-bold text-[#f0f6fc]">No Team Members Registered</h3>
+            <p className="text-xs text-[#8b949e] max-w-md mx-auto">
+              Add your on-call engineers to route incident notifications, Telegram approval callbacks, and emergency voice alerts.
+            </p>
+            <button
+              onClick={handleOpenAddModal}
+              className="mt-2 px-4 py-2 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold inline-flex items-center gap-1.5 transition shadow"
+            >
+              <Plus size={14} />
+              <span>Add First Team Member</span>
+            </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-[#121929] text-[#58a6ff] font-bold border border-[#1d2d47] text-[10px] font-mono">
-                  TIER 0
-                </span>
-                <span className="text-xs text-[#3fb950] font-medium">Autonomous</span>
-              </div>
-              <h3 className="font-semibold text-[#f0f6fc] text-xs">Autonomous Agent Fleet</h3>
-              <p className="text-xs text-[#8b949e] leading-relaxed">
-                Google Antigravity SDK synthesizes repro tests and stages isolated fix in git worktrees.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-[#1c180e] text-[#e3b341] font-bold border border-[#3b2e13] text-[10px] font-mono">
-                  TIER 1
-                </span>
-                <span className="text-xs text-[#e3b341] font-medium">Immediate</span>
-              </div>
-              <h3 className="font-semibold text-[#f0f6fc] text-xs">Primary On-Call Operator</h3>
-              <p className="text-xs text-[#8b949e] leading-relaxed">
-                Direct push notifications with full root cause analysis and 1-tap promotion or rollback.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] font-bold border border-[#4a1c24] text-[10px] font-mono">
-                  TIER 2
-                </span>
-                <span className="text-xs text-[#ff7b72] font-medium">Escalation</span>
-              </div>
-              <h3 className="font-semibold text-[#f0f6fc] text-xs">Secondary Engineering Lead</h3>
-              <p className="text-xs text-[#8b949e] leading-relaxed">
-                Automated escalation if no operator acknowledgment is recorded within the target SLA window.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Real Team Accounts List */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
-              Registered Team Operators ({users.length})
-            </h2>
-            <span className="text-xs text-[#6e7681]">Synced from database accounts</span>
-          </div>
-
-          {users.length === 0 ? (
-            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2.5">
-              <Users size={26} className="mx-auto text-[#6e7681]" />
-              <h3 className="text-sm font-semibold text-[#f0f6fc]">No team members registered yet</h3>
-              <p className="text-xs text-[#8b949e]">
-                Add an on-call engineer or administrator account to handle incident approvals.
-              </p>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="mt-2 px-3.5 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition"
-              >
-                <Plus size={14} />
-                <span>Add First Member</span>
-              </button>
-            </div>
-          ) : (
-            users.map((u) => {
+        ) : (
+          /* Real Users Roster */
+          <div className="space-y-2.5">
+            {users.map((u) => {
               const isCurrent = currentUser?.username === u.username;
               return (
                 <div
                   key={u.id}
-                  className={`p-3.5 rounded-lg bg-[#0d111a] border transition font-mono ${
-                    isCurrent ? 'border-[#388bfd] border-l-4 border-l-[#58a6ff]' : 'border-[#1b2234]'
+                  className={`p-4 rounded-xl bg-[#0e1420] border transition flex items-center justify-between gap-4 ${
+                    isCurrent
+                      ? 'border-[#388bfd] bg-[#0e1626]'
+                      : 'border-[#1b2438] hover:border-[#2b3a5a]'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
-                        <User size={15} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-[#f0f6fc]">{u.full_name || u.username}</span>
-                          <span className="text-[10px] text-[#6e7681]">(@{u.username})</span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#58a6ff] border border-[#1b2234] uppercase font-bold">
-                            {u.role || 'SRE'}
-                          </span>
-                          {isCurrent && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-bold">
-                              YOU (CURRENT SESSION)
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#8b949e] mt-0.5">
-                          {u.email || 'No email provided'} • Joined: {u.created_at || 'Recently'}
-                        </p>
-                      </div>
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-full bg-[#161f30] border border-[#263550] overflow-hidden flex items-center justify-center text-[#58a6ff] font-bold text-xs flex-shrink-0">
+                      {u.avatar_url ? (
+                        <img
+                          src={u.avatar_url}
+                          alt={u.username}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        (u.full_name || u.username).slice(0, 2).toUpperCase()
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] text-[10px]">
-                        ACTIVE OPERATOR
-                      </span>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-[#f0f6fc]">
+                          {u.full_name || u.username}
+                        </span>
+                        <span className="text-[11px] text-[#8b949e] font-mono">
+                          @{u.username}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] uppercase font-semibold">
+                          {u.role || 'SRE'}
+                        </span>
+                        {isCurrent && (
+                          <span className="text-[10px] px-2 py-0.2 rounded font-bold font-mono bg-[#14261d] text-[#3fb950] border border-[#1e462d]">
+                            YOU (CURRENT SESSION)
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-4 mt-1.5 text-[11px] text-[#8b949e] flex-wrap">
+                        {u.email && (
+                          <span className="flex items-center gap-1 text-[#c9d1d9]">
+                            <Mail size={12} className="text-[#58a6ff]" />
+                            <span>{u.email}</span>
+                          </span>
+                        )}
+
+                        {u.phone && (
+                          <span className="flex items-center gap-1 text-[#c9d1d9]">
+                            <Phone size={12} className="text-[#3fb950]" />
+                            <span>{u.phone}</span>
+                          </span>
+                        )}
+
+                        <span className="flex items-center gap-1 text-[#6e7681]">
+                          <Clock size={11} />
+                          <span>Joined {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Recently'}</span>
+                        </span>
+                      </div>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isCurrent && onOpenProfile && (
+                      <button
+                        onClick={onOpenProfile}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium flex items-center gap-1.5 transition"
+                      >
+                        <User size={13} />
+                        <span>Edit Profile</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteUser(u.id, u.full_name || u.username)}
+                      title="Remove Member"
+                      className="p-1.5 rounded-lg bg-[#1f1519] border border-[#3e1d25] text-[#ff7b72] hover:bg-[#341b23] transition text-xs flex items-center gap-1"
+                    >
+                      <Trash2 size={13} />
+                      <span className="hidden sm:inline text-[11px]">Remove</span>
+                    </button>
                   </div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Add Team Member Modal */}
+      {/* Add Member Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0d111a] border border-[#1b2234] rounded-xl shadow-2xl overflow-hidden font-sans">
-            <div className="bg-[#07090f] px-5 py-4 border-b border-[#1b2234] flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#0e1420] border border-[#23314d] rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans">
+            <div className="px-5 py-4 border-b border-[#1b2438] flex items-center justify-between bg-[#121824]">
               <div className="flex items-center gap-2">
-                <Users size={16} className="text-[#58a6ff]" />
-                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Add Team Member / SRE</h3>
+                <User size={16} className="text-[#58a6ff]" />
+                <h3 className="text-xs font-bold text-[#f0f6fc]">Add Team Member</h3>
               </div>
-              <button onClick={handleCloseAddModal} className="text-[#6e7681] hover:text-[#f0f6fc] p-1 rounded hover:bg-[#161b26] transition">
-                <X size={15} />
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-[#8b949e] hover:text-[#f0f6fc] text-lg leading-none"
+              >
+                &times;
               </button>
             </div>
 
-            <form onSubmit={handleAddUser} className="p-5 space-y-3">
+            <form onSubmit={handleAddUser} className="p-5 space-y-3.5">
               {addError && (
-                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <AlertCircle size={14} className="flex-shrink-0" />
-                    <span className="truncate">{addError}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAddError(null)}
-                    className="text-[#ff7b72]/70 hover:text-[#ff7b72] p-0.5 rounded transition hover:bg-[#3d181f]"
-                    title="Dismiss error"
-                  >
-                    <X size={12} />
-                  </button>
+                <div className="p-2.5 rounded-lg bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs flex items-center gap-2">
+                  <AlertCircle size={14} className="flex-shrink-0" />
+                  <span>{addError}</span>
                 </div>
               )}
 
               {addSuccess && (
-                <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <CheckCircle2 size={14} className="flex-shrink-0" />
-                    <span className="truncate">{addSuccess}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAddSuccess(null)}
-                    className="text-[#3fb950]/70 hover:text-[#3fb950] p-0.5 rounded transition hover:bg-[#153422]"
-                    title="Dismiss message"
-                  >
-                    <X size={12} />
-                  </button>
+                <div className="p-2.5 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs flex items-center gap-2">
+                  <CheckCircle2 size={14} className="flex-shrink-0" />
+                  <span>{addSuccess}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Username</label>
+                <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                  Full Name <span className="text-[#ff7b72]">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  value={username}
-                  onChange={(e) => handleUserFieldChange(setUsername, e.target.value)}
-                  placeholder="alex_sre"
-                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  placeholder="e.g. Damu Annan"
+                  className="w-full px-3 py-2 bg-[#080b11] border border-[#222f47] rounded-lg text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Full Name</label>
+                <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                  Username <span className="text-[#ff7b72]">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  value={fullName}
-                  onChange={(e) => handleUserFieldChange(setFullName, e.target.value)}
-                  placeholder="Alex Mercer"
-                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  placeholder="e.g. damu007"
+                  className="w-full px-3 py-2 bg-[#080b11] border border-[#222f47] rounded-lg text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Email</label>
+                <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                  Email Address <span className="text-[#8b949e] font-normal">(Optional)</span>
+                </label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => handleUserFieldChange(setEmail, e.target.value)}
-                  placeholder="alex@prodpilot.io"
-                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="e.g. damu@co.in"
+                  className="w-full px-3 py-2 bg-[#080b11] border border-[#222f47] rounded-lg text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => handleUserFieldChange(setRole, e.target.value)}
-                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none"
-                >
-                  <option value="sre">SRE (Site Reliability Engineer)</option>
-                  <option value="admin">Administrator (Full Access)</option>
-                  <option value="lead">Engineering Lead</option>
-                  <option value="viewer">Observer / Read-Only</option>
-                </select>
+                <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                  Phone Number <span className="text-[#8b949e] font-normal">(Optional - for Twilio call alerts)</span>
+                </label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="e.g. +14155552671"
+                  className="w-full px-3 py-2 bg-[#080b11] border border-[#222f47] rounded-lg text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Password</label>
+                <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                  Password
+                </label>
                 <input
                   type="password"
-                  value={password}
-                  onChange={(e) => handleUserFieldChange(setPassword, e.target.value)}
-                  placeholder="•••••••• (default: prodpilot123)"
-                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="Default: prodpilot123"
+                  className="w-full px-3 py-2 bg-[#080b11] border border-[#222f47] rounded-lg text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2.5">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#1b2438]">
                 <button
                   type="button"
-                  onClick={handleCloseAddModal}
-                  className="px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-mono text-[#8b949e]"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2b40] text-[#c9d1d9] text-xs transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={addLoading}
-                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold transition disabled:opacity-50"
                 >
-                  {addLoading ? 'Creating Member...' : 'Create Account'}
+                  {addLoading ? 'Adding...' : 'Add Member'}
                 </button>
               </div>
             </form>

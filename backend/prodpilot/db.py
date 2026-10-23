@@ -107,20 +107,44 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
             password_hash TEXT NOT NULL,
             full_name TEXT,
             role TEXT DEFAULT 'sre',
+            phone TEXT,
+            avatar_url TEXT,
+            telegram_chat_id TEXT,
+            bio TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
 
-        # Seed default admin user if users table is empty
-        cur.execute("SELECT COUNT(*) FROM users;")
-        if cur.fetchone()[0] == 0:
-            admin_hash = hash_password("admin")
-            cur.execute(
-                "INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (?, ?, ?, ?, ?, ?)",
-                ("usr-admin", "admin", "admin@prodpilot.io", admin_hash, "SRE Administrator", "admin")
-            )
+        cur.execute("PRAGMA table_info(users);")
+        user_cols = {row[1] for row in cur.fetchall()}
+        for col, ctype in [
+            ("phone", "TEXT"),
+            ("avatar_url", "TEXT"),
+            ("telegram_chat_id", "TEXT"),
+            ("bio", "TEXT"),
+        ]:
+            if col not in user_cols:
+                try:
+                    cur.execute(f"ALTER TABLE users ADD COLUMN {col} {ctype};")
+                except Exception:
+                    pass
 
-        # 3. Repositories table
+        # 3. Projects table (Manual setup, GitHub integration)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            github_repo TEXT NOT NULL,
+            github_token TEXT,
+            local_path TEXT NOT NULL,
+            default_branch TEXT DEFAULT 'main',
+            test_cmd TEXT DEFAULT 'pytest',
+            is_active INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
+        # 4. Repositories table (kept for backwards compatibility)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS repos (
             id TEXT PRIMARY KEY,
@@ -134,39 +158,51 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        cur.execute("PRAGMA table_info(repos);")
-        repo_cols = {row[1] for row in cur.fetchall()}
-        if "is_active" not in repo_cols:
-            try:
-                cur.execute("ALTER TABLE repos ADD COLUMN is_active INTEGER DEFAULT 0;")
-            except Exception:
-                pass
 
-        # 4. Servers table
+        # 5. Production Servers table (Render Infrastructure)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS servers (
             id TEXT PRIMARY KEY,
+            project_id TEXT,
             name TEXT NOT NULL,
-            repo_id TEXT,
-            host TEXT DEFAULT '127.0.0.1',
-            port INTEGER DEFAULT 8000,
+            provider TEXT DEFAULT 'render',
+            render_service_id TEXT,
+            render_api_key TEXT,
             health_url TEXT NOT NULL,
             status TEXT DEFAULT 'UNKNOWN',
             latency_ms REAL DEFAULT 0.0,
             last_checked_at TIMESTAMP,
             is_active INTEGER DEFAULT 0,
+            host TEXT DEFAULT '127.0.0.1',
+            port INTEGER DEFAULT 8000,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
         cur.execute("PRAGMA table_info(servers);")
         server_cols = {row[1] for row in cur.fetchall()}
-        if "is_active" not in server_cols:
-            try:
-                cur.execute("ALTER TABLE servers ADD COLUMN is_active INTEGER DEFAULT 0;")
-            except Exception:
-                pass
+        for col, ctype in [
+            ("project_id", "TEXT"),
+            ("provider", "TEXT DEFAULT 'render'"),
+            ("render_service_id", "TEXT"),
+            ("render_api_key", "TEXT"),
+            ("is_active", "INTEGER DEFAULT 0"),
+        ]:
+            if col not in server_cols:
+                try:
+                    cur.execute(f"ALTER TABLE servers ADD COLUMN {col} {ctype};")
+                except Exception:
+                    pass
 
-        # 5. Service Logs table (for real ingested telemetry)
+        # 6. Global Platform Settings table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
+        # 7. Service Logs table (for real ingested telemetry)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS service_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,6 +212,20 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
+
+        # Migrate existing repo into projects if projects is empty
+        cur.execute("SELECT COUNT(*) FROM projects;")
+        if cur.fetchone()[0] == 0:
+            cur.execute("SELECT id, name, local_path, test_cmd, is_active FROM repos LIMIT 1;")
+            first_repo = cur.fetchone()
+            if first_repo:
+                cur.execute(
+                    """
+                    INSERT INTO projects (id, name, github_repo, local_path, default_branch, test_cmd, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (first_repo[0], first_repo[1], f"vishnunandan555/{first_repo[1]}", first_repo[2], "main", first_repo[3] or "pytest", first_repo[4])
+                )
 
         conn.commit()
     except Exception as e:
@@ -549,6 +599,7 @@ def create_user(
     email: Optional[str] = None,
     full_name: Optional[str] = None,
     role: str = "sre",
+    phone: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     user_id = f"usr-{os.urandom(4).hex()}"
@@ -556,10 +607,10 @@ def create_user(
     with get_db(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO users (id, username, email, password_hash, full_name, role)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, email, password_hash, full_name, role, phone)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, username.strip(), email.strip() if email else None, p_hash, full_name, role)
+            (user_id, username.strip(), email.strip() if email else None, p_hash, full_name, role, phone.strip() if phone else None)
         )
     return {
         "id": user_id,
@@ -567,7 +618,13 @@ def create_user(
         "email": email,
         "full_name": full_name,
         "role": role,
+        "phone": phone,
     }
+
+
+def delete_user(user_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
 def authenticate_user(
@@ -579,7 +636,7 @@ def authenticate_user(
     with get_db(db_path) as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, username, email, password_hash, full_name, role, created_at FROM users WHERE username = ? OR email = ?",
+            "SELECT id, username, email, password_hash, full_name, role, phone, avatar_url, telegram_chat_id, bio, created_at FROM users WHERE username = ? OR email = ?",
             (clean, clean)
         )
         row = cur.fetchone()
@@ -593,6 +650,10 @@ def authenticate_user(
                 "email": d["email"],
                 "full_name": d["full_name"],
                 "role": d["role"],
+                "phone": d.get("phone"),
+                "avatar_url": d.get("avatar_url"),
+                "telegram_chat_id": d.get("telegram_chat_id"),
+                "bio": d.get("bio"),
                 "created_at": d["created_at"],
             }
         return None
@@ -601,18 +662,167 @@ def authenticate_user(
 def get_user_by_id(user_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, email, full_name, role, created_at FROM users WHERE id = ?", (user_id,))
+        cur.execute(
+            "SELECT id, username, email, full_name, role, phone, avatar_url, telegram_chat_id, bio, created_at FROM users WHERE id = ?",
+            (user_id,)
+        )
         row = cur.fetchone()
         return dict(row) if row else None
 
 
-# --- Repositories ---
+def update_user_profile(
+    user_id: str,
+    full_name: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+    telegram_chat_id: Optional[str] = None,
+    bio: Optional[str] = None,
+    role: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    existing = get_user_by_id(user_id, db_path)
+    if not existing:
+        return None
 
-def list_repos(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    updates = []
+    params = []
+    if full_name is not None:
+        updates.append("full_name = ?")
+        params.append(full_name.strip() if full_name else None)
+    if email is not None:
+        updates.append("email = ?")
+        params.append(email.strip() if email else None)
+    if phone is not None:
+        updates.append("phone = ?")
+        params.append(phone.strip() if phone else None)
+    if avatar_url is not None:
+        updates.append("avatar_url = ?")
+        params.append(avatar_url.strip() if avatar_url else None)
+    if telegram_chat_id is not None:
+        updates.append("telegram_chat_id = ?")
+        params.append(telegram_chat_id.strip() if telegram_chat_id else None)
+    if bio is not None:
+        updates.append("bio = ?")
+        params.append(bio.strip() if bio else None)
+    if role is not None:
+        updates.append("role = ?")
+        params.append(role.strip() if role else None)
+
+    if not updates:
+        return existing
+
+    params.append(user_id)
+    query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+
+    with get_db(db_path) as conn:
+        conn.execute(query, tuple(params))
+
+    return get_user_by_id(user_id, db_path)
+
+
+# --- Projects (GitHub Integration) ---
+
+def create_project(
+    name: str,
+    github_repo: str,
+    local_path: str,
+    github_token: Optional[str] = None,
+    default_branch: str = "main",
+    test_cmd: str = "pytest",
+    set_active: bool = True,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    project_id = f"proj-{os.urandom(3).hex()}"
+    now_iso = datetime.utcnow().isoformat()
+    with get_db(db_path) as conn:
+        if set_active:
+            conn.execute("UPDATE projects SET is_active = 0")
+        conn.execute(
+            """
+            INSERT INTO projects (
+                id, name, github_repo, github_token, local_path, default_branch, test_cmd, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                name.strip(),
+                github_repo.strip(),
+                github_token.strip() if github_token else None,
+                local_path.strip(),
+                default_branch.strip() or "main",
+                test_cmd.strip() or "pytest",
+                1 if set_active else 0,
+            )
+        )
+        # Also sync to repos for backward compatibility
+        conn.execute("UPDATE repos SET is_active = 0")
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO repos (id, name, local_path, test_cmd, health_url, start_cmd, port, is_active)
+            VALUES (?, ?, ?, ?, 'http://127.0.0.1:8000/health', '', 8000, ?)
+            """,
+            (project_id, name.strip(), local_path.strip(), test_cmd.strip() or "pytest", 1 if set_active else 0)
+        )
+    return {
+        "id": project_id,
+        "name": name.strip(),
+        "github_repo": github_repo.strip(),
+        "github_token": github_token.strip() if github_token else None,
+        "local_path": local_path.strip(),
+        "default_branch": default_branch.strip() or "main",
+        "test_cmd": test_cmd.strip() or "pytest",
+        "is_active": 1 if set_active else 0,
+        "created_at": now_iso,
+    }
+
+
+def list_projects(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM repos ORDER BY is_active DESC, created_at DESC")
+        cur.execute("SELECT * FROM projects ORDER BY is_active DESC, created_at DESC")
         return [dict(r) for r in cur.fetchall()]
+
+
+def get_project(project_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_active_project(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM projects WHERE is_active = 1 LIMIT 1")
+        row = cur.fetchone()
+        if not row:
+            cur.execute("SELECT * FROM projects ORDER BY created_at DESC LIMIT 1")
+            row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def set_active_project(project_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("UPDATE projects SET is_active = 0")
+        conn.execute("UPDATE projects SET is_active = 1 WHERE id = ?", (project_id,))
+        # Also sync to repos
+        conn.execute("UPDATE repos SET is_active = 0")
+        conn.execute("UPDATE repos SET is_active = 1 WHERE id = ?", (project_id,))
+
+
+def delete_project(project_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.execute("DELETE FROM repos WHERE id = ?", (project_id,))
+        conn.execute("DELETE FROM servers WHERE project_id = ?", (project_id,))
+
+
+# --- Repositories (Legacy Compatibility) ---
+
+def list_repos(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    return list_projects(db_path)
 
 
 def connect_repo(
@@ -625,67 +835,57 @@ def connect_repo(
     set_active: bool = True,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    repo_id = f"repo-{os.urandom(3).hex()}"
-    with get_db(db_path) as conn:
-        if set_active:
-            conn.execute("UPDATE repos SET is_active = 0")
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO repos (
-                id, name, local_path, test_cmd, health_url, start_cmd, port, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (repo_id, name, local_path, test_cmd, health_url, start_cmd, port, 1 if set_active else 0)
-        )
-    return {
-        "id": repo_id,
-        "name": name,
-        "local_path": local_path,
-        "test_cmd": test_cmd,
-        "health_url": health_url,
-        "start_cmd": start_cmd,
-        "port": port,
-        "is_active": 1 if set_active else 0,
-    }
+    return create_project(
+        name=name,
+        github_repo=f"vishnunandan555/{name}",
+        local_path=local_path,
+        test_cmd=test_cmd,
+        set_active=set_active,
+        db_path=db_path,
+    )
 
 
 def set_active_repo(repo_id: str, db_path: Optional[str] = None) -> None:
-    with get_db(db_path) as conn:
-        conn.execute("UPDATE repos SET is_active = 0")
-        conn.execute("UPDATE repos SET is_active = 1 WHERE id = ?", (repo_id,))
+    set_active_project(repo_id, db_path)
 
 
 def delete_repo(repo_id: str, db_path: Optional[str] = None) -> None:
-    with get_db(db_path) as conn:
-        conn.execute("DELETE FROM repos WHERE id = ?", (repo_id,))
+    delete_project(repo_id, db_path)
 
 
 def get_active_repo(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return get_active_project(db_path)
+
+
+# --- Connected Production Servers (Render Infrastructure) ---
+
+def list_servers(project_id: Optional[str] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM repos WHERE is_active = 1 LIMIT 1")
-        row = cur.fetchone()
-        if not row:
-            cur.execute("SELECT * FROM repos ORDER BY created_at DESC LIMIT 1")
-            row = cur.fetchone()
-        return dict(row) if row else None
-
-
-# --- Connected Servers / Services ---
-
-def list_servers(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    with get_db(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM servers ORDER BY is_active DESC, created_at DESC")
+        if project_id:
+            cur.execute("SELECT * FROM servers WHERE project_id = ? ORDER BY is_active DESC, created_at DESC", (project_id,))
+        else:
+            cur.execute("SELECT * FROM servers ORDER BY is_active DESC, created_at DESC")
         return [dict(r) for r in cur.fetchall()]
+
+
+def get_server(server_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM servers WHERE id = ?", (server_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def connect_server(
     name: str,
     health_url: str,
+    project_id: Optional[str] = None,
+    provider: str = "render",
+    render_service_id: Optional[str] = None,
+    render_api_key: Optional[str] = None,
     port: int = 8000,
     host: str = "127.0.0.1",
-    repo_id: Optional[str] = None,
     status: str = "UNKNOWN",
     latency_ms: float = 0.0,
     set_active: bool = True,
@@ -699,23 +899,92 @@ def connect_server(
         conn.execute(
             """
             INSERT OR REPLACE INTO servers (
-                id, name, repo_id, host, port, health_url, status, latency_ms, last_checked_at, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, project_id, name, provider, render_service_id, render_api_key,
+                host, port, health_url, status, latency_ms, last_checked_at, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (server_id, name, repo_id, host, port, health_url, status, latency_ms, now_iso, 1 if set_active else 0)
+            (
+                server_id,
+                project_id,
+                name.strip(),
+                provider.strip().lower() if provider else "render",
+                render_service_id.strip() if render_service_id else None,
+                render_api_key.strip() if render_api_key else None,
+                host.strip() if host else "127.0.0.1",
+                port or 8000,
+                health_url.strip(),
+                status,
+                latency_ms,
+                now_iso,
+                1 if set_active else 0,
+            )
         )
     return {
         "id": server_id,
-        "name": name,
-        "repo_id": repo_id,
+        "project_id": project_id,
+        "name": name.strip(),
+        "provider": provider or "render",
+        "render_service_id": render_service_id.strip() if render_service_id else None,
+        "render_api_key": render_api_key.strip() if render_api_key else None,
         "host": host,
         "port": port,
-        "health_url": health_url,
+        "health_url": health_url.strip(),
         "status": status,
         "latency_ms": latency_ms,
         "last_checked_at": now_iso,
         "is_active": 1 if set_active else 0,
     }
+
+
+# Alias create_server to connect_server for API compatibility
+create_server = connect_server
+
+
+# --- Global Settings Key-Value Store ---
+
+def get_setting(key: str, default: Optional[str] = None, db_path: Optional[str] = None) -> Optional[str]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cur.fetchone()
+        if row:
+            return row["value"]
+    # Fallback to os.environ
+    return os.environ.get(key, default)
+
+
+def set_setting(key: str, value: str, db_path: Optional[str] = None) -> None:
+    now_iso = datetime.utcnow().isoformat()
+    with get_db(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, value.strip(), now_iso)
+        )
+
+
+def get_all_settings(db_path: Optional[str] = None) -> Dict[str, str]:
+    settings = {}
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT key, value FROM settings")
+        for r in cur.fetchall():
+            settings[r["key"]] = r["value"]
+
+    # Fill defaults from environment if missing in DB
+    for env_key in [
+        "GITHUB_PAT",
+        "RENDER_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_ALLOWED_CHAT_ID",
+        "OPENROUTER_API_KEY",
+        "JEV_API_KEY",
+        "CLOUDFLARE_TUNNEL_URL",
+        "RENDER_WEB_URL",
+    ]:
+        if env_key not in settings and os.environ.get(env_key):
+            settings[env_key] = os.environ.get(env_key, "")
+
+    return settings
 
 
 def update_server_status(
@@ -749,18 +1018,30 @@ def delete_server(server_id: str, db_path: Optional[str] = None) -> None:
         conn.execute("DELETE FROM servers WHERE id = ?", (server_id,))
 
 
-def get_active_server(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_active_server(project_id: Optional[str] = None, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM servers WHERE is_active = 1 LIMIT 1")
-        row = cur.fetchone()
-        if not row:
-            cur.execute("SELECT * FROM servers ORDER BY created_at DESC LIMIT 1")
+        if project_id:
+            cur.execute("SELECT * FROM servers WHERE project_id = ? AND is_active = 1 LIMIT 1", (project_id,))
             row = cur.fetchone()
+            if not row:
+                cur.execute("SELECT * FROM servers WHERE project_id = ? ORDER BY created_at DESC LIMIT 1", (project_id,))
+                row = cur.fetchone()
+        else:
+            cur.execute("SELECT * FROM servers WHERE is_active = 1 LIMIT 1")
+            row = cur.fetchone()
+            if not row:
+                cur.execute("SELECT * FROM servers ORDER BY created_at DESC LIMIT 1")
+                row = cur.fetchone()
+        return dict_from_row(row)
+
+
 def list_users(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_db(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, email, full_name, role, created_at FROM users ORDER BY created_at ASC")
+        cur.execute(
+            "SELECT id, username, email, full_name, role, phone, avatar_url, telegram_chat_id, bio, created_at FROM users ORDER BY created_at ASC"
+        )
         return [dict(r) for r in cur.fetchall()]
 
 

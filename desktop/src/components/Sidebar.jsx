@@ -4,7 +4,8 @@ import {
   ShieldAlert,
   Terminal,
   Server,
-  GitBranch,
+  FolderGit2,
+  Cpu,
   Bot,
   Users,
   Settings,
@@ -46,8 +47,9 @@ export default function Sidebar({
       badgeColor: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
     },
     { id: 'logs', label: 'Logs Explorer', icon: Terminal },
-    { id: 'services', label: 'Services', icon: Server, statusDot: activeCount.length > 0 ? 'bg-[#d29922]' : 'bg-[#3fb950]' },
-    { id: 'repositories', label: 'Repositories', icon: GitBranch },
+    { id: 'servers', label: 'Production Servers', icon: Server },
+    { id: 'projects', label: 'Projects', icon: FolderGit2 },
+    { id: 'services', label: 'Platform Services', icon: Cpu },
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'team', label: 'Team', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -59,7 +61,9 @@ export default function Sidebar({
       <div className="p-2 space-y-0.5 border-b border-[#1b2234]">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeNav === item.id;
+          const isActive =
+            activeNav === item.id ||
+            (item.id === 'projects' && activeNav === 'repositories');
           return (
             <button
               key={item.id}

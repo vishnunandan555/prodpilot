@@ -1,325 +1,173 @@
-# ProdPilot - Build Plan
+# ProdPilot - Master Execution & Architecture Plan
+## Autonomous Production Incident Response Platform (Render + GitHub Integration)
 
 **Realm Hack 2026 | Deadline: Tomorrow, 11:00 AM (24 Oct 2026) | Vishnu Nandan**  
-**Version**: 2.2 (Model 1 Hybrid Execution Plan)
-
-> **Current Time**: Friday, 6:35 PM (23 Oct 2026)  
-> **Submission Deadline**: Saturday, 11:00 AM (24 Oct 2026)  
-> **Total Time Remaining**: **~16.4 Hours**
+**Version**: 3.5 (Real-Infrastructure Execution & Verified Telemetry State)
 
 ---
 
-## 1. Timeline & Phase Schedule (16.4-Hour Countdown)
+## 1. Executive Real-Infrastructure Alignment
 
-| Phase & Timeline | Duration | Goal | Gate | Status |
-|---|---|---|---|---|
-| **Phase 0: Setup & Spikes** | Completed | SDK verified, Telegram bot talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
-| **Phase 1: Core Pipeline** | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
-| **Phase 2: Staging, Orchestrator, Telegram** | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2** | ✅ **PASSED (Tag: `gate-2-passed`)** |
-| **Phase 3: Desktop Base & Daemon Runner** | Completed | Desktop Mission Control base, unified runner daemon, branding unified | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
-| **Phase 4: Model 1 Hardening & Render Deploy** | Completed | Render log ingestion, immediate Telegram alert, Render frontend deploy + Cloudflare Tunnel, 10s watchdog | **Gate 4** | ✅ **PASSED (Tag: `gate-4-passed`)** |
-| **Active Milestone: Operations UI Overhaul**<br>*(7:05 PM – 8:30 PM)* | **1.5 hours** | 8-Section SRE Operations Platform + 6-Tab Incident Details Hero Screen (Splunk/Epok-inspired) | **Gate UI** | 🟡 **IN PROGRESS (ACTIVE)** |
-| **Phase 5: Rehearsals, Seeded Bugs & Video**<br>*(8:30 PM – 1:30 AM)* | **5.0 hours** | 3 consecutive clean runs, 5–8 seeded bugs suite, record 3-min backup video on final UI | **Gate 5**<br>*(Freeze)* | ⚪ Next Up (After UI) |
-| **Rest & Buffer Window**<br>*(1:30 AM – 7:30 AM)* | **6.0 hours** | Rest & sleep buffer (prevents demo-day fatigue) | — | ⚪ Scheduled |
-| **Phase 6: Pitch Slides & Devfolio Submit**<br>*(7:30 AM – 11:00 AM)* | **3.5 hours** | Fresh clone dry-run, pitch deck polish, Devfolio submission freeze | **Ship** | ⚪ Queued |
+ProdPilot connects your **real production server (Render)** and **source code repository (GitHub)** to monitor application health, detect production failures, investigate root causes, and coordinate recovery without requiring you to open your laptop.
+
+### The Core Architectural Truths:
+1. **Zero Mock / Fake Data**: No simulated log streams or fake "STREAM ACTIVE" badges when disconnected. All data originates strictly from user configuration, live GitHub REST API, and Render REST API v1.
+2. **Projects Section (GitHub Integration)**:
+   - Projects link a local working directory with the **GitHub REST API** via a pre-scoped Personal Access Token (PAT).
+   - Live GitHub data is fetched directly: **Active GitHub Issues & Bug Reports**, **Pull Requests & Reviewer Discussions**, **GitHub Actions Workflow Deployment Logs**, and **Local Git Commit History**.
+3. **Servers / Production Host Section (Render Integration)**:
+   - Operators attach a **Render Web Service** or Worker to their project.
+   - Connects to the **Render REST API v1** (`https://api.render.com/v1`) using the verified Render API Key.
+   - Auto-discovers services associated with the key (e.g. `chunkstream` - `srv-dbdmotfb9u1s73a82le0`), with 1-click **[Auto-Fill]**, live health probes, deploy history, and live container log streaming.
+4. **Autonomous Remediation & Agentic Fleet**:
+   - Continuous watchdog monitoring over production health endpoints and crash traces.
+   - Stack trace triage, SHA-256 deduplication fingerprinting, and Jev / OpenRouter rule evaluation.
+   - Google Antigravity agent inspects an isolated git worktree, writes reproduction tests (`test_repro.py`), verifies failure (Red), fixes the code, and verifies pass (Green).
+   - Canary staging container (ports 8001/8002) validation and fix-forward vs rollback confidence scoring.
+   - Telegram bot 1-tap mobile approval buttons + Twilio Sev-1 interactive emergency voice call escalation.
 
 ---
 
-## 2. Model 1 Architecture & Workstream Division
+## 2. Architecture Diagram (Model 1 Hybrid)
 
 ```
-┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│ Stream A: Laptop Ingest & Triage│   │ Stream B: Laptop Fixing & Guard │   │ Stream C: Render Web & Tunnel   │
-├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
-│ • Status: ✅ MERGED & VERIFIED   │   │ • Status: ✅ MERGED & VERIFIED   │   │ • Status: ✅ MERGED & VERIFIED   │
-│ • Branch: stream-triage         │   │ • Branch: stream-agent          │   │ • Branch: stream-ui             │
-│ • Render Log API Ingest         │   │ • Antigravity SDK Fix Loop      │   │ • Vite Build for Render Static  │
-│ • Fast Rule Filter              │   │ • Git Worktree Isolation        │   │ • Cloudflare Tunnel Bridge      │
-│ • SQLite Fingerprint & Anti-Loop│   │ • PR Opener & Staging Canaries  │   │ • Immediate Telegram Alert      │
-│ • Low-Severity Issue Handler    │   │ • 10s Post-Deploy Watchdog Guard│   │ • Mobile Incident Page (/inc/id)│
-└─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   REMOTE DEVELOPER                                     │
+│                     (Mobile Phone Browser / Any Web Browser)                           │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Outbound Actions
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              RENDER: PRODPILOT WEBSITE                                 │
+│     • Public Frontend (React + Vite build hosted on Render Static Sites)               │
+│     • Incident Dashboard & Live Incident Webpage (/incidents/{id})                     │
+│     • 1-Tap Developer Controls: [Deploy Fix], [Rollback], [Take Over]                  │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Outbound HTTPS API Calls
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  CLOUDFLARE TUNNEL                                     │
+│     • Secure zero-config bridge forwarding to laptop http://127.0.0.1:8765             │
+│     • TwiML Webhook endpoint (/voice/test-twiml, /voice/action)                        │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               LAPTOP: PRODPILOT BACKEND                                │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. FastAPI Daemon (Port 8765): REST & SSE endpoints                              │  │
+│  │ 2. Projects Manager: GitHub REST API (Issues, PRs, Workflow Runs, Git Blame)     │  │
+│  │ 3. Server Manager: Render REST API v1 (Live Discovery, Deploys, Log Stream)      │  │
+│  │ 4. Monitoring Engine: Real log ingestion from Render API with rule filters        │  │
+│  │ 5. Agent Fleet: Google Antigravity SDK fix loop in isolated git worktree         │  │
+│  │ 6. Decision Engine: Jev (OpenRouter Gemini 2.5 Flash token-budgeted scoring)     │  │
+│  │ 7. Verification Watchdog: 10-second post-deploy health check & auto-revert       │  │
+│  │ 8. Telegram Bot API: Instant push alert with Render mobile web link              │  │
+│  │ 9. Twilio Voice Engine: Emergency Sev-1 voice call tree & DTMF response          │  │
+│  │ 10. SQLite Database: Projects, Servers, Users, Settings, Incidents, Audit Logs   │  │
+│  └──────────────────────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Folder Ownership:
-- **Stream A (Agent 1)**: `backend/prodpilot/ingest/`, `backend/prodpilot/triage/`, `backend/prodpilot/db.py`
-- **Stream B (Agent 2)**: `backend/prodpilot/agents/`, `backend/prodpilot/pipeline/`, `backend/prodpilot/staging/deploy.py`
-- **Stream C (Agent 3)**: `desktop/`, `backend/prodpilot/api/`, `telegram/`
+---
+
+## 3. Workstream Execution Roadmap
+
+### Phase 1: Residue & Misconception Purge
+- [x] Remove vague "Services" and "Repositories" tabs from sidebar and router.
+- [x] Eliminate fake "STREAM ACTIVE" badges when Render API is not connected.
+- [x] Clear old static/demo fallback strings in backend handlers.
+- [x] Purge test runner incidents from SQLite DB (`inc-api-test-01`, `inc-orch-...`) and add automated test teardowns.
+- [x] Eliminate duplicate inner window controls from `WindowHeader.jsx`.
+
+### Phase 2: Database Schema & Credential Management
+- [x] **`projects` table**: Schema created and verified (ID, name, repo, token, local path, branch, test command).
+- [x] **`servers` table**: Schema created and verified (ID, project_id, name, provider, render_service_id, render_api_key, health_url, status, latency_ms).
+- [x] **`users` table**: Upgraded with avatar URL, phone number, Telegram chat ID, role, and bio.
+- [x] **`settings` storage**:
+  - Global GitHub PAT (`GITHUB_PAT`) with direct pre-configured token generator link.
+  - Global Render API Key (`RENDER_API_KEY`) verified with Render REST API v1.
+  - OpenRouter API Key for Jev (`OPENROUTER_API_KEY`).
+  - Telegram Bot Token & Allowed Chat ID (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_CHAT_ID`).
+  - Twilio Voice Escalation credentials (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `ENGINEER_PHONE`).
+  - Cloudflare Tunnel URL (`CLOUDFLARE_TUNNEL_URL`).
+
+### Phase 3: Real Backend Integrations
+- [x] **Render REST API Client (`backend/prodpilot/integrations/render_client.py`)**:
+  - `list_services(limit=25)`: Discovers all services linked to API key.
+  - `get_service(service_id)`: Fetches live specifications, env, region, repo, and update timestamps.
+  - `get_deploys(service_id)`: Pulls real deployment history and commit IDs.
+  - `get_logs(service_id, limit=100)`: Streams real production logs.
+  - `probe_health(health_url)`: Measures millisecond round-trip probe latency.
+- [x] **GitHub REST API Client (`backend/prodpilot/integrations/github_client.py`)**:
+  - `get_issues(repo_slug, token)`: Fetches active GitHub issues, labels, bug reports, and authors.
+  - `get_pull_requests(repo_slug, token)`: Fetches open PRs, reviewers, and discussion threads.
+  - `get_workflow_runs(repo_slug, token)`: Fetches GitHub Actions workflow runs and deployment logs.
+  - `inspect_local_commits(local_path)`: Fetches commit tree, authors, and timestamps.
+- [x] **Twilio Voice Call Service (`backend/prodpilot/integrations/twilio_client.py`)**:
+  - Outbound emergency voice dispatch with interactive TwiML audio.
+  - DTMF keypad capture (Press 1 to Rollback, Press 2 to Approve Staged Hotfix, Press 3 for Manual Takeover).
+  - Speech-to-text audio drill and test echo callbacks.
+  - Dynamic public tunnel resolver (`get_effective_public_url`).
+- [x] **Backend API Router (`backend/prodpilot/api/connect_router.py`)**:
+  - Endpoints for `/projects`, `/servers`, `/render/discover`, `/agents`, `/platform-services`, `/users`, `/voice/test-call`, and `/settings`.
+
+### Phase 4: UI Architecture & Dedicated Views
+- [x] **Personal Dashboard (`desktop/src/components/DashboardView.jsx`)**:
+  - Personalized operator dashboard (`damu007's Dashboard`) with clean zero-mock onboarding state when 0 projects are connected.
+- [x] **Projects Section (`desktop/src/components/ProjectsView.jsx`)**:
+  - Manual project creation with GitHub PAT shortcut link (`scopes=repo,workflow,read:user,user:email`).
+  - Tabbed subviews: Active Issues, Pull Requests, Workflow Runs, and Local Commits with manual refresh buttons.
+- [x] **Production Servers Section (`desktop/src/components/ServersView.jsx`)**:
+  - Auto-Discovery drawer querying Render REST API v1.
+  - 1-Click **[Auto-Fill]** for discovered services (`chunkstream`, etc.).
+  - Live Render specifications, deployment history, health probe latency, and manual refresh controls.
+- [x] **Logs Explorer (`desktop/src/components/LogsView.jsx`)**:
+  - Live log streamer from Render REST API with search, level filters, and zero fake data.
+- [x] **Autonomous Agents View (`desktop/src/components/AgentsView.jsx`)**:
+  - Real-time operations center displaying live telemetry, assigned targets, active tasks, toolchains, and safety guardrails across the 6 specialized agents.
+- [x] **Platform Services View (`desktop/src/components/PlatformServicesView.jsx`)**:
+  - Live ping test suite for Jev, Antigravity, Telegram, Twilio Voice, Render Watchdog, and Cloudflare Tunnel.
+  - Interactive Twilio Voice Call testing modal with live telemetry log stream.
+- [x] **Profile & Account Management (`desktop/src/components/ProfileModal.jsx`)**:
+  - Profile photo upload/URL, phone number for on-call escalation, role, and Telegram ID.
+
+### Phase 5: Autonomous End-to-End Remediation Pipeline
+- [ ] Connect `ChunkStream` project (`vishnunandan555/chunkstream` at `/home/vishnunandan555/Projects/chunkstream`).
+- [ ] Connect `ChunkStream` Render server (`srv-dbdmotfb9u1s73a82le0`, `https://chunkstream.onrender.com/health`).
+- [ ] Stream live Render logs into ProdPilot Logs Explorer.
+- [ ] Trigger an error in Render logs $\rightarrow$ verify automatic triage creates incident.
+- [ ] Antigravity agent inspects worktree, writes `test_repro.py`, confirms Red failure, fixes code, confirms Green pass.
+- [ ] Canary ports 8001/8002 staged, Jev OpenRouter scores confidence.
+- [ ] Telegram alert dispatched with 1-tap Render approval link & Twilio voice call triggers.
+- [ ] Tap Approve $\rightarrow$ promotes to Render $\rightarrow$ 10-second watchdog verifies health.
 
 ---
 
-## 3. Passed Phase: Phase 4 – Gate 4 (Model 1 Hardening & Render Ready)
+## 4. Current Verification Status (October 24, 2026)
 
-**Goal**: Production monitoring on laptop pulls Render/Local logs $\rightarrow$ Outage triggers immediate Telegram alert with link to Render-hosted incident webpage $\rightarrow$ Antigravity agent on laptop investigates and crafts verified fix $\rightarrow$ Developer approves from phone $\rightarrow$ Cloudflare Tunnel forwards approval to laptop $\rightarrow$ 10s watchdog verifies production restored.
-
-### Stream A Tasks (Agent 1 - Laptop Ingestion, Triage & Anti-Looping):
-- [x] **Render & Forwarder Log Ingest (`backend/prodpilot/ingest/`)**:
-  - Implemented `/ingest` REST endpoint receiving batched log lines with timestamps and levels.
-  - Added `scripts/forwarder.py` to tail local service logs or fetch from Render REST API (`/services/{serviceId}/logs`).
-- [x] **Lightweight Triage & Severity Classifier (`backend/prodpilot/triage/`)**:
-  - Fast rule filter: extracts 5xx, unhandled exceptions, and `/health` failures.
-  - Classifies events into `HIGH` (Severe Outage) vs `LOW` (Minor Issue).
-  - Safety Override: any fatal crash or service exit is unconditionally forced to `HIGH`.
-- [x] **Low-Severity Issue Creator**:
-  - On `LOW` classification, synthesizes diagnostic brief and creates a non-urgent record with status `WAITING_FOR_DEVELOPER` and `severity:low` tag.
-- [x] **Anti-Looping Fingerprint Store (`backend/prodpilot/db.py`)**:
-  - Normalizes stack traces and computes SHA-256 fingerprint.
-  - If fingerprint already exists in status `OPEN`, `DETECTED`, or `INVESTIGATING`, increments `recurrence_count` without triggering duplicate agent runs.
-  - Verified with `scripts/test_ingest_triage.py` (Exit Code 0)!
-
-### Stream B Tasks (Agent 2 - Laptop Agent Fixing, Context & Safety Guard):
-- [x] **Investigation & Root Cause Report Generator (`backend/prodpilot/pipeline/investigate.py`)**:
-  - Collects stack trace, `git blame` suspect commit, and PR review discussion.
-  - Generates structured RCA report (summary, severity, timeline, evidence, root cause, suspected commit, recommendation, confidence).
-- [x] **Recovery Decision & Rollback Staging (`backend/prodpilot/staging/recovery.py`)**:
-  - Evaluates rollback eligibility; stages clean revert canary on port 8002.
-- [x] **Automated GitHub PR Creation (`backend/prodpilot/pipeline/pr_opener.py`)**:
-  - Runs Antigravity fixing loop in isolated git worktree: repro test Red $\rightarrow$ Green + full suite pass.
-  - Stages fix-forward canary on port 8001.
-  - Pushes branch `prodpilot-fix-<id>` to GitHub and opens a Draft Pull Request with test evidence.
-- [x] **10-Second Post-Deploy Watchdog & Auto-Revert (`backend/prodpilot/staging/deploy.py`)**:
-  - When approved, promotes chosen build to production port 8000.
-  - Monitors `/health` for 10 seconds.
-  - If health check fails or errors occur, triggers immediate rollback to previous build and marks `AUTO_REVERTED`.
-  - Strictly caps automatic remediation attempts at 1 before escalating to human on-call.
-  - Verified with `scripts/test_watchdog_revert.py` (Exit Code 0)!
-
-### Stream C Tasks (Agent 3 - Render Web Deploy, Cloudflare Tunnel & Telegram):
-- [x] **Purge Copilot Dead Views (`desktop/src/components/`)**:
-  - Deleted `SessionView.jsx`, `IssuesView.jsx`, `AutomationsView.jsx`, `CustomizeView.jsx`, and `discord_bot.py`.
-  - Streamlined navigation to: **Incidents**, **Telemetry & Logs**, and **Settings**.
-- [x] **Vite Web App Build & Render Static Site Config (`desktop/`)**:
-  - Configured `desktop/` for static web export with `VITE_API_URL` pointing to Cloudflare Tunnel URL.
-  - Added `desktop/render.yaml` and `RENDER_DEPLOY.md` for 1-click Render Static Site deployment.
-  - Verified `npm run build` generates clean production assets in 1.22s!
-- [x] **Mobile Incident Webpage (`/incidents/{id}`)**:
-  - Ensured incident detail view is fully responsive for mobile screens.
-  - Prominent 1-tap mobile action buttons: `[🚀 Approve & Deploy Fix]`, `[⏪ Instant Rollback]`, and `[🛑 Take Over]`.
-- [x] **Immediate Telegram Alert on Detection (`telegram/bot.py`)**:
-  - Sends immediate Telegram alert card on Stage 1 (`DETECTED`) with direct Render incident webpage link.
-  - Added inline `[⏪ Revert Commit (8002)]` button directly next to `[🚀 Deploy Fix (8001)]`.
-- [x] **Cloudflare Tunnel Runner Script (`scripts/start-tunnel.sh`)**:
-  - Persistent Cloudflare Tunnel forwarding to `http://127.0.0.1:8765`.
+| Component | Status | Verification Detail |
+| :--- | :--- | :--- |
+| **Backend Daemon** | **ONLINE** | FastAPI running on `0.0.0.0:8765` with reload enabled. |
+| **Database** | **CLEAN** | Pure zero-mock SQLite state (`incidents: 0`, `servers: 0`, `projects: 0`, `users: 1`). |
+| **Render API** | **AUTHENTICATED** | Key `rnd_2Pdih0...` verified; 5 services discovered (`chunkstream` active & healthy). |
+| **Desktop Client** | **BUILT & RUNNING** | Electron + Vite dev server running cleanly on `:5173`. Native window controls restored. |
+| **Agents Fleet** | **LIVE TELEMETRY** | `GET /agents` dynamically reports live task states, targets, and toolchains every 5s. |
+| **Twilio Voice** | **READY FOR VERIFICATION** | TwiML webhooks and call dispatcher armed; pending single recipient phone verification on Twilio console. |
 
 ---
 
-## 4. Active Milestone: UI Operations Platform Overhaul (Gate UI)
+## 5. Next Immediate Actions (Final Demo Prep)
 
-**Goal**: Transform ProdPilot into an authentic, production-grade SRE Operations Platform inspired by Splunk Observability and Epok Log Anomaly Detection, supporting both Desktop (Electron) and Web/Mobile (Render) before running Phase 5 rehearsals.
-
-> **Strategic Decision**: Complete the UI overhaul *before* Phase 5 rehearsals and demo video recording so that the recorded 3-minute video and automated runs capture the polished, final platform.
-
-### A. 8 Primary Navigation Sections
-- [x] **1. Dashboard**: High-level production health overview, active SEV-1 incident alerts, live error rate metrics, log volume timeline, monitored services status cards, and real dynamic SQLite metrics.
-- [x] **2. Incidents**: Comprehensive incident catalog with status filters (`All`, `Active`, `Resolved`), severity tags (`SEV-1 Critical`, `SEV-2 High`), search bar, and clean empty state when no incidents exist.
-- [x] **3. Incident Details (The Hero Screen)**: The central operational hub for a single incident featuring 6 internal tabs:
-  - **Tab 1: Overview** (Incident metadata, affected service, timeline overview, quick actions, blast radius).
-  - **Tab 2: Logs & Traces** (Extracted stack traces, panic logs, surrounding log context, copy/export).
-  - **Tab 3: Investigation & RCA** (Hypothesis vs confirmed facts, suspect commit, `git blame` attribution, confidence score).
-  - **Tab 4: Recovery & Canaries** (Canary staging environments, health status, guarded approval actions).
-  - **Tab 5: Changes & Diffs** (Unified syntax-highlighted git diff, PR branch link, Red-to-Green repro test evidence).
-  - **Tab 6: Timeline & Audit** (Real-time SSE event stream, transition history, agent actions, watchdog verification).
-- [x] **4. Logs Explorer**: Searchable log stream with live auto-scroll, log-level filters (ERROR, WARN, INFO, DEBUG), service picker, and keyword/regex search.
-- [x] **5. Services**: Monitored microservices overview displaying port allocations, canary health status, live ping latency stats, and active service toggle.
-- [x] **6. Repositories**: Source code repo intelligence (connected target repository, git blame history, active branches, live commits from active repo, and connect modal).
-- [x] **7. Agents**: Multi-agent fleet monitor (Antigravity SDK status, isolated git worktrees, active runs, token/cost telemetry, and safety guardrails).
-- [x] **8. Team**: On-call team roster, escalation tiers (Tier 0, 1, 2), member management modal, and RBAC accounts synced with SQLite.
-- [x] **9. Settings**: Platform configuration (Daemon host, Cloudflare Tunnel endpoint, Render web gateway URL).
-
-### B. Implementation Checklist (Operations UI Overhaul)
-- [x] Update `Sidebar.jsx` with the 8 primary navigation tabs and status badges.
-- [x] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and real dynamic SQLite aggregations.
-- [x] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive action bar (only rendered when awaiting operator promotion).
-- [x] Implement `LogsView.jsx` (interactive log explorer).
-- [x] Implement `ServicesView.jsx`, `RepositoriesView.jsx`, `AgentsView.jsx`, and `TeamView.jsx`.
-- [x] Verify both Desktop Electron and Render Web views render with 0 console errors and pass `npm run build`.
-- [x] Eliminate all fake/demo data from UI; wire authentication to real database (`users` table with bcrypt & JWT).
-- [x] Adopt **Inter** as primary font (`font-sans`), restricting monospace strictly to code, errors, hashes, URLs, and ports.
-- [x] Delete `demo-prod/` directory and all demo scripts (`init_demo_prod.py`, `reset-demo.sh`, `trigger-crash.sh`).
-- [x] Create root launcher script `run.sh` supporting `./run.sh`, `--backend`, `--ui`, `--status`, `--stop`.
-- [x] Add root `.env` and `.env.example` supporting `JEV_API_KEY`, `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`.
-
----
-
-## 5. Current Active Milestone: Live Integration Testing & Target Service Verification
-
-**Goal**: Connect a real target service (e.g. ChunkStream) to ProdPilot, trigger an actual telemetry exception via `/ingest`, verify autonomous triage and worktree fix generation, and test human approval via Desktop UI and Telegram bot.
-
-### A. Next Steps & Action Items
-1. **Connect Real Target Repository (ChunkStream)**:
-   - In ProdPilot Desktop, navigate to **Repositories** $\rightarrow$ click **Connect Repository**.
-   - Set Name: `chunkstream`
-   - Set Path: `/home/vishnunandan555/Projects/chunkstream`
-   - Test Command: `pytest`
-   - Health URL: `http://127.0.0.1:8000/health` (or configured port)
-   - Confirm git log and commits populate live from ChunkStream repository.
-
-2. **Connect & Probe Target Service**:
-   - In ProdPilot Desktop, navigate to **Services** $\rightarrow$ click **Connect Service**.
-   - Register ChunkStream microservice on port 8000 with `/health` probe.
-   - Verify live ping succeeds and latency is measured.
-
-3. **Live Telemetry Ingestion & Autonomous Remediation Test**:
-   - Send real log exception / 500 error to ProdPilot ingest endpoint (`POST http://127.0.0.1:8765/ingest`).
-   - Observe real-time SSE stream in Incident Details:
-     - Triage creates incident $\rightarrow$ sets severity HIGH.
-     - Worktree isolates a new branch in `.worktree/`.
-     - Reproduction test created $\rightarrow$ Red (fails on unpatched code).
-     - Antigravity agent synthesizes patch $\rightarrow$ Green (full test suite passes).
-     - Dual canaries staged (8001 fix-forward, 8002 rollback).
-     - Decision engine evaluates confidence using `JEV_API_KEY` / rules.
-     - Incident enters `AWAITING_APPROVAL`.
-
-4. **Approval & 10-Second Watchdog Test**:
-   - Click **Promote Fix to Production** (or approve via Telegram bot).
-   - Verify canary promotion to production port and watchdog 10-second health check.
-   - Confirm incident status transitions to `DEPLOYED` / `RESOLVED`.
-
-This section provides a rigorous, transparent technical audit of ProdPilot: what is genuinely implemented and operational vs. what is currently synthetic/mocked for demo purposes, followed by concrete engineering checklists to make ProdPilot a full-scale, professional SRE platform.
-
-### A. What is PROPERLY Implemented & Verified (The Operational Core)
-1. **SQLite Database & Audit Store (`backend/prodpilot/db.py`)**:
-   - Complete relational schema: `incidents`, `runs`, `events`, `artifacts`, `decisions`, `approvals`, `fingerprints`.
-   - Real SHA-256 stack trace fingerprint computation & recurrence counters (proven anti-loop crash protection).
-   - Real structured event logging (`log_event`) powering live SSE streams.
-2. **Deterministic Sandboxed Verification (`backend/prodpilot/pipeline/`)**:
-   - `worktree.py`: Real `git worktree add` and `git worktree remove` for strict filesystem isolation per incident.
-   - `repro_runner.py`: Deterministic test runner invoking `pytest`. Verifies repro test fails on baseline code (RED), applies patch, verifies full suite passes (GREEN).
-3. **Dual Agent Fixing Loop (`backend/prodpilot/agents/`)**:
-   - `antigravity_adapter.py`: Calls local Google Antigravity CLI binary (`/home/vishnunandan555/.local/bin/agy` v1.4.6).
-   - `gemini_adapter.py`: Gated AST / regex inspector and patch synthesizer with strictly sandboxed tools (`read_file`, `write_file`, `list_dir`, `grep_search`).
-4. **Side-Port Canary Staging & Watchdog (`backend/prodpilot/staging/`)**:
-   - `manager.py`: Launches real FastAPI canary instances on port 8001 (Fix-Forward) and port 8002 (Rollback Canary).
-   - `deploy.py`: 10-second real `/health` watchdog polling loop with automatic port-swap and auto-revert to rollback canary on failure.
-   - `pr_opener.py`: Creates real git branch `prodpilot-fix-<id>` and executes git commits.
-5. **Log Ingest & Triage Engine (`backend/prodpilot/ingest/` & `triage/`)**:
-   - `/ingest` REST endpoint receiving batch logs from local forwarder or Render API.
-   - Rule & regex classifier detecting 5xx, unhandled tracebacks, and health probe failures.
-6. **Backend REST API & Live SSE Streaming (`backend/prodpilot/api/server.py`)**:
-   - Port 8765 FastAPI server with CORS, SSE streaming events, and approval webhooks.
-7. **Telegram Bot Dispatcher (`telegram/bot.py`)**:
-   - Live Telegram bot with interactive inline buttons (`[🚀 Deploy Fix]`, `[⏪ Rollback]`), `/status`, `/logs`, `/report`.
-8. **Cloudflare Tunnel Bridge (`scripts/start-tunnel.sh`)**:
-   - Exposes laptop backend to the public internet securely without port forwarding.
-
----
-
-### B. What is Currently SYNTHETIC / MOCKED / HARDCODED
-1. **Frontend Hardcoded Datasets**:
-   - `DashboardView.jsx`: Time-series anomaly pulse bar chart uses static numbers (`timelinePoints`); MTTR ("42s") and uptime ("98.2%") are mock values.
-   - `ServicesView.jsx`: Hardcoded list of 4 static microservices; does not query dynamic service registries.
-   - `RepositoriesView.jsx`: Hardcoded list of commits and PR metadata; does not dynamically pull from GitHub REST API in the frontend.
-   - `AgentsView.jsx`: Static latency and execution run numbers.
-   - `TeamView.jsx`: Hardcoded on-call engineer contacts.
-   - `App.jsx`: Hardcoded fallback incident (`FALLBACK_INCIDENT`) when backend is disconnected.
-2. **Fixed Service Target**:
-   - Hardcoded to local `demo-prod` microservice repository. No dynamic repository selector or multi-repo switching in the UI.
-3. **No Authentication or Multi-Tenancy**:
-   - Open access on both Desktop and Render web; anyone with the URL can view and approve deployments.
-4. **No Remote Interactive Agent Coding IDE / Chat**:
-   - While autonomous fix runs in the background, developers cannot currently converse directly with the agent, ask questions, or tweak code collaboratively before deploying.
-
----
-
-### C. Engineering Checklists to Turn ProdPilot into a Full Professional Platform
-
-#### Checklist 1: Authentication & Role-Based Access Control (RBAC)
-- [ ] **GitHub / Google OAuth Integration**: Implement user login via GitHub OAuth or Clerk/Supabase.
-- [ ] **JWT Bearer Auth on Backend**: Protect FastAPI endpoints (`/incidents`, `/approve`, `/ingest`) with signed JWT tokens.
-- [ ] **Role Permissions**:
-  - `Viewer`: Can view dashboard, telemetry, and incident timelines.
-  - `Incident Commander / Lead SRE`: Authorized to approve production deploys and instant rollbacks.
-- [ ] **Audit Trail Attribution**: Store user ID and email on all approval records in SQLite and Telegram notifications.
-
-#### Checklist 2: Dynamic Repository & Cloud Infrastructure Connectors
-- [ ] **Connect Repository Flow**:
-  - OAuth or GitHub PAT integration allowing developers to select any repo from their GitHub account.
-  - Clone/fetch repository dynamically into isolated workspaces on the backend.
-  - Live commit history and blame extraction directly via GitHub REST/GraphQL API.
-- [ ] **Connect Render Platform**:
-  - Render API Key & Workspace picker in Settings.
-  - Fetch real services list (`GET https://api.render.com/v1/services`).
-  - Auto-configure log forwarding streams and Render deploy hooks (`POST https://api.render.com/deploy/...`).
-- [ ] **Multi-Service Registry**:
-  - Dynamically register microservices, their ports, health endpoints, and Docker/k8s targets.
-
-#### Checklist 3: Remote Interactive Agent Coding IDE & Chat Workspace
-- [ ] **Interactive SRE Agent Chat Tab**:
-  - Add dedicated chat/IDE tab in the platform to converse with the Antigravity agent.
-  - Support natural language queries: *"Why didn't you use a try/except instead?"*, *"Can you add input validation for price?"*, *"Show me the full stack trace context."*
-- [ ] **Collaborative Split-View Code Editor**:
-  - Lightweight Monaco or CodeMirror editor embedded in the Incident Details screen.
-  - Allow developers to directly review, edit, and modify the agent's synthesized patch before approving.
-- [ ] **Sandboxed Diagnostic Terminal**:
-  - Web-based read-only terminal executing safe diagnostic commands (`pytest`, `git status`, `git log`) in the incident worktree.
-
-#### Checklist 4: UI De-AI-ification (Professional Matte SRE Aesthetic)
-- [ ] **Strip AI-Generated Cliches**:
-  - Remove neon purple/blue glowing gradients (`shadow-indigo-500/30`, saturated gradient cards).
-  - Eliminate generic floating circular pulse badges.
-- [ ] **Adopt High-Density Matte SRE Design System (Grafana / Linear / Datadog style)**:
-  - Deep matte obsidian palette (`#090d16` canvas, `#0e131f` surface, `#1b2234` subtle border).
-  - High-density monospace typography for all metrics, timestamps, and commit hashes.
-  - Dense operational data tables with sorting, sticky headers, and live search.
-  - Authentic Linux terminal styling with syntax-highlighted ANSI logs.
-
-#### Checklist 5: Live Telemetry & Dynamic Metric Pipelines
-- [ ] **Real Time-Series Aggregations**:
-  - Replace static `timelinePoints` with dynamic SQLite queries grouping ingested logs by minute (`SELECT strftime('%H:%M', timestamp), count(*) ...`).
-  - Compute real MTTR dynamically: average elapsed time between `detected_at` and `resolved_at` across past incidents.
-- [ ] **Live Health Probe Engine**:
-  - Active background thread probing configured service health endpoints every 5 seconds, calculating real p99 latencies and uptime percentages.
-
----
-
----
-
-## 5. Phase 5: Rehearsals, Seeded Bugs & Demo Freeze (1:30 AM – 3:30 AM)
-
-- [ ] **3 Consecutive Clean Runs**:
-  - Trigger crash $\rightarrow$ immediate detection on laptop $\rightarrow$ phone alerts with Render link $\rightarrow$ repro test on laptop $\rightarrow$ fix verified $\rightarrow$ mobile approval on phone $\rightarrow$ healthy production.
-  - Run 3 times consecutively without manual intervention.
-- [ ] **Seeded Bug Suite**:
-  - Test against 5 distinct failure modes:
-    1. `KeyError` (missing dict key in order calculations).
-    2. `TypeError` / `NoneType` (unhandled null response).
-    3. `IndexError` (empty array access).
-    4. Infrastructure / Missing ENV (triggers "Not a Code Bug" escape hatch).
-    5. Recurrent crash loop (confirms de-duplication counter works).
-- [ ] **Record 3-Minute Backup Demo Video**:
-  - High-definition recording showing the mobile approval on the Render webpage and laptop backend timeline, ready as an offline fallback for the judges.
-- [ ] **Feature Freeze (1:30 AM Sharp)**: Zero new features past this point.
-
----
-
-## 5. Phase 6: Pitch Slides & Submission (8:00 AM – 11:00 AM)
-
-- **8:00 AM – 9:15 AM**: Clean clone test from GitHub to verify seamless fresh installation.
-- **9:15 AM – 10:15 AM**: Polish pitch deck:
-  - Slide 1: The Problem (The 2026 Verification Bottleneck & 3 AM On-Call Burnout).
-  - Slide 2: ProdPilot: The Autonomous Production Incident Response Platform.
-  - Slide 3: Model 1 Architecture (*"Render makes ProdPilot accessible. Your laptop makes ProdPilot operational."*).
-  - Slide 4: The Secret Sauce (Repro-first verification, mitigation-first rollback, mobile-first resolution).
-  - Slide 5: Live Demo Walkthrough (Crash $\rightarrow$ Mobile page $\rightarrow$ 1-tap fix $\rightarrow$ Healthy prod).
-- **10:15 AM – 10:45 AM**: Final dry-run presentation.
-- **10:45 AM – 11:00 AM**: Final Devfolio submission!
-
----
-
-## 6. Demo Script (3-Minute Model 1 Beat)
-
-1. **0:00 – 0:30 (Architecture & Setup)**:
-   - Open `https://prodpilot.onrender.com` on a phone and a browser. Explain Model 1: Render hosts the public interface; laptop runs the operational backend connected via Cloudflare Tunnel.
-   - Show healthy production service.
-2. **0:30 – 1:15 (Outage & Immediate Mobile Alert)**:
-   - Run `./scripts/trigger-crash.sh`.
-   - Production goes down. Laptop monitoring detects it $\rightarrow$ phone buzzes on Telegram with the Render incident webpage link.
-3. **1:15 – 2:00 (Autonomous Investigation on Laptop)**:
-   - Laptop investigation agent generates RCA report.
-   - Antigravity agent in isolated worktree creates `test_repro.py`, verifies Red $\rightarrow$ Green, stages Canaries 8001 and 8002, and opens GitHub PR.
-4. **2:00 – 2:40 (Mobile Review & 1-Tap Resolution)**:
-   - Tap the link on phone. Show the live Render webpage: RCA report, diff, and green canaries.
-   - Tap **`[🚀 Approve & Deploy Fix]`** directly from mobile.
-5. **2:40 – 3:00 (Watchdog Verification & Resolution)**:
-   - Cloudflare Tunnel routes approval to laptop.
-   - Laptop promotes Fix canary to production port 8000.
-   - 10-second watchdog confirms health. Post-mortem report auto-generates on Render and Telegram.
+1. **Step 1: Register ChunkStream in Production Servers**:
+   - In **Production Servers** $\rightarrow$ click **[+ Connect Render Server]**.
+   - Click **[Auto-Fill]** on `chunkstream` (`srv-dbdmotfb9u1s73a82le0`).
+   - Click **[Connect Server]** to begin 15-second autonomous watchdog telemetry.
+2. **Step 2: Add ChunkStream in Projects**:
+   - In **Projects** $\rightarrow$ click **[+ Add Project]**.
+   - Set Name: `ChunkStream`, Repo: `vishnunandan555/chunkstream`, Local Path: `/home/vishnunandan555/Projects/chunkstream`.
+   - Verify GitHub Issues, PRs, Workflow Runs, and Git Commits pull live.
+3. **Step 3: Verify Phone Number on Twilio**:
+   - Verify `+919539916820` at `https://console.twilio.com/us1/develop/phone-numbers/manage/verified` to unlock trial account outbound voice calls.
+4. **Step 4: Execute Live Incident Drill**:
+   - Run autonomous end-to-end incident drill: ingest error trace $\rightarrow$ Antigravity worktree patch $\rightarrow$ canary verification $\rightarrow$ Telegram/Voice approval $\rightarrow$ production promotion.

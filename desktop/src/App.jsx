@@ -4,12 +4,14 @@ import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import IncidentDetail from './components/IncidentDetail';
 import LogsView from './components/LogsView';
-import ServicesView from './components/ServicesView';
-import RepositoriesView from './components/RepositoriesView';
+import ServersView from './components/ServersView';
+import ProjectsView from './components/ProjectsView';
+import PlatformServicesView from './components/PlatformServicesView';
 import AgentsView from './components/AgentsView';
 import TeamView from './components/TeamView';
 import SettingsView from './components/SettingsView';
 import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
 
 // Read API URL from Vite environment variable (Cloudflare Tunnel URL) with localStorage fallback
 const getInitialApiUrl = () => {
@@ -65,6 +67,7 @@ export default function App() {
   });
   const [token, setToken] = useState(() => localStorage.getItem('prodpilot_token') || '');
   const [showAuthModal, setShowAuthModal] = useState(() => !localStorage.getItem('prodpilot_user'));
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const handleLoginSuccess = (user, tokenStr) => {
     setCurrentUser(user);
@@ -72,6 +75,11 @@ export default function App() {
     localStorage.setItem('prodpilot_user', JSON.stringify(user));
     localStorage.setItem('prodpilot_token', tokenStr);
     setShowAuthModal(false);
+  };
+
+  const handleUpdateUser = (updatedUser) => {
+    setCurrentUser(updatedUser);
+    localStorage.setItem('prodpilot_user', JSON.stringify(updatedUser));
   };
 
   const handleLogout = () => {
@@ -298,6 +306,7 @@ export default function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           onOpenAuth={() => setShowAuthModal(true)}
+          onOpenProfile={() => setShowProfileModal(true)}
         />
       </div>
 
@@ -330,6 +339,7 @@ export default function App() {
               onNavigate={(nav) => setActiveNav(nav)}
               apiConnected={apiConnected}
               apiUrl={apiUrl}
+              currentUser={currentUser}
             />
           )}
 
@@ -344,27 +354,40 @@ export default function App() {
               deploySuccess={deploySuccess}
               isStandaloneMobile={isMobileScreen}
               onBack={isMobileScreen ? () => setShowMobileList(true) : null}
+              onNavigate={(nav) => setActiveNav(nav)}
             />
           )}
 
           {(activeNav === 'logs' || activeNav === 'telemetry') && (
-            <LogsView apiUrl={apiUrl} incidents={incidents} activeIncident={selectedIncident} />
+            <LogsView apiUrl={apiUrl} onNavigate={(nav) => setActiveNav(nav)} />
+          )}
+
+          {activeNav === 'servers' && (
+            <ServersView apiUrl={apiUrl} onNavigateToLogs={() => setActiveNav('logs')} />
+          )}
+
+          {(activeNav === 'projects' || activeNav === 'repositories') && (
+            <ProjectsView apiUrl={apiUrl} />
           )}
 
           {activeNav === 'services' && (
-            <ServicesView apiConnected={apiConnected} apiUrl={apiUrl} />
-          )}
-
-          {activeNav === 'repositories' && (
-            <RepositoriesView apiUrl={apiUrl} activeIncident={selectedIncident} />
+            <PlatformServicesView apiUrl={apiUrl} onNavigate={(nav) => setActiveNav(nav)} />
           )}
 
           {activeNav === 'agents' && (
-            <AgentsView incidents={incidents} />
+            <AgentsView
+              apiUrl={apiUrl}
+              incidents={incidents}
+              onNavigate={(nav) => setActiveNav(nav)}
+            />
           )}
 
           {activeNav === 'team' && (
-            <TeamView apiUrl={apiUrl} currentUser={currentUser} />
+            <TeamView
+              apiUrl={apiUrl}
+              currentUser={currentUser}
+              onOpenProfile={() => setShowProfileModal(true)}
+            />
           )}
 
           {activeNav === 'settings' && (
@@ -372,6 +395,8 @@ export default function App() {
               apiBaseUrl={apiUrl}
               onSaveApiUrl={handleSaveApiUrl}
               apiConnected={apiConnected}
+              currentUser={currentUser}
+              onUpdateUser={handleUpdateUser}
             />
           )}
         </main>
@@ -383,6 +408,15 @@ export default function App() {
         onClose={() => setShowAuthModal(false)}
         onLoginSuccess={handleLoginSuccess}
         apiUrl={apiUrl}
+      />
+
+      {/* Profile & Account Management Modal */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        currentUser={currentUser}
+        apiUrl={apiUrl}
+        onUpdateUser={handleUpdateUser}
       />
     </div>
   );

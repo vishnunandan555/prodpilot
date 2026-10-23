@@ -98,27 +98,8 @@ class IssueClarifyRequest(BaseModel):
     source: str = "desktop_ui"
 
 
-# Seed / cache for known issues and analyzed briefs
-ISSUE_BRIEF_CACHE: Dict[str, Dict[str, Any]] = {
-    "1": {
-        "title": "[BUG] Missing discount key in order payload causes 500 crash",
-        "body": "When calling POST /orders without a discount field, the service crashes with KeyError: discount.\n\nSteps to reproduce:\n1. POST /orders with payload: {\"items\": [{\"id\": \"1\", \"price\": 20.0}]}\n\nError log:\nTraceback (most recent call last):\n  File \"app.py\", line 8, in calculate_order\n    discount = order[\"discount\"]\nKeyError: 'discount'\n\nExpected behavior:\nEndpoint should safely default missing discount to 0 and return 20.0 instead of crashing.",
-        "author": "vishnunandan555",
-        "repo": "vishnunandan555/demo-prod",
-    },
-    "2": {
-        "title": "[CHORE] Refactor auth context and update dependencies",
-        "body": "We should probably clean up auth context sometime soon.",
-        "author": "vishnunandan555",
-        "repo": "vishnunandan555/care_app",
-    },
-    "3": {
-        "title": "[FEATURE] Create UI for MayFly Dashboard",
-        "body": "Create a very simple UI Dashboard for Linux, which will basically show a GUI equivalent for MayFly TUI Main Dashboard.\n\nReproduction:\nRun npm run dev to open GUI.\n\nError logs:\nNone\n\nExpected behavior:\nShow dashboard with CPU/RAM metrics.",
-        "author": "vishnunandan555",
-        "repo": "vishnunandan555/mayfly",
-    },
-}
+# Cache for analyzed briefs
+ISSUE_BRIEF_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 

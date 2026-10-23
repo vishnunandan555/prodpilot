@@ -2,36 +2,87 @@ import React, { useState, useEffect } from 'react';
 import {
   Terminal,
   Search,
-  Filter,
   Download,
-  Trash2,
   RefreshCw,
   Clock,
   Layers,
-  CheckCircle2,
   AlertTriangle,
-  Flame,
-  Info,
-  ChevronDown
+  CheckCircle2,
+  Server,
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
 
-export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents = [], activeIncident = null }) {
+export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate }) {
+  const [servers, setServers] = useState([]);
+  const [selectedServerId, setSelectedServerId] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterLevel, setFilterLevel] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('ALL');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [streamConnected, setStreamConnected] = useState(false);
 
-  const fetchLogs = async () => {
-    setLoading(true);
+  // Fetch registered servers
+  const fetchServers = async () => {
     try {
-      const res = await fetch(`${apiUrl}/logs`);
+      const res = await fetch(`${apiUrl}/servers`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data.logs || []);
+        setServers(data.servers || []);
+        if (!selectedServerId && data.servers?.length > 0) {
+          const active = data.active_server || data.servers[0];
+          setSelectedServerId(active.id);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch servers for logs:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchServers();
+  }, [apiUrl]);
+
+  const currentServer = servers.find((s) => s.id === selectedServerId);
+
+  // Fetch live logs from Render REST API or local ingest
+  const fetchLogs = async () => {
+    if (!currentServer?.id) {
+      // Fallback: check general /logs
+      try {
+        const res = await fetch(`${apiUrl}/logs`);
+        if (res.ok) {
+          const data = await res.json();
+          setLogs(data.logs || []);
+          setStreamConnected(data.logs && data.logs.length > 0);
+        }
+      } catch (err) {
+        setStreamConnected(false);
+      }
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await fetch(`${apiUrl}/servers/${currentServer.id}/logs`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok === false) {
+          setErrorMsg(data.error || 'Failed to fetch logs from Render');
+          setLogs([]);
+          setStreamConnected(false);
+        } else {
+          setLogs(data.logs || []);
+          setStreamConnected(true);
+        }
+      } else {
+        setStreamConnected(false);
       }
     } catch (err) {
-      console.warn('Failed to fetch real logs:', err);
+      setErrorMsg(err.message || 'Error querying server logs');
+      setStreamConnected(false);
     } finally {
       setLoading(false);
     }
@@ -39,13 +90,12 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
 
   useEffect(() => {
     fetchLogs();
-    const interval = setInterval(fetchLogs, 3000);
+    const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [apiUrl]);
+  }, [selectedServerId, apiUrl]);
 
   const filteredLogs = logs.filter((log) => {
     if (filterLevel !== 'ALL' && log.level?.toUpperCase() !== filterLevel) return false;
-    if (serviceFilter !== 'ALL' && log.service !== serviceFilter) return false;
     if (searchTerm.trim() !== '') {
       const q = searchTerm.toLowerCase();
       return (
@@ -69,13 +119,11 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
     }
   };
 
-  const servicesList = Array.from(new Set(logs.map((l) => l.service).filter(Boolean)));
-
   const handleExport = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(filteredLogs, null, 2));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(filteredLogs, null, 2));
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `prodpilot-logs-${Date.now()}.json`);
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `render-logs-${currentServer?.name || 'prod'}-${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -87,18 +135,39 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
       <div className="border-b border-[#1b2234] bg-[#0d111a] px-5 py-3 flex-shrink-0 space-y-2.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
-            <Terminal size={15} className="text-[#58a6ff]" />
+            <Terminal size={16} className="text-[#58a6ff]" />
             <div>
-              <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                Live Telemetry & Ingest Logs
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
+                  Logs Explorer
+                </h1>
+                {currentServer?.render_service_id ? (
+                  <span className="text-[10px] px-2 py-0.2 rounded font-mono bg-[#161f30] text-[#79c0ff] border border-[#263550]">
+                    Render API: {currentServer.render_service_id}
+                  </span>
+                ) : null}
+              </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Real-time log tailing from POST /ingest and connected services
+                Live log stream via Render REST API v1 (/services/{'{id}'}/logs)
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {servers.length > 0 && (
+              <select
+                value={selectedServerId || ''}
+                onChange={(e) => setSelectedServerId(e.target.value)}
+                className="bg-[#121824] border border-[#222f47] text-xs text-[#f0f6fc] px-2.5 py-1 rounded-md focus:outline-none"
+              >
+                {servers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.status})
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button
               onClick={handleExport}
               disabled={filteredLogs.length === 0}
@@ -108,17 +177,29 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
               <Download size={13} />
               <span>Export</span>
             </button>
+
             <button
               onClick={fetchLogs}
-              className="p-1.5 rounded-md bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] transition"
+              disabled={loading}
+              className="px-2.5 py-1 rounded-md bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-medium text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1.5 transition"
               title="Refresh log stream"
             >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={loading ? 'animate-spin text-[#58a6ff]' : ''} />
+              <span>Refresh Logs</span>
             </button>
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-              <span>STREAM ACTIVE</span>
-            </div>
+
+            {/* Real Stream Status indicator: Never fake active! */}
+            {streamConnected ? (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
+                <span>RENDER STREAM LIVE</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#161b26] border border-[#212a3d] text-[#8b949e] text-[10px] font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6e7681]" />
+                <span>NOT CONNECTED</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -129,7 +210,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#485263]" />
               <input
                 type="text"
-                placeholder="Search logs by keyword, exception, or service..."
+                placeholder="Search logs by keyword, exception, or traceback..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-8 pr-2.5 py-1.5 rounded-md bg-[#07090f] border border-[#1b2234] text-xs text-[#c9d1d9] placeholder-[#485263] focus:outline-none focus:border-[#388bfd]"
@@ -154,69 +235,69 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
                 </button>
               ))}
             </div>
-
-            {/* Service filter */}
-            {servicesList.length > 0 && (
-              <select
-                value={serviceFilter}
-                onChange={(e) => setServiceFilter(e.target.value)}
-                className="px-2 py-1 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#c9d1d9] focus:outline-none"
-              >
-                <option value="ALL">All Services</option>
-                {servicesList.map((svc) => (
-                  <option key={svc} value={svc}>
-                    {svc}
-                  </option>
-                ))}
-              </select>
-            )}
           </div>
         </div>
       </div>
 
       {/* Log Feed */}
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1 bg-[#080b11]">
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1.5 bg-[#080b11]">
+        {errorMsg && (
+          <div className="p-3 mb-3 rounded-lg bg-[#241316] border border-[#481c25] text-xs text-[#ff7b72] flex items-center gap-2">
+            <ShieldAlert size={15} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
         {filteredLogs.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[#6e7681] space-y-2">
-            <Terminal size={32} className="text-[#30363d]" />
-            <p className="text-xs font-semibold text-[#8b949e]">No Telemetry Logs Recorded Yet</p>
-            <p className="text-[11px] text-[#6e7681] max-w-md">
-              ProdPilot is listening for incoming logs at <code className="text-[#58a6ff]">POST {apiUrl}/ingest</code>. Once your backend service or ChunkStream streams logs, they will appear here in real time.
-            </p>
+          <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[#6e7681] space-y-3">
+            <Terminal size={36} className="text-[#2b354b]" />
+            <div>
+              <p className="text-xs text-[#8b949e] font-semibold">
+                {!currentServer
+                  ? 'No Production Servers Connected'
+                  : !currentServer.render_service_id
+                  ? 'No Render Service ID Attached'
+                  : 'Awaiting Real Render Production Logs'}
+              </p>
+              <p className="text-[11px] text-[#6e7681] mt-1 max-w-sm">
+                {!currentServer
+                  ? 'Go to Production Servers tab to attach your Render web service and configure your Render API Key.'
+                  : !currentServer.render_service_id
+                  ? `Attach Render Service ID (srv-...) to '${currentServer.name}' to stream real production logs.`
+                  : 'No log events matching filters or container has not emitted standard output.'}
+              </p>
+            </div>
           </div>
         ) : (
-          filteredLogs.map((log, index) => (
+          filteredLogs.map((log, idx) => (
             <div
-              key={log.id || index}
-              className="flex items-start gap-3 p-1.5 rounded hover:bg-[#0d111a] transition border border-transparent hover:border-[#1b2234]"
+              key={log.id || idx}
+              className="group flex items-start gap-3 px-3 py-2 rounded bg-[#0d111a]/70 hover:bg-[#121824] border border-[#1b2234]/50 transition"
             >
-              <span className="text-[#485263] text-[11px] flex-shrink-0 select-none">
-                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LOG'}
+              <span className="text-[#485263] select-none text-[11px] min-w-[70px]">
+                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
               </span>
+
               <span
-                className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border flex-shrink-0 ${getLevelStyle(
+                className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase ${getLevelStyle(
                   log.level
                 )}`}
               >
                 {log.level || 'INFO'}
               </span>
+
               {log.service && (
-                <span className="text-[#8b949e] text-[11px] flex-shrink-0 font-semibold">
+                <span className="text-[#a371f7] text-[11px] font-semibold min-w-[90px]">
                   [{log.service}]
                 </span>
               )}
-              <span className="text-[#c9d1d9] text-[11px] break-all flex-1">
+
+              <span className="text-[#c9d1d9] flex-1 break-all select-text font-mono leading-relaxed">
                 {log.message}
               </span>
             </div>
           ))
         )}
-      </div>
-
-      {/* Footer Info */}
-      <div className="border-t border-[#1b2234] bg-[#0d111a] px-4 py-1.5 flex items-center justify-between text-[10px] font-mono text-[#6e7681] flex-shrink-0">
-        <span>Showing {filteredLogs.length} of {logs.length} entries</span>
-        <span>Telemetry buffer: SQLite `service_logs`</span>
       </div>
     </div>
   );

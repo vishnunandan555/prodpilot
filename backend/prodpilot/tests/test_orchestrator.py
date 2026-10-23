@@ -159,3 +159,14 @@ def test_orchestrator_advances_open_to_awaiting_approval():
         # Confirm report stored in artifacts table
         arts_after = get_artifacts(incident_id)
         assert any(a["kind"] == "incident_report" for a in arts_after)
+
+        # Clean up test incident to prevent DB pollution
+        from backend.prodpilot.db import get_connection
+        with get_connection() as conn:
+            conn.execute("DELETE FROM incidents WHERE id = ?", (incident_id,))
+            conn.execute("DELETE FROM runs WHERE incident_id = ?", (incident_id,))
+            conn.execute("DELETE FROM run_events WHERE incident_id = ?", (incident_id,))
+            conn.execute("DELETE FROM artifacts WHERE incident_id = ?", (incident_id,))
+            conn.execute("DELETE FROM decisions WHERE incident_id = ?", (incident_id,))
+            conn.execute("DELETE FROM approvals WHERE incident_id = ?", (incident_id,))
+            conn.commit()

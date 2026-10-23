@@ -1,19 +1,12 @@
 import React from 'react';
-import {
-  Wifi,
-  WifiOff,
-  Minimize2,
-  Square,
-  X,
-  User,
-  LogOut
-} from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 
 export default function WindowHeader({
   apiConnected,
   currentUser,
   onLogout,
-  onOpenAuth
+  onOpenAuth,
+  onOpenProfile
 }) {
   return (
     <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
@@ -44,15 +37,32 @@ export default function WindowHeader({
         {/* Operator Profile / Auth */}
         {currentUser ? (
           <div className="flex items-center gap-2 pl-2 border-l border-[#1b2234]">
-            <div className="w-5 h-5 rounded-full bg-[#171f30] border border-[#293652] flex items-center justify-center text-[10px] font-semibold text-[#58a6ff]">
-              {(currentUser.username || 'A').charAt(0).toUpperCase()}
-            </div>
-            <span className="text-xs text-[#c9d1d9] hidden sm:inline font-medium">
-              {currentUser.username}
-            </span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#171f30] text-[#58a6ff] border border-[#293652] uppercase font-semibold">
-              {currentUser.role || 'sre'}
-            </span>
+            <button
+              onClick={onOpenProfile}
+              title="Manage Account Profile (Photo, Phone, Role)"
+              className="flex items-center gap-1.5 p-1 rounded-md hover:bg-[#161f30] transition text-left"
+            >
+              <div className="w-5 h-5 rounded-full bg-[#171f30] border border-[#293652] overflow-hidden flex items-center justify-center text-[10px] font-semibold text-[#58a6ff]">
+                {currentUser.avatar_url ? (
+                  <img
+                    src={currentUser.avatar_url}
+                    alt={currentUser.username}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  (currentUser.username || 'A').charAt(0).toUpperCase()
+                )}
+              </div>
+              <span className="text-xs text-[#c9d1d9] hover:text-[#58a6ff] hidden sm:inline font-medium">
+                {currentUser.username}
+              </span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#171f30] text-[#58a6ff] border border-[#293652] uppercase font-semibold">
+                {currentUser.role || 'sre'}
+              </span>
+            </button>
             <button
               onClick={onLogout}
               className="text-[#6e7681] hover:text-[#ff7b72] transition ml-0.5 p-0.5 rounded hover:bg-[#161b26]"
@@ -70,19 +80,6 @@ export default function WindowHeader({
             <span>Sign In</span>
           </button>
         )}
-
-        {/* Window Controls */}
-        <div className="flex items-center gap-2 text-[#8b949e] pl-2 border-l border-[#1b2234]">
-          <button className="hover:text-[#f0f6fc] transition-colors p-1 rounded hover:bg-[#161b26]" title="Minimize">
-            <Minimize2 size={11} />
-          </button>
-          <button className="hover:text-[#f0f6fc] transition-colors p-1 rounded hover:bg-[#161b26]" title="Maximize">
-            <Square size={10} />
-          </button>
-          <button className="hover:text-[#ff7b72] transition-colors p-1 rounded hover:bg-[#161b26]" title="Close">
-            <X size={12} />
-          </button>
-        </div>
       </div>
     </header>
   );
