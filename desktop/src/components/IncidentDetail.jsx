@@ -24,7 +24,8 @@ import {
   ArrowLeft,
   Copy,
   Info,
-  Server
+  Server,
+  X
 } from 'lucide-react';
 import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
@@ -43,6 +44,11 @@ export default function IncidentDetail({
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [copiedTrace, setCopiedTrace] = useState(false);
+  const [dismissRestoredBanner, setDismissRestoredBanner] = useState(false);
+
+  React.useEffect(() => {
+    setDismissRestoredBanner(false);
+  }, [incident?.id]);
 
   if (!incident) {
     return (
@@ -210,7 +216,7 @@ export default function IncidentDetail({
 
       <div className="max-w-4xl w-full mx-auto p-4 space-y-4">
         {/* Production Restored Banner */}
-        {(deploySuccess || isResolved) && (
+        {(deploySuccess || isResolved) && !dismissRestoredBanner && (
           <div className="p-3.5 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-[#3fb950] flex-shrink-0" />
@@ -226,6 +232,13 @@ export default function IncidentDetail({
                 </p>
               </div>
             </div>
+            <button
+              onClick={() => setDismissRestoredBanner(true)}
+              className="text-[#3fb950]/70 hover:text-[#3fb950] p-1 rounded hover:bg-[#153422] transition"
+              title="Dismiss banner"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
 

@@ -14,7 +14,8 @@ import {
   Plus,
   RefreshCw,
   User,
-  ShieldAlert
+  ShieldAlert,
+  X
 } from 'lucide-react';
 
 export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser = null }) {
@@ -30,6 +31,39 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
   const [password, setPassword] = useState('');
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
+  const [addSuccess, setAddSuccess] = useState(null);
+
+  // Auto-dismiss addSuccess toast
+  useEffect(() => {
+    if (!addSuccess) return;
+    const timer = setTimeout(() => setAddSuccess(null), 3500);
+    return () => clearTimeout(timer);
+  }, [addSuccess]);
+
+  // Auto-dismiss addError toast
+  useEffect(() => {
+    if (!addError) return;
+    const timer = setTimeout(() => setAddError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [addError]);
+
+  const handleOpenAddModal = () => {
+    setAddError(null);
+    setAddSuccess(null);
+    setShowAddModal(true);
+  };
+
+  const handleCloseAddModal = () => {
+    setAddError(null);
+    setAddSuccess(null);
+    setShowAddModal(false);
+  };
+
+  const handleUserFieldChange = (setter, val) => {
+    setter(val);
+    if (addError) setAddError(null);
+    if (addSuccess) setAddSuccess(null);
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -54,6 +88,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
     e.preventDefault();
     setAddLoading(true);
     setAddError(null);
+    setAddSuccess(null);
 
     try {
       const res = await fetch(`${apiUrl}/users`, {
@@ -73,12 +108,15 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
         throw new Error(data.detail || 'Failed to create team member');
       }
 
-      setShowAddModal(false);
-      setUsername('');
-      setFullName('');
-      setEmail('');
-      setPassword('');
-      fetchUsers();
+      setAddSuccess(`Team member '${data.user?.full_name || username}' created successfully`);
+      setTimeout(() => {
+        setShowAddModal(false);
+        setUsername('');
+        setFullName('');
+        setEmail('');
+        setPassword('');
+        fetchUsers();
+      }, 700);
     } catch (err) {
       setAddError(err.message || 'Failed to add user');
     } finally {
@@ -112,7 +150,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={handleOpenAddModal}
               className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <Plus size={14} />
@@ -262,15 +300,43 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                 <Users size={16} className="text-[#58a6ff]" />
                 <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Add Team Member / SRE</h3>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="text-[#6e7681] hover:text-[#f0f6fc]">
-                ✕
+              <button onClick={handleCloseAddModal} className="text-[#6e7681] hover:text-[#f0f6fc] p-1 rounded hover:bg-[#161b26] transition">
+                <X size={15} />
               </button>
             </div>
 
             <form onSubmit={handleAddUser} className="p-5 space-y-3">
               {addError && (
-                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono">
-                  {addError}
+                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AlertCircle size={14} className="flex-shrink-0" />
+                    <span className="truncate">{addError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddError(null)}
+                    className="text-[#ff7b72]/70 hover:text-[#ff7b72] p-0.5 rounded transition hover:bg-[#3d181f]"
+                    title="Dismiss error"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+
+              {addSuccess && (
+                <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CheckCircle2 size={14} className="flex-shrink-0" />
+                    <span className="truncate">{addSuccess}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddSuccess(null)}
+                    className="text-[#3fb950]/70 hover:text-[#3fb950] p-0.5 rounded transition hover:bg-[#153422]"
+                    title="Dismiss message"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               )}
 
@@ -280,7 +346,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                   type="text"
                   required
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => handleUserFieldChange(setUsername, e.target.value)}
                   placeholder="alex_sre"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -292,7 +358,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                   type="text"
                   required
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => handleUserFieldChange(setFullName, e.target.value)}
                   placeholder="Alex Mercer"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -303,7 +369,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => handleUserFieldChange(setEmail, e.target.value)}
                   placeholder="alex@prodpilot.io"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -313,7 +379,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                 <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Role</label>
                 <select
                   value={role}
-                  onChange={(e) => setRole(e.target.value)}
+                  onChange={(e) => handleUserFieldChange(setRole, e.target.value)}
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none"
                 >
                   <option value="sre">SRE (Site Reliability Engineer)</option>
@@ -328,7 +394,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => handleUserFieldChange(setPassword, e.target.value)}
                   placeholder="•••••••• (default: prodpilot123)"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -337,7 +403,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={handleCloseAddModal}
                   className="px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-mono text-[#8b949e]"
                 >
                   Cancel

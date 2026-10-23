@@ -19,10 +19,21 @@ export default function SettingsView({
 }) {
   const [urlInput, setUrlInput] = useState(apiBaseUrl);
   const [saved, setSaved] = useState(false);
-  const [repoName, setRepoName] = useState('demo-prod');
+  const [repoName, setRepoName] = useState('chunkstream');
   const [renderWebUrl, setRenderWebUrl] = useState(
     localStorage.getItem('prodpilot_render_url') || 'https://prodpilot.onrender.com'
   );
+
+  React.useEffect(() => {
+    fetch(`${apiBaseUrl}/repos`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.active_repo?.name) {
+          setRepoName(data.active_repo.name);
+        }
+      })
+      .catch(() => {});
+  }, [apiBaseUrl]);
 
   const handleSave = (e) => {
     e.preventDefault();

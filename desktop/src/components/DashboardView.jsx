@@ -10,7 +10,12 @@ import {
   Cpu,
   ChevronRight,
   Terminal,
-  Plus
+  Plus,
+  FolderGit2,
+  ShieldCheck,
+  Check,
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 export default function DashboardView({
@@ -21,25 +26,39 @@ export default function DashboardView({
   apiUrl = 'http://127.0.0.1:8765'
 }) {
   const [servers, setServers] = useState([]);
+  const [repos, setRepos] = useState([]);
+  const [activeRepo, setActiveRepo] = useState(null);
   const [serversLoading, setServersLoading] = useState(false);
+  const [dismissSetupGuide, setDismissSetupGuide] = useState(
+    () => localStorage.getItem('prodpilot_dismiss_guide') === 'true'
+  );
+
+  const fetchTopology = async () => {
+    setServersLoading(true);
+    try {
+      const [srvRes, repoRes] = await Promise.all([
+        fetch(`${apiUrl}/servers`),
+        fetch(`${apiUrl}/repos`),
+      ]);
+      if (srvRes.ok) {
+        const srvData = await srvRes.json();
+        setServers(srvData.servers || []);
+      }
+      if (repoRes.ok) {
+        const repoData = await repoRes.json();
+        setRepos(repoData.repos || []);
+        setActiveRepo(repoData.active_repo || null);
+      }
+    } catch (err) {
+      console.warn('Topology fetch error:', err);
+    } finally {
+      setServersLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchServers = async () => {
-      setServersLoading(true);
-      try {
-        const res = await fetch(`${apiUrl}/servers`);
-        if (res.ok) {
-          const data = await res.json();
-          setServers(data.servers || []);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch servers for dashboard:', err);
-      } finally {
-        setServersLoading(false);
-      }
-    };
-    fetchServers();
-    const interval = setInterval(fetchServers, 5000);
+    fetchTopology();
+    const interval = setInterval(fetchTopology, 5000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 
@@ -165,6 +184,153 @@ export default function DashboardView({
                   <span>Open Triage</span>
                   <ArrowUpRight size={14} />
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Environment Connection & Setup Checklist */}
+        {!dismissSetupGuide && (
+          <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#1b2234] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
+                  <ShieldCheck size={14} />
+                </div>
+                <div>
+                  <h2 className="text-xs font-semibold text-[#f0f6fc] uppercase tracking-wider">
+                    Environment Setup & Connection Status
+                  </h2>
+                  <p className="text-xs text-[#8b949e]">
+                    Prerequisites for autonomous outage diagnosis, canary staging, and self-healing
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setDismissSetupGuide(true);
+                  localStorage.setItem('prodpilot_dismiss_guide', 'true');
+                }}
+                className="text-[#6e7681] hover:text-[#8b949e] p-1 rounded hover:bg-[#161b26] transition"
+                title="Dismiss checklist"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              {/* 1. Target Code Repo */}
+              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] flex flex-col justify-between space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8b949e] font-medium flex items-center gap-1.5">
+                    <FolderGit2 size={13} className="text-[#58a6ff]" />
+                    <span>Target Codebase</span>
+                  </span>
+                  {activeRepo ? (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] flex items-center gap-1">
+                      <Check size={10} />
+                      <span>CONNECTED</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                      MISSING
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <p className="font-mono text-xs text-[#f0f6fc] truncate">
+                    {activeRepo ? activeRepo.name : 'No repo connected'}
+                  </p>
+                  <p className="text-[11px] text-[#6e7681] truncate">
+                    {activeRepo ? activeRepo.local_path : 'Required for git worktrees'}
+                  </p>
+                </div>
+                {!activeRepo && (
+                  <button
+                    onClick={() => onNavigate('repositories')}
+                    className="w-full py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[11px] font-semibold transition"
+                  >
+                    Connect Repository
+                  </button>
+                )}
+              </div>
+
+              {/* 2. Monitored Target Service */}
+              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] flex flex-col justify-between space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8b949e] font-medium flex items-center gap-1.5">
+                    <Server size={13} className="text-[#58a6ff]" />
+                    <span>Monitored Service</span>
+                  </span>
+                  {servers.length > 0 ? (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] flex items-center gap-1">
+                      <Check size={10} />
+                      <span>CONNECTED</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                      MISSING
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <p className="font-mono text-xs text-[#f0f6fc] truncate">
+                    {servers.length > 0 ? servers[0].name : 'Port 8000 Target'}
+                  </p>
+                  <p className="text-[11px] text-[#6e7681] truncate">
+                    {servers.length > 0 ? servers[0].health_url : 'Probed for uptime & canaries'}
+                  </p>
+                </div>
+                {servers.length === 0 && (
+                  <button
+                    onClick={() => onNavigate('services')}
+                    className="w-full py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[11px] font-semibold transition"
+                  >
+                    Connect Service
+                  </button>
+                )}
+              </div>
+
+              {/* 3. Decision Engine (Jev) */}
+              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] flex flex-col justify-between space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8b949e] font-medium flex items-center gap-1.5">
+                    <Zap size={13} className="text-[#e3b341]" />
+                    <span>Jev Decision Engine</span>
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] flex items-center gap-1">
+                    <Check size={10} />
+                    <span>ACTIVE</span>
+                  </span>
+                </div>
+                <div>
+                  <p className="font-mono text-xs text-[#f0f6fc]">OpenRouter API</p>
+                  <p className="text-[11px] text-[#6e7681]">Credit-budgeted canary risk scorer</p>
+                </div>
+                <div className="text-[10px] text-[#3fb950] font-mono">
+                  Autonomous Triage Ready
+                </div>
+              </div>
+
+              {/* 4. Alert & Approval Bot */}
+              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] flex flex-col justify-between space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8b949e] font-medium flex items-center gap-1.5">
+                    <ShieldCheck size={13} className="text-[#3fb950]" />
+                    <span>Telegram Alert Bot</span>
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] flex items-center gap-1">
+                    <Check size={10} />
+                    <span>ACTIVE</span>
+                  </span>
+                </div>
+                <div>
+                  <p className="font-mono text-xs text-[#f0f6fc]">Telegram Bot & Chat</p>
+                  <p className="text-[11px] text-[#6e7681]">1-tap mobile approve / rollback</p>
+                </div>
+                <div className="text-[10px] text-[#3fb950] font-mono">
+                  Webhook / Poll Ready
+                </div>
               </div>
             </div>
           </div>

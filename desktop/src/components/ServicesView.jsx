@@ -17,7 +17,8 @@ import {
   Clock,
   Wifi,
   WifiOff,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 export default function ServicesView({ apiConnected = true, apiUrl = 'http://127.0.0.1:8765' }) {
@@ -35,6 +36,38 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectError, setConnectError] = useState(null);
   const [connectSuccess, setConnectSuccess] = useState(null);
+
+  // Auto-dismiss connectSuccess toast
+  useEffect(() => {
+    if (!connectSuccess) return;
+    const timer = setTimeout(() => setConnectSuccess(null), 3500);
+    return () => clearTimeout(timer);
+  }, [connectSuccess]);
+
+  // Auto-dismiss connectError toast
+  useEffect(() => {
+    if (!connectError) return;
+    const timer = setTimeout(() => setConnectError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [connectError]);
+
+  const handleOpenConnectModal = () => {
+    setConnectError(null);
+    setConnectSuccess(null);
+    setShowConnectModal(true);
+  };
+
+  const handleCloseConnectModal = () => {
+    setConnectError(null);
+    setConnectSuccess(null);
+    setShowConnectModal(false);
+  };
+
+  const handleServerFieldChange = (setter, val) => {
+    setter(val);
+    if (connectError) setConnectError(null);
+    if (connectSuccess) setConnectSuccess(null);
+  };
 
   const fetchServers = async () => {
     setLoading(true);
@@ -151,7 +184,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowConnectModal(true)}
+              onClick={handleOpenConnectModal}
               className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <Plus size={14} />
@@ -213,7 +246,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                 Connect your backend microservice (e.g. ChunkStream on port 8000, Render web service, or Python backend) to begin automated health monitoring.
               </p>
               <button
-                onClick={() => setShowConnectModal(true)}
+                onClick={handleOpenConnectModal}
                 className="mt-2 px-3.5 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition"
               >
                 <Plus size={14} />
@@ -323,23 +356,43 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                 <Server size={16} className="text-[#58a6ff]" />
                 <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Connect Production Server / Microservice</h3>
               </div>
-              <button onClick={() => setShowConnectModal(false)} className="text-[#6e7681] hover:text-[#f0f6fc]">
-                ✕
+              <button onClick={handleCloseConnectModal} className="text-[#6e7681] hover:text-[#f0f6fc] p-1 rounded hover:bg-[#161b26] transition">
+                <X size={15} />
               </button>
             </div>
 
             <form onSubmit={handleConnectServer} className="p-5 space-y-3.5">
               {connectError && (
-                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center gap-2">
-                  <AlertTriangle size={14} className="flex-shrink-0" />
-                  <span>{connectError}</span>
+                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AlertTriangle size={14} className="flex-shrink-0" />
+                    <span className="truncate">{connectError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConnectError(null)}
+                    className="text-[#ff7b72]/70 hover:text-[#ff7b72] p-0.5 rounded transition hover:bg-[#3d181f]"
+                    title="Dismiss error"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               )}
 
               {connectSuccess && (
-                <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center gap-2">
-                  <CheckCircle2 size={14} className="flex-shrink-0" />
-                  <span>{connectSuccess}</span>
+                <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CheckCircle2 size={14} className="flex-shrink-0" />
+                    <span className="truncate">{connectSuccess}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConnectSuccess(null)}
+                    className="text-[#3fb950]/70 hover:text-[#3fb950] p-0.5 rounded transition hover:bg-[#153422]"
+                    title="Dismiss message"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               )}
 
@@ -349,7 +402,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   type="text"
                   required
                   value={serverName}
-                  onChange={(e) => setServerName(e.target.value)}
+                  onChange={(e) => handleServerFieldChange(setServerName, e.target.value)}
                   placeholder="chunkstream"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -361,7 +414,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   <input
                     type="text"
                     value={host}
-                    onChange={(e) => setHost(e.target.value)}
+                    onChange={(e) => handleServerFieldChange(setHost, e.target.value)}
                     placeholder="127.0.0.1"
                     className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
@@ -371,7 +424,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   <input
                     type="number"
                     value={port}
-                    onChange={(e) => setPort(e.target.value)}
+                    onChange={(e) => handleServerFieldChange(setPort, e.target.value)}
                     placeholder="8000"
                     className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
@@ -384,7 +437,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   type="text"
                   required
                   value={healthUrl}
-                  onChange={(e) => setHealthUrl(e.target.value)}
+                  onChange={(e) => handleServerFieldChange(setHealthUrl, e.target.value)}
                   placeholder="http://127.0.0.1:8000/health"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
@@ -396,7 +449,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setShowConnectModal(false)}
+                  onClick={handleCloseConnectModal}
                   className="px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9]"
                 >
                   Cancel

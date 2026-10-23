@@ -25,11 +25,46 @@ export default function AuthModal({
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
+  // Auto-dismiss success message after 3.5s
+  React.useEffect(() => {
+    if (!successMsg) return;
+    const timer = setTimeout(() => setSuccessMsg(null), 3500);
+    return () => clearTimeout(timer);
+  }, [successMsg]);
+
+  // Auto-dismiss error message after 6s
+  React.useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
+  // Clear messages when modal opens or closes
+  React.useEffect(() => {
+    if (!isOpen) {
+      setError(null);
+      setSuccessMsg(null);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const handleTabChange = (newTab) => {
+    setTab(newTab);
+    setError(null);
+    setSuccessMsg(null);
+  };
+
+  const handleFieldChange = (setter, value) => {
+    setter(value);
+    if (error) setError(null);
+    if (successMsg) setSuccessMsg(null);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     try {
@@ -51,9 +86,10 @@ export default function AuthModal({
 
       setSuccessMsg(data.message || 'Authenticated successfully');
       setTimeout(() => {
+        setSuccessMsg(null);
         onLoginSuccess(data.user, data.token);
         if (onClose) onClose();
-      }, 500);
+      }, 700);
     } catch (err) {
       setError(err.message || 'Authentication failed');
     } finally {
@@ -94,7 +130,7 @@ export default function AuthModal({
         <div className="flex border-b border-[#1b2234] px-5 pt-3">
           <button
             type="button"
-            onClick={() => { setTab('login'); setError(null); }}
+            onClick={() => handleTabChange('login')}
             className={`flex-1 pb-2.5 text-xs font-medium border-b-2 transition ${
               tab === 'login'
                 ? 'border-[#58a6ff] text-[#f0f6fc]'
@@ -105,7 +141,7 @@ export default function AuthModal({
           </button>
           <button
             type="button"
-            onClick={() => { setTab('signup'); setError(null); }}
+            onClick={() => handleTabChange('signup')}
             className={`flex-1 pb-2.5 text-xs font-medium border-b-2 transition ${
               tab === 'signup'
                 ? 'border-[#58a6ff] text-[#f0f6fc]'
@@ -119,16 +155,36 @@ export default function AuthModal({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && (
-            <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs flex items-center gap-2">
-              <AlertCircle size={14} className="flex-shrink-0" />
-              <span>{error}</span>
+            <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle size={14} className="flex-shrink-0" />
+                <span className="truncate">{error}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-[#ff7b72]/70 hover:text-[#ff7b72] p-0.5 rounded transition hover:bg-[#3d181f]"
+                title="Dismiss error"
+              >
+                <X size={12} />
+              </button>
             </div>
           )}
 
           {successMsg && (
-            <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs flex items-center gap-2">
-              <CheckCircle2 size={14} className="flex-shrink-0" />
-              <span>{successMsg}</span>
+            <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <CheckCircle2 size={14} className="flex-shrink-0" />
+                <span className="truncate">{successMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuccessMsg(null)}
+                className="text-[#3fb950]/70 hover:text-[#3fb950] p-0.5 rounded transition hover:bg-[#153422]"
+                title="Dismiss message"
+              >
+                <X size={12} />
+              </button>
             </div>
           )}
 
@@ -142,7 +198,7 @@ export default function AuthModal({
                     type="text"
                     required
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => handleFieldChange(setFullName, e.target.value)}
                     placeholder="Full name"
                     className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
@@ -157,7 +213,7 @@ export default function AuthModal({
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => handleFieldChange(setEmail, e.target.value)}
                     placeholder="operator@company.com"
                     className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
@@ -174,7 +230,7 @@ export default function AuthModal({
                 type="text"
                 required
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => handleFieldChange(setUsername, e.target.value)}
                 placeholder="username"
                 className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
@@ -189,7 +245,7 @@ export default function AuthModal({
                 type="password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => handleFieldChange(setPassword, e.target.value)}
                 placeholder="••••••••"
                 className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
