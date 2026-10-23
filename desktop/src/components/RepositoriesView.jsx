@@ -148,12 +148,12 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', act
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
                   Connected Repositories & Worktrees
                 </h1>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
                   {repos.length} CONNECTED
                 </span>
               </div>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Source code correlation, worktree isolation, git blame & test runner configuration
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Source code correlation, worktree isolation, git blame attribution, and test runner configuration
               </p>
             </div>
           </div>
@@ -161,9 +161,9 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', act
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowConnectModal(true)}
-              className="px-2.5 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono flex items-center gap-1.5 transition"
+              className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
             >
-              <Plus size={13} />
+              <Plus size={14} />
               <span>Connect Repository</span>
             </button>
             <button
@@ -171,7 +171,7 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', act
                 fetchRepos();
                 fetchCommits();
               }}
-              className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
+              className="p-1.5 rounded-md bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
               title="Refresh repositories"
             >
               <RefreshCw size={13} className={loading || commitsLoading ? 'animate-spin' : ''} />
@@ -182,26 +182,26 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', act
 
       <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
         {/* Connected Repositories Grid */}
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
               Connected Target Codebases
             </h2>
-            <span className="text-[10px] font-mono text-[#6e7681]">Active repo used for agent remediation</span>
+            <span className="text-xs text-[#6e7681]">Active repository used for remediation</span>
           </div>
 
           {repos.length === 0 ? (
-            <div className="p-6 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
-              <FolderGit2 size={24} className="mx-auto text-[#6e7681]" />
-              <p className="text-xs font-mono text-[#c9d1d9]">No repository connected yet</p>
-              <p className="text-[11px] font-mono text-[#8b949e]">
-                Click "Connect Repository" to hook ProdPilot into your local code (e.g. chunkstream)
+            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2.5">
+              <FolderGit2 size={26} className="mx-auto text-[#6e7681]" />
+              <h3 className="text-sm font-semibold text-[#f0f6fc]">No repository connected yet</h3>
+              <p className="text-xs text-[#8b949e] max-w-sm mx-auto">
+                Connect your local codebase (e.g. chunkstream) to enable git blame attribution, test execution, and safe worktree patching.
               </p>
               <button
                 onClick={() => setShowConnectModal(true)}
-                className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
+                className="mt-2 px-3.5 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition"
               >
-                <Plus size={13} />
+                <Plus size={14} />
                 <span>Connect Codebase Now</span>
               </button>
             </div>
@@ -211,50 +211,50 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', act
               return (
                 <div
                   key={r.id}
-                  className={`p-3.5 rounded-lg bg-[#0d111a] border transition space-y-2 ${
+                  className={`p-4 rounded-lg bg-[#0d111a] border transition space-y-2.5 ${
                     isActive
                       ? 'border-[#388bfd] border-l-4 border-l-[#58a6ff]'
                       : 'border-[#1b2234] hover:border-[#293652]'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2.5">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
-                        <GitBranch size={14} />
+                      <div className="w-8 h-8 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
+                        <GitBranch size={15} />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{r.name}</h3>
+                          <h3 className="text-sm font-semibold text-[#f0f6fc]">{r.name}</h3>
                           {isActive && (
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-bold">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
                               ACTIVE TARGET
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] font-mono text-[#8b949e] mt-0.5 flex items-center gap-1.5">
+                        <p className="text-xs text-[#8b949e] mt-1 flex items-center gap-2">
                           <span>Path:</span>
-                          <code className="text-[#c9d1d9] bg-[#07090f] px-1 py-0.2 rounded border border-[#1b2234]">
+                          <code className="text-[#c9d1d9] bg-[#07090f] px-1.5 py-0.5 rounded border border-[#1b2234] font-mono text-[11px]">
                             {r.local_path}
                           </code>
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs font-mono">
+                    <div className="flex items-center gap-2 text-xs">
                       {!isActive && (
                         <button
                           onClick={() => handleActivateRepo(r.id)}
-                          className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-[11px]"
+                          className="px-2.5 py-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-xs font-medium"
                         >
                           Set as Active
                         </button>
                       )}
                       <button
                         onClick={() => handleDeleteRepo(r.id)}
-                        className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] transition"
+                        className="p-1.5 rounded text-[#6e7681] hover:text-[#ff7b72] transition"
                         title="Disconnect repository"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>

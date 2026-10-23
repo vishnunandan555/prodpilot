@@ -44,43 +44,41 @@ export default function SettingsView({
               <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
                 Platform Configuration
               </h1>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Model 1 topology: Local Linux Host, Cloudflare Tunnel & Mobile Web Gateway
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Daemon host, public web gateway, and alert routing settings
               </p>
             </div>
           </div>
         </div>
 
-        {/* Model 1 Architecture Card */}
-        <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#58a6ff]">
-              Architecture Topology: Model 1
-            </span>
-            <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                apiConnected
-                  ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                  : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-              }`}
-            >
-              {apiConnected ? 'ONLINE :8765' : 'OFFLINE'}
+        {/* Status Indicator Card */}
+        <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+            <span className="text-xs font-medium text-[#f0f6fc]">
+              Backend Control Plane Daemon
             </span>
           </div>
-          <p className="text-xs text-[#8b949e] font-mono leading-relaxed">
-            The Python SRE agent and verification engine execute locally on the Linux workstation, exposing port 8765 via Cloudflare Tunnel, while mobile incident approvals sync instantly via Render.
-          </p>
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              apiConnected
+                ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+            }`}
+          >
+            {apiConnected ? 'ONLINE :8765' : 'OFFLINE'}
+          </span>
         </div>
 
         {/* Settings Form */}
         <form onSubmit={handleSave} className="space-y-4">
           {/* 1. Cloudflare Tunnel / Backend API URL */}
           <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
-            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
-              Backend API URL (Cloudflare Tunnel or Local RPC)
+            <label className="block text-xs font-semibold text-[#f0f6fc]">
+              Backend API URL (Local Daemon or Cloudflare Tunnel)
             </label>
-            <p className="text-[11px] text-[#8b949e] font-mono">
-              Live Cloudflare Tunnel endpoint (<code className="text-[#58a6ff]">https://*.trycloudflare.com</code>) or local daemon (<code className="text-[#58a6ff]">http://127.0.0.1:8765</code>).
+            <p className="text-xs text-[#8b949e]">
+              Local daemon URL (<code className="text-[#58a6ff] font-mono">http://127.0.0.1:8765</code>) or public tunnel endpoint.
             </p>
             <div className="flex items-center gap-2">
               <Server size={15} className="text-[#6e7681] flex-shrink-0" />
@@ -94,14 +92,14 @@ export default function SettingsView({
             </div>
           </div>
 
-          {/* 2. Connected Repository */}
+          {/* 2. Connected Service */}
           <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
-            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
-              Connected Target Service
+            <label className="block text-xs font-semibold text-[#f0f6fc]">
+              Default Target Service
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-[10px] text-[#8b949e] font-mono block mb-1">Service Identifier</span>
+                <span className="text-[10px] text-[#8b949e] font-semibold block mb-1 uppercase tracking-wider">Service Identifier</span>
                 <input
                   type="text"
                   value={repoName}
@@ -110,11 +108,11 @@ export default function SettingsView({
                 />
               </div>
               <div>
-                <span className="text-[10px] text-[#8b949e] font-mono block mb-1">Production Port</span>
+                <span className="text-[10px] text-[#8b949e] font-semibold block mb-1 uppercase tracking-wider">Production Port</span>
                 <input
                   type="text"
                   disabled
-                  value="8000 (FastAPI)"
+                  value="8000"
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#6e7681]"
                 />
               </div>
@@ -123,11 +121,11 @@ export default function SettingsView({
 
           {/* 3. Render Static Web URL */}
           <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
-            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
-              Public Render Hosted Web URL
+            <label className="block text-xs font-semibold text-[#f0f6fc]">
+              Public Hosted Web Gateway URL
             </label>
-            <p className="text-[11px] text-[#8b949e] font-mono">
-              Public Web URL included in Telegram mobile alert buttons for out-of-band approvals.
+            <p className="text-xs text-[#8b949e]">
+              Endpoint included in notifications for mobile incident approvals and live triage.
             </p>
             <div className="flex items-center gap-2">
               <Globe size={15} className="text-[#6e7681] flex-shrink-0" />

@@ -104,8 +104,8 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
                   {users.length} MEMBERS
                 </span>
               </div>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Operator credentials, escalation privileges & SRE on-call rotation
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Operator credentials, escalation privileges, and SRE on-call rotation
               </p>
             </div>
           </div>
@@ -113,14 +113,14 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-2.5 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono flex items-center gap-1.5 transition"
+              className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
             >
-              <Plus size={13} />
+              <Plus size={14} />
               <span>Add Member</span>
             </button>
             <button
               onClick={fetchUsers}
-              className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
+              className="p-1.5 rounded-md bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
               title="Refresh team members"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
@@ -133,76 +133,76 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
         {/* Escalation Policy Matrix */}
         <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-3">
           <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
-            <h2 className="text-xs font-mono uppercase tracking-wider text-[#8b949e] font-semibold flex items-center gap-2">
+            <h2 className="text-xs uppercase tracking-wider text-[#8b949e] font-semibold flex items-center gap-2">
               <Bell size={14} className="text-[#58a6ff]" />
               <span>Automated Incident Escalation Ladder</span>
             </h2>
-            <span className="text-[10px] font-mono text-[#58a6ff]">Target MTTA &lt; 5s · MTTD &lt; 10s</span>
+            <span className="text-xs font-mono text-[#58a6ff]">Target MTTA &lt; 5s · MTTD &lt; 10s</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs font-mono">
-            <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="px-1.5 py-0.2 rounded bg-[#121929] text-[#58a6ff] font-bold border border-[#1d2d47] text-[10px]">
+                <span className="px-2 py-0.5 rounded bg-[#121929] text-[#58a6ff] font-bold border border-[#1d2d47] text-[10px] font-mono">
                   TIER 0
                 </span>
-                <span className="text-[10px] text-[#3fb950]">Autonomous</span>
+                <span className="text-xs text-[#3fb950] font-medium">Autonomous</span>
               </div>
               <h3 className="font-semibold text-[#f0f6fc] text-xs">Autonomous Agent Fleet</h3>
-              <p className="text-[11px] text-[#6e7681]">
-                Google Antigravity SDK generates repro tests and stages isolated fix forward.
+              <p className="text-xs text-[#8b949e] leading-relaxed">
+                Google Antigravity SDK synthesizes repro tests and stages isolated fix in git worktrees.
               </p>
             </div>
 
-            <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
+            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="px-1.5 py-0.2 rounded bg-[#1c180e] text-[#e3b341] font-bold border border-[#3b2e13] text-[10px]">
+                <span className="px-2 py-0.5 rounded bg-[#1c180e] text-[#e3b341] font-bold border border-[#3b2e13] text-[10px] font-mono">
                   TIER 1
                 </span>
-                <span className="text-[10px] text-[#e3b341]">Immediate</span>
+                <span className="text-xs text-[#e3b341] font-medium">Immediate</span>
               </div>
-              <h3 className="font-semibold text-[#f0f6fc] text-xs">Primary On-Call SRE</h3>
-              <p className="text-[11px] text-[#6e7681]">
-                Mobile push via Telegram bot. 1-tap approve or rollback decision within 60s.
+              <h3 className="font-semibold text-[#f0f6fc] text-xs">Primary On-Call Operator</h3>
+              <p className="text-xs text-[#8b949e] leading-relaxed">
+                Direct push notifications with full root cause analysis and 1-tap promotion or rollback.
               </p>
             </div>
 
-            <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
+            <div className="p-3.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="px-1.5 py-0.2 rounded bg-[#261317] text-[#ff7b72] font-bold border border-[#4a1c24] text-[10px]">
+                <span className="px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] font-bold border border-[#4a1c24] text-[10px] font-mono">
                   TIER 2
                 </span>
-                <span className="text-[10px] text-[#ff7b72]">Escalation</span>
+                <span className="text-xs text-[#ff7b72] font-medium">Escalation</span>
               </div>
               <h3 className="font-semibold text-[#f0f6fc] text-xs">Secondary Engineering Lead</h3>
-              <p className="text-[11px] text-[#6e7681]">
-                Automated escalation if no developer decision is acknowledged within 5 minutes.
+              <p className="text-xs text-[#8b949e] leading-relaxed">
+                Automated escalation if no operator acknowledgment is recorded within the target SLA window.
               </p>
             </div>
           </div>
         </div>
 
         {/* Real Team Accounts List */}
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
               Registered Team Operators ({users.length})
             </h2>
-            <span className="text-[10px] font-mono text-[#6e7681]">Synced from database `users`</span>
+            <span className="text-xs text-[#6e7681]">Synced from database accounts</span>
           </div>
 
           {users.length === 0 ? (
-            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
-              <Users size={24} className="mx-auto text-[#6e7681]" />
-              <p className="text-xs font-mono text-[#c9d1d9]">No team members registered yet</p>
-              <p className="text-[11px] font-mono text-[#8b949e]">
+            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2.5">
+              <Users size={26} className="mx-auto text-[#6e7681]" />
+              <h3 className="text-sm font-semibold text-[#f0f6fc]">No team members registered yet</h3>
+              <p className="text-xs text-[#8b949e]">
                 Add an on-call engineer or administrator account to handle incident approvals.
               </p>
               <button
                 onClick={() => setShowAddModal(true)}
-                className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
+                className="mt-2 px-3.5 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition"
               >
-                <Plus size={13} />
+                <Plus size={14} />
                 <span>Add First Member</span>
               </button>
             </div>

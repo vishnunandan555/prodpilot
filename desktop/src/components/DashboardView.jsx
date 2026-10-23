@@ -6,15 +6,8 @@ import {
   Zap,
   CheckCircle2,
   Clock,
-  Flame,
   ArrowUpRight,
-  TrendingDown,
-  TrendingUp,
   Cpu,
-  Radio,
-  ExternalLink,
-  RotateCcw,
-  Layers,
   ChevronRight,
   Terminal,
   Plus
@@ -24,8 +17,6 @@ export default function DashboardView({
   incidents = [],
   onSelectIncident,
   onNavigate,
-  onTriggerCrash,
-  actionLoading = false,
   apiConnected = true,
   apiUrl = 'http://127.0.0.1:8765'
 }) {
@@ -62,7 +53,6 @@ export default function DashboardView({
   const isDegraded = activeIncidents.length > 0;
   const primaryActive = activeIncidents[0] || null;
 
-  // Real MTTR calculation from resolved incidents if timestamps available
   const calculateMttr = () => {
     if (resolvedIncidents.length === 0) return '--';
     let totalSec = 0;
@@ -76,18 +66,18 @@ export default function DashboardView({
         }
       }
     }
-    if (counted === 0) return `${Math.round(45)}s`;
+    if (counted === 0) return '45s';
     return `${Math.round(totalSec / counted)}s`;
   };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
-      {/* Top Banner: Environment Status Bar */}
-      <div className="border-b border-[#1b2234] bg-[#0d111a] px-5 py-3 sticky top-0 z-20">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Top Banner: Status Bar */}
+      <div className="border-b border-[#1b2234] bg-[#0d111a] px-6 py-4 sticky top-0 z-20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span
-              className={`w-2 h-2 rounded-full ${
+              className={`w-2.5 h-2.5 rounded-full ${
                 !apiConnected
                   ? 'bg-[#8b949e]'
                   : isDegraded
@@ -96,12 +86,12 @@ export default function DashboardView({
               }`}
             />
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  Production Operations Center
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-base font-semibold text-[#f0f6fc]">
+                  Operations Overview
                 </h1>
                 <span
-                  className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold uppercase border ${
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase border ${
                     !apiConnected
                       ? 'bg-[#161b26] text-[#8b949e] border-[#212a3d]'
                       : isDegraded
@@ -110,14 +100,14 @@ export default function DashboardView({
                   }`}
                 >
                   {!apiConnected
-                    ? 'DAEMON DISCONNECTED'
+                    ? 'Daemon Disconnected'
                     : isDegraded
-                    ? 'DEGRADED (INCIDENT ACTIVE)'
-                    : 'ALL SYSTEMS NOMINAL'}
+                    ? 'Active Incident'
+                    : 'All Systems Operational'}
                 </span>
               </div>
-              <p className="text-[11px] text-[#6e7681] mt-0.5 font-mono">
-                Daemon: {apiUrl} • Status: {apiConnected ? 'Connected' : 'Offline'} • Real-Time Engine
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                {servers.length} connected service{servers.length === 1 ? '' : 's'} • Control Plane: {apiConnected ? 'Online' : 'Offline'}
               </p>
             </div>
           </div>
@@ -125,40 +115,40 @@ export default function DashboardView({
           <div className="flex items-center gap-2">
             <button
               onClick={() => onNavigate('incidents')}
-              className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#202c45] text-[#58a6ff] border border-[#2b3a58] text-xs font-mono font-medium flex items-center gap-1.5 transition"
+              className="px-3 py-1.5 rounded bg-[#161f30] hover:bg-[#202c45] text-[#58a6ff] border border-[#2b3a58] text-xs font-medium flex items-center gap-1.5 transition"
             >
-              <ShieldAlert size={12} />
+              <ShieldAlert size={14} />
               <span>Incidents ({incidents.length})</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="p-5 max-w-6xl w-full mx-auto space-y-4">
-        {/* Active Incident Urgent Banner */}
+      <div className="p-6 max-w-6xl w-full mx-auto space-y-6">
+        {/* Active Incident Banner (Only when an incident actually exists) */}
         {primaryActive && (
-          <div className="rounded-md bg-[#160d10] border border-[#da3633] p-4 space-y-2.5 transition">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-                  <span className="px-1.5 py-0.2 rounded bg-[#da3633] text-white font-bold text-[10px] uppercase">
-                    SEV-1 OUTAGE
+          <div className="rounded-lg bg-[#160d10] border border-[#da3633] p-5 space-y-3 transition">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="px-2 py-0.5 rounded bg-[#da3633] text-white font-bold text-[10px] uppercase">
+                    SEV-1
                   </span>
-                  <span className="text-[#f0f6fc] font-bold">{primaryActive.id}</span>
+                  <span className="font-mono font-bold text-[#f0f6fc]">{primaryActive.id}</span>
                   <span className="text-[#6e7681]">•</span>
-                  <span className="text-[#e3b341] bg-[#1c180e] px-1.5 py-0.2 rounded border border-[#3b2e13] text-[10px]">
+                  <span className="text-[#e3b341] bg-[#1c180e] px-2 py-0.5 rounded border border-[#3b2e13] text-[10px] font-medium">
                     {primaryActive.status}
                   </span>
                   <span className="text-[#6e7681]">•</span>
                   <span className="text-[#8b949e]">
-                    Target: <strong className="text-[#c9d1d9]">{primaryActive.service || 'Service Endpoint'}</strong>
+                    Service: <strong className="text-[#c9d1d9]">{primaryActive.service || 'Service Endpoint'}</strong>
                   </span>
                 </div>
-                <h2 className="text-sm font-semibold text-[#f0f6fc]">
+                <h2 className="text-base font-semibold text-[#f0f6fc]">
                   {primaryActive.title || 'Production Error Detected'}
                 </h2>
                 {primaryActive.brief?.summary && (
-                  <p className="text-xs text-[#8b949e] font-mono line-clamp-1">
+                  <p className="text-xs text-[#8b949e] line-clamp-1">
                     Root Cause: {primaryActive.brief.summary}
                   </p>
                 )}
@@ -170,130 +160,127 @@ export default function DashboardView({
                     onSelectIncident(primaryActive);
                     onNavigate('incidents');
                   }}
-                  className="px-3 py-1.5 rounded bg-[#da3633] hover:bg-[#f85149] text-white font-mono text-xs font-semibold flex items-center gap-1.5 transition"
+                  className="px-4 py-2 rounded bg-[#da3633] hover:bg-[#f85149] text-white text-xs font-semibold flex items-center gap-1.5 transition"
                 >
                   <span>Open Triage</span>
-                  <ArrowUpRight size={13} />
+                  <ArrowUpRight size={14} />
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* 4 Core SRE KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* 1. Health Status */}
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
+        {/* 4 Core Metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* 1. Uptime */}
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1.5">
             <div className="flex items-center justify-between text-[#8b949e]">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681]">Uptime</span>
-              <Activity size={13} className={isDegraded ? 'text-[#ff7b72]' : 'text-[#3fb950]'} />
+              <span className="text-xs font-medium text-[#8b949e]">Uptime (24h)</span>
+              <Activity size={14} className={isDegraded ? 'text-[#ff7b72]' : 'text-[#3fb950]'} />
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className={`text-xl font-bold font-mono ${isDegraded ? 'text-[#ff7b72]' : 'text-[#3fb950]'}`}>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold font-mono ${isDegraded ? 'text-[#ff7b72]' : 'text-[#3fb950]'}`}>
                 {isDegraded ? '98.5%' : servers.length === 0 ? '--' : '100.0%'}
               </span>
-              <span className="text-[10px] text-[#485263] font-mono">24h SLA</span>
             </div>
-            <p className="text-[10px] text-[#6e7681] font-mono">
-              {isDegraded ? `${activeIncidents.length} active incident(s)` : servers.length === 0 ? 'No services connected' : 'Zero unhandled tracebacks'}
+            <p className="text-xs text-[#6e7681]">
+              {isDegraded ? `${activeIncidents.length} active incident` : servers.length === 0 ? 'No services connected' : 'Zero unhandled tracebacks'}
             </p>
           </div>
 
           {/* 2. Active Incidents */}
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1.5">
             <div className="flex items-center justify-between text-[#8b949e]">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681]">Active Incidents</span>
-              <ShieldAlert size={13} className={activeIncidents.length > 0 ? 'text-[#e3b341]' : 'text-[#6e7681]'} />
+              <span className="text-xs font-medium text-[#8b949e]">Active Incidents</span>
+              <ShieldAlert size={14} className={activeIncidents.length > 0 ? 'text-[#e3b341]' : 'text-[#6e7681]'} />
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className={`text-xl font-bold font-mono ${activeIncidents.length > 0 ? 'text-[#e3b341]' : 'text-[#f0f6fc]'}`}>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold font-mono ${activeIncidents.length > 0 ? 'text-[#e3b341]' : 'text-[#f0f6fc]'}`}>
                 {activeIncidents.length}
               </span>
-              <span className="text-[10px] text-[#485263] font-mono">open / {incidents.length} total</span>
+              <span className="text-xs text-[#6e7681]">/ {incidents.length} total</span>
             </div>
-            <p className="text-[10px] text-[#6e7681] font-mono">
+            <p className="text-xs text-[#6e7681]">
               {resolvedIncidents.length} resolved to date
             </p>
           </div>
 
           {/* 3. Error Rate */}
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1.5">
             <div className="flex items-center justify-between text-[#8b949e]">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681]">5xx Error Rate</span>
-              <Cpu size={13} className="text-[#58a6ff]" />
+              <span className="text-xs font-medium text-[#8b949e]">5xx Error Rate</span>
+              <Cpu size={14} className="text-[#58a6ff]" />
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className={`text-xl font-bold font-mono ${isDegraded ? 'text-[#ff7b72]' : 'text-[#f0f6fc]'}`}>
-                {isDegraded ? 'Anomalous' : '0.00%'}
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold font-mono ${isDegraded ? 'text-[#ff7b72]' : 'text-[#f0f6fc]'}`}>
+                {isDegraded ? 'Elevated' : '0.00%'}
               </span>
-              <span className="text-[10px] text-[#485263] font-mono">of requests</span>
             </div>
-            <p className="text-[10px] text-[#6e7681] font-mono">
-              {isDegraded ? 'Outage in progress' : 'Healthy operating baseline'}
+            <p className="text-xs text-[#6e7681]">
+              {isDegraded ? 'Outage in progress' : 'Baseline nominal'}
             </p>
           </div>
 
           {/* 4. MTTR */}
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1.5">
             <div className="flex items-center justify-between text-[#8b949e]">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681]">Autonomous MTTR</span>
-              <Zap size={13} className="text-[#e3b341]" />
+              <span className="text-xs font-medium text-[#8b949e]">Mean Time to Recovery</span>
+              <Zap size={14} className="text-[#e3b341]" />
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-xl font-bold font-mono text-[#3fb950]">
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-[#3fb950]">
                 {calculateMttr()}
               </span>
-              <span className="text-[10px] text-[#485263] font-mono">avg resolution</span>
             </div>
-            <p className="text-[10px] text-[#6e7681] font-mono">
+            <p className="text-xs text-[#6e7681]">
               {resolvedIncidents.length > 0 ? `${resolvedIncidents.length} incidents analyzed` : 'No incident history'}
             </p>
           </div>
         </div>
 
-        {/* Middle Section: Monitored Services Grid & Health Status */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Middle Section: Monitored Services & Pipeline Status */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Services Health Grid */}
-          <div className="lg:col-span-2 space-y-2">
-            <div className="flex items-center justify-between px-0.5">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681] font-semibold flex items-center gap-1.5">
-                <Server size={12} className="text-[#58a6ff]" />
+          <div className="lg:col-span-2 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#8b949e] flex items-center gap-2">
+                <Server size={14} className="text-[#58a6ff]" />
                 <span>Monitored Services ({servers.length})</span>
               </span>
               <button
                 onClick={() => onNavigate('services')}
-                className="text-[11px] text-[#58a6ff] hover:underline font-mono flex items-center gap-0.5"
+                className="text-xs text-[#58a6ff] hover:underline font-medium flex items-center gap-0.5"
               >
-                <span>Manage services</span>
-                <ChevronRight size={11} />
+                <span>Manage Services</span>
+                <ChevronRight size={13} />
               </button>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {servers.length === 0 ? (
-                <div className="p-6 rounded-md bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
-                  <Server size={20} className="mx-auto text-[#485263]" />
-                  <p className="text-xs font-mono text-[#c9d1d9]">No monitored services connected</p>
-                  <p className="text-[11px] font-mono text-[#6e7681]">
-                    Connect your target server (e.g. ChunkStream on port 8000 or custom service) to enable continuous health checks.
+                <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-3">
+                  <Server size={24} className="mx-auto text-[#485263]" />
+                  <p className="text-sm font-semibold text-[#c9d1d9]">No monitored services connected</p>
+                  <p className="text-xs text-[#8b949e] max-w-md mx-auto">
+                    Connect your backend microservice (e.g. ChunkStream on port 8000 or custom endpoint) to start continuous health monitoring.
                   </p>
                   <button
                     onClick={() => onNavigate('services')}
-                    className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
+                    className="mt-2 px-3.5 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium inline-flex items-center gap-1.5 transition"
                   >
-                    <Plus size={12} />
-                    <span>Connect Server</span>
+                    <Plus size={13} />
+                    <span>Connect Service</span>
                   </button>
                 </div>
               ) : (
                 servers.map((srv) => (
                   <div
                     key={srv.id}
-                    className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] flex items-center justify-between gap-3 hover:border-[#26334f] transition"
+                    className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] flex items-center justify-between gap-4 hover:border-[#26334f] transition"
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-3">
                       <span
-                        className={`w-2 h-2 rounded-full ${
+                        className={`w-2.5 h-2.5 rounded-full ${
                           srv.status === 'HEALTHY'
                             ? 'bg-[#3fb950]'
                             : srv.status === 'ERROR'
@@ -303,24 +290,24 @@ export default function DashboardView({
                       />
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-[#f0f6fc] font-mono">{srv.name}</span>
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234] font-mono">
+                          <span className="text-xs font-semibold text-[#f0f6fc]">{srv.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234] font-mono">
                             Port {srv.port}
                           </span>
                           {srv.is_active === 1 && (
-                            <span className="text-[9px] px-1 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-mono">
-                              ACTIVE
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
+                              Active Target
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-[#6e7681] font-mono">
-                          Endpoint: {srv.health_url}
+                        <p className="text-xs text-[#6e7681] mt-0.5 font-mono">
+                          {srv.health_url}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right font-mono text-xs flex-shrink-0">
+                    <div className="text-right text-xs flex-shrink-0">
                       <span
-                        className={`font-semibold text-[11px] ${
+                        className={`font-semibold text-xs ${
                           srv.status === 'HEALTHY'
                             ? 'text-[#3fb950]'
                             : srv.status === 'ERROR'
@@ -331,7 +318,7 @@ export default function DashboardView({
                         {srv.status || 'UNKNOWN'}
                       </span>
                       {srv.latency_ms !== null && srv.latency_ms !== undefined && (
-                        <div className="text-[10px] text-[#485263]">{srv.latency_ms}ms latency</div>
+                        <div className="text-[11px] text-[#485263] font-mono">{srv.latency_ms}ms latency</div>
                       )}
                     </div>
                   </div>
@@ -340,87 +327,87 @@ export default function DashboardView({
             </div>
           </div>
 
-          {/* SRE Guardrails & Circuit Breaker */}
-          <div className="p-3.5 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-3 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681] font-semibold flex items-center gap-1.5">
-                  <Activity size={12} className="text-[#58a6ff]" />
-                  <span>Telemetry & Guardrails</span>
+          {/* Operational Guardrails */}
+          <div className="p-5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-3">
+                <span className="text-xs font-semibold text-[#8b949e] flex items-center gap-2">
+                  <Activity size={14} className="text-[#58a6ff]" />
+                  <span>Safety Guardrails</span>
                 </span>
-                <span className="text-[9px] font-mono text-[#3fb950]">ACTIVE</span>
+                <span className="text-[11px] text-[#3fb950] font-medium">Active</span>
               </div>
 
-              <div className="pt-3 space-y-2 text-xs font-mono">
-                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1 text-[11px]">
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[#6e7681]">Connected Target:</span>
-                    <span className="text-[#f0f6fc] font-semibold">
+                    <span className="text-[#8b949e]">Target Service:</span>
+                    <span className="text-[#f0f6fc] font-medium">
                       {servers.find((s) => s.is_active === 1)?.name || 'None selected'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#6e7681]">Autonomous Remediation:</span>
-                    <span className="text-[#3fb950]">Armed (Google AGY SDK)</span>
+                    <span className="text-[#8b949e]">Remediation Engine:</span>
+                    <span className="text-[#3fb950] font-medium">Google AGY SDK</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#6e7681]">Watchdog Circuit Breaker:</span>
-                    <span className="text-[#58a6ff]">10s Rollback Window</span>
+                    <span className="text-[#8b949e]">Circuit Breaker:</span>
+                    <span className="text-[#58a6ff] font-medium">10s Health Probe</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#6e7681]">Loop Defense:</span>
-                    <span className="text-[#c9d1d9]">1 Attempt Capped</span>
+                    <span className="text-[#8b949e]">Loop Prevention:</span>
+                    <span className="text-[#c9d1d9] font-medium">Max 1 Attempt</span>
                   </div>
                 </div>
 
-                <p className="text-[11px] text-[#6e7681] leading-relaxed">
-                  When a 5xx traceback or healthcheck failure is detected, ProdPilot immediately correlates git blame, spins up an isolated worktree sandbox, and requests developer approval.
+                <p className="text-xs text-[#8b949e] leading-relaxed">
+                  Upon detecting unhandled 5xx exceptions or healthcheck failures, ProdPilot correlates git blame, verifies candidate fixes in an isolated worktree sandbox, and stages canaries for approval.
                 </p>
               </div>
             </div>
 
             <button
               onClick={() => onNavigate('repositories')}
-              className="w-full py-1.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-xs font-mono transition flex items-center justify-center gap-1.5"
+              className="w-full py-2 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-xs font-medium transition flex items-center justify-center gap-1.5"
             >
               <span>View Codebase & Commits</span>
-              <ChevronRight size={12} />
+              <ChevronRight size={13} />
             </button>
           </div>
         </div>
 
-        {/* Bottom Section: Live Autonomous Event Stream */}
-        <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-3.5 space-y-2">
-          <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#6e7681] font-semibold flex items-center gap-1.5">
-              <Terminal size={12} className="text-[#58a6ff]" />
-              <span>Real-Time Autonomous Agent Event Stream</span>
+        {/* Bottom Section: Real-Time Event Audit Trail */}
+        <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-5 space-y-3">
+          <div className="flex items-center justify-between border-b border-[#1b2234] pb-3">
+            <span className="text-xs font-semibold text-[#8b949e] flex items-center gap-2">
+              <Terminal size={14} className="text-[#58a6ff]" />
+              <span>Real-Time Audit Trail</span>
             </span>
-            <span className="text-[10px] font-mono text-[#58a6ff]">Live Audit Log</span>
+            <span className="text-xs text-[#58a6ff] font-mono">SSE Stream</span>
           </div>
 
-          <div className="space-y-1 text-xs font-mono">
+          <div className="space-y-1.5 text-xs">
             {primaryActive?.events && primaryActive.events.length > 0 ? (
               primaryActive.events.map((ev, idx) => (
-                <div key={idx} className="flex items-start gap-2.5 p-1.5 rounded bg-[#07090f] border border-[#1b2234]">
-                  <span className="text-[#485263] text-[10px] flex-shrink-0">
+                <div key={idx} className="flex items-start gap-3 p-2 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#485263] text-xs font-mono flex-shrink-0">
                     {ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : 'NOW'}
                   </span>
-                  <span className="px-1 py-0.2 rounded bg-[#121929] text-[#58a6ff] border border-[#1d2d47] text-[9px]">
+                  <span className="px-1.5 py-0.2 rounded bg-[#121929] text-[#58a6ff] border border-[#1d2d47] text-[10px] font-semibold">
                     {ev.stage || 'EVENT'}
                   </span>
-                  <span className="text-[#c9d1d9] text-[11px]">
+                  <span className="text-[#c9d1d9] text-xs">
                     {ev.message || JSON.stringify(ev.payload || {})}
                   </span>
                 </div>
               ))
             ) : primaryActive ? (
-              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-xs text-[#8b949e]">
-                Active incident {primaryActive.id} is being processed by the autonomous triage pipeline.
+              <div className="p-4 rounded bg-[#07090f] border border-[#1b2234] text-xs text-[#8b949e]">
+                Active incident {primaryActive.id} is being processed by the triage pipeline.
               </div>
             ) : (
-              <div className="text-center py-4 text-[#485263] text-xs">
-                All systems nominal. Log listener and health monitor running cleanly.
+              <div className="text-center py-6 text-[#6e7681] text-xs">
+                All systems nominal. Log forwarder and continuous probes active.
               </div>
             )}
           </div>

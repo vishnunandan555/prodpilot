@@ -139,12 +139,12 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
                   Monitored Services & Endpoints
                 </h1>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
                   {servers.length} TARGETS
                 </span>
               </div>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Port allocations, canary health probes, p99 latency stats & watchdog circuit breaker
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Service endpoints, health probe status, latency measurements, and automated circuit breakers
               </p>
             </div>
           </div>
@@ -152,15 +152,15 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowConnectModal(true)}
-              className="px-2.5 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono flex items-center gap-1.5 transition"
+              className="px-3 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-1.5 transition"
             >
-              <Plus size={13} />
-              <span>Connect Server</span>
+              <Plus size={14} />
+              <span>Connect Service</span>
             </button>
             <button
               onClick={fetchServers}
-              className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
-              title="Refresh servers"
+              className="p-1.5 rounded-md bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
+              title="Refresh services"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -171,53 +171,53 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
       <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
         {/* Core Control Plane Orchestrator (Live Daemon) */}
         <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
-          <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+          <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
-              <h2 className="text-xs font-semibold text-[#f0f6fc] font-mono uppercase tracking-wider">
-                ProdPilot Control Plane
+              <h2 className="text-xs font-semibold text-[#f0f6fc] uppercase tracking-wider">
+                ProdPilot Engine Core
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-[#58a6ff]">DAEMON CORE</span>
+            <span className="text-[10px] font-mono text-[#58a6ff]">DAEMON ONLINE</span>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div>
-              <p className="text-[#f0f6fc] font-semibold">FastAPI Background Engine & Ingest API</p>
-              <p className="text-[11px] text-[#6e7681] mt-0.5">
-                URL: <code className="text-[#58a6ff]">{apiUrl}</code> • SSE Stream Active • SQLite Database Synced
+              <p className="text-[#f0f6fc] font-medium">FastAPI Engine & Telemetry Ingestion</p>
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Host: <code className="text-[#58a6ff] font-mono">{apiUrl}</code> • SSE Stream Active • SQLite Synced
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${apiConnected ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]' : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'}`}>
-                {apiConnected ? '200 OK CONNECTED' : 'OFFLINE'}
+              <span className={`px-2.5 py-1 rounded text-xs font-medium border ${apiConnected ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]' : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'}`}>
+                {apiConnected ? 'Connected (200 OK)' : 'Offline'}
               </span>
             </div>
           </div>
         </div>
 
         {/* User-Connected Target Servers */}
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
-              Connected Target Services ({servers.length})
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
+              Connected Services ({servers.length})
             </h2>
-            <span className="text-[10px] font-mono text-[#6e7681]">Actively probed for latency and 5xx errors</span>
+            <span className="text-xs text-[#6e7681]">Actively probed for latency and availability</span>
           </div>
 
           {servers.length === 0 ? (
-            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
-              <Server size={24} className="mx-auto text-[#6e7681]" />
-              <p className="text-xs font-mono text-[#c9d1d9]">No target servers connected yet</p>
-              <p className="text-[11px] font-mono text-[#8b949e] max-w-md mx-auto">
-                Connect your backend microservice (e.g. ChunkStream on port 8000, Render edge deployment, or FastAPI service) to begin live health probing.
+            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2.5">
+              <Server size={26} className="mx-auto text-[#6e7681]" />
+              <h3 className="text-sm font-semibold text-[#f0f6fc]">No target services connected yet</h3>
+              <p className="text-xs text-[#8b949e] max-w-md mx-auto">
+                Connect your backend microservice (e.g. ChunkStream on port 8000, Render web service, or Python backend) to begin automated health monitoring.
               </p>
               <button
                 onClick={() => setShowConnectModal(true)}
-                className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
+                className="mt-2 px-3.5 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition"
               >
-                <Plus size={13} />
-                <span>Connect Server</span>
+                <Plus size={14} />
+                <span>Connect Service Now</span>
               </button>
             </div>
           ) : (
@@ -229,13 +229,13 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
               return (
                 <div
                   key={srv.id}
-                  className={`p-3.5 rounded-lg bg-[#0d111a] border transition space-y-2.5 ${
+                  className={`p-4 rounded-lg bg-[#0d111a] border transition space-y-3 ${
                     isActive
                       ? 'border-[#388bfd] border-l-4 border-l-[#58a6ff]'
                       : 'border-[#1b2234] hover:border-[#293652]'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2.5">
                     <div className="flex items-center gap-2.5">
                       <span
                         className={`w-2.5 h-2.5 rounded-full ${
@@ -244,18 +244,18 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                       />
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{srv.name}</h3>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234]">
+                          <h3 className="text-sm font-semibold text-[#f0f6fc]">{srv.name}</h3>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234]">
                             Port {srv.port}
                           </span>
                           {isActive && (
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-bold">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
                               PRIMARY TARGET
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] font-mono text-[#8b949e] mt-0.5">
-                          Probe URL: <code className="text-[#58a6ff]">{srv.health_url}</code>
+                        <p className="text-xs text-[#8b949e] mt-1">
+                          Probe URL: <code className="text-[#58a6ff] font-mono text-[11px]">{srv.health_url}</code>
                         </p>
                       </div>
                     </div>

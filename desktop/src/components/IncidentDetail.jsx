@@ -47,10 +47,12 @@ export default function IncidentDetail({
   if (!incident) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#6e7681]">
-        <ShieldAlert size={32} className="text-[#485263] mb-2" />
-        <p className="text-xs font-semibold text-[#f0f6fc]">No Incident Selected</p>
-        <p className="text-[11px] text-[#6e7681] mt-0.5 max-w-sm">
-          Select an incident from the sidebar or pass a valid incident ID in the URL.
+        <div className="w-12 h-12 rounded-full bg-[#10141f] border border-[#1b2234] flex items-center justify-center text-[#6e7681] mb-3">
+          <ShieldAlert size={22} className="text-[#58a6ff]" />
+        </div>
+        <h2 className="text-sm font-semibold text-[#f0f6fc]">No Incident Selected</h2>
+        <p className="text-xs text-[#8b949e] mt-1 max-w-sm leading-relaxed">
+          Select an incident from the sidebar to inspect root cause attribution, telemetry, and automated remediation.
         </p>
       </div>
     );
@@ -79,9 +81,9 @@ export default function IncidentDetail({
   const testEvidence = artifacts.test_evidence || null;
 
   const staging = incident.staging || {};
-  const decision = incident.decision || {};
-  const ffConfidence = Math.round((decision.probabilities?.fix_forward ?? 0.85) * 100);
-  const rbConfidence = Math.round((decision.probabilities?.rollback ?? 0.15) * 100);
+  const decision = incident.decision || null;
+  const ffConfidence = decision?.probabilities?.fix_forward ? Math.round(decision.probabilities.fix_forward * 100) : 85;
+  const rbConfidence = decision?.probabilities?.rollback ? Math.round(decision.probabilities.rollback * 100) : 15;
 
   const STAGES = [
     { key: 'DETECTED', label: 'Detected' },
@@ -184,7 +186,7 @@ export default function IncidentDetail({
         </div>
 
         {/* 6-Tab Row */}
-        <div className="px-3 py-1 flex items-center gap-1 overflow-x-auto select-none bg-[#090d16]">
+        <div className="px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto select-none bg-[#090d16]">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -192,13 +194,13 @@ export default function IncidentDetail({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-2.5 py-1 rounded text-[11px] font-mono font-medium flex items-center gap-1.5 transition whitespace-nowrap border ${
+                className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition whitespace-nowrap border ${
                   isActive
                     ? 'bg-[#161f30] text-[#f0f6fc] border-[#2b3a58]'
                     : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#0f1422] border-transparent'
                 }`}
               >
-                <Icon size={12} className={isActive ? 'text-[#58a6ff]' : 'text-[#6e7681]'} />
+                <Icon size={13} className={isActive ? 'text-[#58a6ff]' : 'text-[#6e7681]'} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -206,21 +208,21 @@ export default function IncidentDetail({
         </div>
       </div>
 
-      <div className="max-w-4xl w-full mx-auto p-4 space-y-3.5">
-        {/* Production Restored Celebration Banner (Matte Green Solid) */}
+      <div className="max-w-4xl w-full mx-auto p-4 space-y-4">
+        {/* Production Restored Banner */}
         {(deploySuccess || isResolved) && (
-          <div className="p-3 rounded-md bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
-            <div className="flex items-center gap-2.5">
+          <div className="p-3.5 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-[#3fb950] flex-shrink-0" />
               <div>
-                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono flex items-center gap-1.5">
-                  <span>PRODUCTION RESTORED</span>
-                  <span className="text-[10px] text-[#3fb950] font-normal">
-                    (Port 8000: 200 OK)
+                <h3 className="text-xs font-semibold text-[#f0f6fc] flex items-center gap-2">
+                  <span>Production Restored</span>
+                  <span className="text-[11px] text-[#3fb950] font-mono">
+                    (Health 200 OK)
                   </span>
                 </h3>
-                <p className="text-[11px] text-[#8b949e] font-mono">
-                  Promoted verified fix to production port 8000 • 10-second watchdog passed
+                <p className="text-xs text-[#8b949e] mt-0.5">
+                  Verified remediation promoted to production. Post-deploy watchdog passed.
                 </p>
               </div>
             </div>
@@ -229,67 +231,67 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 1: OVERVIEW ===================== */}
         {activeTab === 'overview' && (
-          <div className="space-y-3 animate-in fade-in">
-            {/* Header summary card (Matte panel) */}
-            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2.5">
+          <div className="space-y-4 animate-in fade-in">
+            {/* Header summary card */}
+            <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-3">
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#58a6ff] border border-[#1b2234]">
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#07090f] text-[#58a6ff] border border-[#1b2234]">
                       {incident.service || 'demo-prod'}
                     </span>
                     <span className="text-[#6e7681]">·</span>
-                    <span className="text-[11px] text-[#6e7681] flex items-center gap-1">
-                      <Clock size={11} />
-                      Detected: {incident.detected_at || 'Just now'}
+                    <span className="text-xs text-[#8b949e] flex items-center gap-1">
+                      <Clock size={12} />
+                      Detected {incident.detected_at || 'Recently'}
                     </span>
                   </div>
-                  <h1 className="text-base font-semibold text-[#f0f6fc] mt-1">
-                    {incident.title || `[OUTAGE] ${incident.suspected_area || 'Production Anomaly'}`}
+                  <h1 className="text-base font-semibold text-[#f0f6fc] mt-1.5">
+                    {incident.title || `Outage in ${incident.suspected_area || 'Production Service'}`}
                   </h1>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-[10px] font-mono text-[#6e7681]">Severity:</span>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-                    {incident.severity || 'HIGH (SEV-1)'}
+                  <span className="text-xs text-[#8b949e]">Severity:</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                    {incident.severity || 'HIGH'}
                   </span>
                 </div>
               </div>
 
-              {/* Quick Info Grid (High Density) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Target Service</span>
-                  <span className="font-semibold text-[#c9d1d9] text-[11px] mt-0.5 block">{incident.service || 'Service Endpoint'}</span>
+              {/* Quick Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Target Service</span>
+                  <span className="font-medium text-[#c9d1d9] text-xs mt-1 block">{incident.service || 'Default'}</span>
                 </div>
-                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Health URL</span>
-                  <span className="font-semibold text-[#58a6ff] text-[11px] truncate block mt-0.5">
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Health URL</span>
+                  <span className="font-mono text-[#58a6ff] text-xs truncate block mt-1">
                     {incident.health_url || ':8000/health'}
                   </span>
                 </div>
-                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Auto Recovery</span>
-                  <span className="font-semibold text-[#3fb950] text-[11px] mt-0.5 block">Staged (8001)</span>
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Recovery Mode</span>
+                  <span className="font-medium text-[#3fb950] text-xs mt-1 block">Canary Staging</span>
                 </div>
-                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Status</span>
-                  <span className="font-semibold text-[#e3b341] text-[11px] mt-0.5 block">{incident.status}</span>
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Current Status</span>
+                  <span className="font-semibold text-[#e3b341] text-xs mt-1 block">{incident.status}</span>
                 </div>
               </div>
             </div>
 
-            {/* Pipeline Stage Progression (Crisp, Non-Neon) */}
-            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-3.5 space-y-2.5">
+            {/* Pipeline Stage Progression */}
+            <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Radio size={13} className="text-[#58a6ff]" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
-                    Live SSE Remediation Pipeline
+                <div className="flex items-center gap-2">
+                  <Radio size={14} className="text-[#58a6ff]" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
+                    Remediation Pipeline
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-[#6e7681]">
+                <span className="text-xs text-[#8b949e]">
                   Stage {Math.min(currentStageIdx + 1, 7)} of 7
                 </span>
               </div>
@@ -301,7 +303,7 @@ export default function IncidentDetail({
                   return (
                     <div key={stg.key} className="flex flex-col items-center text-center">
                       <div
-                        className={`w-full h-1 rounded-xs transition-all ${
+                        className={`w-full h-1.5 rounded-full transition-all ${
                           isPast
                             ? 'bg-[#238636]'
                             : isCurrent
@@ -310,11 +312,11 @@ export default function IncidentDetail({
                         }`}
                       />
                       <span
-                        className={`text-[9px] mt-1 font-mono truncate w-full ${
+                        className={`text-[10px] mt-1.5 truncate w-full ${
                           isPast
-                            ? 'text-[#3fb950]'
+                            ? 'text-[#3fb950] font-medium'
                             : isCurrent
-                            ? 'text-[#e3b341] font-bold'
+                            ? 'text-[#e3b341] font-semibold'
                             : 'text-[#485263]'
                         }`}
                       >
@@ -326,45 +328,47 @@ export default function IncidentDetail({
               </div>
             </div>
 
-            {/* Decision Engine Recommendation Card (Solid Matte) */}
-            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
-                <div className="flex items-center gap-1.5">
-                  <Zap size={14} className="text-[#e3b341]" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
-                    Decision Engine Recommendation
+            {/* Decision Engine Recommendation Card (Only active when awaiting approval or decision exists) */}
+            {decision && !isResolved && (
+              <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Zap size={14} className="text-[#e3b341]" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
+                      Remediation Assessment
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold text-[#3fb950] bg-[#0d1e17] px-2 py-0.5 rounded border border-[#1b3d2b]">
+                    {ffConfidence}% Confidence Fix-Forward
                   </span>
                 </div>
-                <span className="text-[10px] font-mono font-bold text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
-                  {ffConfidence}% Confidence Fix-Forward
-                </span>
-              </div>
 
-              <p className="text-xs text-[#c9d1d9] font-mono leading-relaxed">
-                {decision.reason || 'Clean 1-line patch with 100% test pass. Suspect commit landed recently with zero database migrations.'}
-              </p>
+                <p className="text-xs text-[#c9d1d9] leading-relaxed">
+                  {decision.reason || 'Synthesized defensive patch verified against reproduction tests. Safe to promote to production.'}
+                </p>
 
-              <div className="grid grid-cols-2 gap-2 pt-1 text-xs font-mono">
-                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#3fb950] text-[11px]">Option A: Fix-Forward</span>
-                    <span className="text-[#3fb950] font-bold text-[11px]">{ffConfidence}%</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
+                  <div className="p-3 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[#3fb950] text-xs">Option A: Fix-Forward</span>
+                      <span className="text-[#3fb950] font-mono font-semibold text-xs">{ffConfidence}%</span>
+                    </div>
+                    <p className="text-xs text-[#8b949e]">
+                      Deploy verified canary patch with zero service downtime.
+                    </p>
                   </div>
-                  <p className="text-[10px] text-[#6e7681] mt-0.5">
-                    Deploy Canary 8001 patch • Zero data loss • Safe defensive fix
-                  </p>
-                </div>
-                <div className="p-2.5 rounded bg-[#07090f] border border-[#2e2350]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#a371f7] text-[11px]">Option B: Rollback</span>
-                    <span className="text-[#a371f7] font-bold text-[11px]">{rbConfidence}%</span>
+                  <div className="p-3 rounded bg-[#07090f] border border-[#2e2350] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[#a371f7] text-xs">Option B: Rollback</span>
+                      <span className="text-[#a371f7] font-mono font-semibold text-xs">{rbConfidence}%</span>
+                    </div>
+                    <p className="text-xs text-[#8b949e]">
+                      Revert codebase to previous stable commit.
+                    </p>
                   </div>
-                  <p className="text-[10px] text-[#6e7681] mt-0.5">
-                    Revert to parent commit {suspectHash} • Canary 8002 ready
-                  </p>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -678,45 +682,47 @@ export default function IncidentDetail({
         )}
       </div>
 
-      {/* 3. Sticky Flat SRE Resolution Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d111a] border-t border-[#1b2234] p-2.5">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
-          <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#8b949e]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-            <span>Canary 8001 Ready • Watchdog Armed</span>
-          </div>
+      {/* 3. Action Bar (Only shown when approval is required) */}
+      {isAwaiting && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d111a] border-t border-[#1b2234] p-3">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-[#8b949e]">
+              <span className="w-2 h-2 rounded-full bg-[#e3b341] animate-pulse" />
+              <span>Remediation candidate verified and awaiting operator promotion</span>
+            </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => onApprove && onApprove('fix_forward')}
-              disabled={actionLoading || isResolved}
-              className="flex-1 sm:flex-none px-3.5 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs font-semibold flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-            >
-              <Zap size={13} />
-              <span>{actionLoading ? 'Promoting...' : 'Deploy Fix (8001)'}</span>
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => onApprove && onApprove('fix_forward')}
+                disabled={actionLoading}
+                className="flex-1 sm:flex-none px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
+              >
+                <Zap size={14} />
+                <span>{actionLoading ? 'Promoting...' : 'Promote Fix to Production'}</span>
+              </button>
 
-            <button
-              onClick={() => onRollback && onRollback()}
-              disabled={actionLoading || isResolved}
-              className="flex-1 sm:flex-none px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] font-mono text-xs font-medium flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
-            >
-              <RotateCcw size={12} />
-              <span>Rollback (8002)</span>
-            </button>
+              <button
+                onClick={() => onRollback && onRollback()}
+                disabled={actionLoading}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
+              >
+                <RotateCcw size={13} />
+                <span>Rollback</span>
+              </button>
 
-            <button
-              onClick={() => onTakeover && onTakeover()}
-              disabled={actionLoading || isResolved}
-              className="px-2.5 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs font-mono flex items-center justify-center gap-1 border border-[#212a3d] transition disabled:opacity-50"
-              title="Pause automation for manual SRE intervention"
-            >
-              <UserX size={12} />
-              <span className="hidden sm:inline">Take Over</span>
-            </button>
+              <button
+                onClick={() => onTakeover && onTakeover()}
+                disabled={actionLoading}
+                className="px-3 py-2 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
+                title="Pause automation for manual operator intervention"
+              >
+                <UserX size={13} />
+                <span className="hidden sm:inline">Manual Takeover</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

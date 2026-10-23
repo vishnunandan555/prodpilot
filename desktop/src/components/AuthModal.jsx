@@ -3,8 +3,6 @@ import {
   Lock,
   User,
   ShieldCheck,
-  Zap,
-  ArrowRight,
   AlertCircle,
   X,
   KeyRound,
@@ -37,8 +35,8 @@ export default function AuthModal({
     try {
       const endpoint = tab === 'login' ? `${apiUrl}/auth/login` : `${apiUrl}/auth/signup`;
       const payload = tab === 'login'
-        ? { username, password }
-        : { username, password, full_name: fullName, email };
+        ? { username: username.trim(), password }
+        : { username: username.trim(), password, full_name: fullName.trim(), email: email.trim() };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -63,29 +61,6 @@ export default function AuthModal({
     }
   };
 
-  const handleQuickDemoLogin = async () => {
-    setUsername('admin');
-    setPassword('admin');
-    setError(null);
-    setLoading(true);
-
-    try {
-      const res = await fetch(`${apiUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'admin', password: 'admin' }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Demo login failed');
-      onLoginSuccess(data.user, data.token);
-      if (onClose) onClose();
-    } catch (err) {
-      setError(err.message || 'Demo login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none">
       <div className="w-full max-w-md bg-[#0d111a] border border-[#1b2234] rounded-xl shadow-2xl overflow-hidden font-sans">
@@ -96,14 +71,11 @@ export default function AuthModal({
               P
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">ProdPilot Identity</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
-                  RBAC
-                </span>
-              </div>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Operator Sign-In & Workspace Security
+              <h2 className="text-sm font-semibold text-[#f0f6fc]">
+                {tab === 'login' ? 'Operator Sign In' : 'Create Operator Account'}
+              </h2>
+              <p className="text-xs text-[#8b949e]">
+                ProdPilot Production Console
               </p>
             </div>
           </div>
@@ -111,28 +83,30 @@ export default function AuthModal({
           {onClose && (
             <button
               onClick={onClose}
-              className="text-[#6e7681] hover:text-[#f0f6fc] transition"
+              className="text-[#6e7681] hover:text-[#f0f6fc] p-1 rounded hover:bg-[#161b26] transition"
             >
-              <X size={16} />
+              <X size={15} />
             </button>
           )}
         </div>
 
-        {/* Tab Selector */}
-        <div className="px-5 pt-4 pb-2 flex gap-2 border-b border-[#1b2234] bg-[#0d111a]">
+        {/* Tab Toggle */}
+        <div className="flex border-b border-[#1b2234] px-5 pt-3">
           <button
+            type="button"
             onClick={() => { setTab('login'); setError(null); }}
-            className={`flex-1 pb-2 text-xs font-mono font-medium border-b-2 transition ${
+            className={`flex-1 pb-2.5 text-xs font-medium border-b-2 transition ${
               tab === 'login'
                 ? 'border-[#58a6ff] text-[#f0f6fc]'
                 : 'border-transparent text-[#6e7681] hover:text-[#c9d1d9]'
             }`}
           >
-            Operator Sign In
+            Sign In
           </button>
           <button
+            type="button"
             onClick={() => { setTab('signup'); setError(null); }}
-            className={`flex-1 pb-2 text-xs font-mono font-medium border-b-2 transition ${
+            className={`flex-1 pb-2.5 text-xs font-medium border-b-2 transition ${
               tab === 'signup'
                 ? 'border-[#58a6ff] text-[#f0f6fc]'
                 : 'border-transparent text-[#6e7681] hover:text-[#c9d1d9]'
@@ -143,16 +117,16 @@ export default function AuthModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && (
-            <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center gap-2">
+            <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs flex items-center gap-2">
               <AlertCircle size={14} className="flex-shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center gap-2">
+            <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs flex items-center gap-2">
               <CheckCircle2 size={14} className="flex-shrink-0" />
               <span>{successMsg}</span>
             </div>
@@ -161,29 +135,31 @@ export default function AuthModal({
           {tab === 'signup' && (
             <>
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Full Name</label>
+                <label className="block text-xs text-[#8b949e] mb-1 font-medium">Full Name</label>
                 <div className="relative">
-                  <User size={13} className="absolute left-2.5 top-2.5 text-[#6e7681]" />
+                  <User size={13} className="absolute left-3 top-2.5 text-[#6e7681]" />
                   <input
                     type="text"
+                    required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Vishnu Nandan"
-                    className="w-full pl-8 pr-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                    placeholder="Full name"
+                    className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Email</label>
+                <label className="block text-xs text-[#8b949e] mb-1 font-medium">Work Email</label>
                 <div className="relative">
-                  <Mail size={13} className="absolute left-2.5 top-2.5 text-[#6e7681]" />
+                  <Mail size={13} className="absolute left-3 top-2.5 text-[#6e7681]" />
                   <input
                     type="email"
+                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="operator@company.com"
-                    className="w-full pl-8 pr-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                    className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                   />
                 </div>
               </div>
@@ -191,57 +167,44 @@ export default function AuthModal({
           )}
 
           <div>
-            <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Username</label>
+            <label className="block text-xs text-[#8b949e] mb-1 font-medium">Username</label>
             <div className="relative">
-              <User size={13} className="absolute left-2.5 top-2.5 text-[#6e7681]" />
+              <User size={13} className="absolute left-3 top-2.5 text-[#6e7681]" />
               <input
                 type="text"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="username"
-                className="w-full pl-8 pr-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Password</label>
+            <label className="block text-xs text-[#8b949e] mb-1 font-medium">Password</label>
             <div className="relative">
-              <KeyRound size={13} className="absolute left-2.5 top-2.5 text-[#6e7681]" />
+              <KeyRound size={13} className="absolute left-3 top-2.5 text-[#6e7681]" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-8 pr-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                className="w-full pl-9 pr-3 py-2 bg-[#07090f] border border-[#1b2234] rounded text-xs text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-2 space-y-2">
+          <div className="pt-2">
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium font-mono flex items-center justify-center gap-2 transition disabled:opacity-50"
+              className="w-full py-2 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
             >
               <ShieldCheck size={14} />
-              <span>{loading ? 'Authenticating...' : tab === 'login' ? 'Sign In as Operator' : 'Register Operator Account'}</span>
+              <span>{loading ? 'Authenticating...' : tab === 'login' ? 'Sign In' : 'Create Account'}</span>
             </button>
-
-            {tab === 'login' && (
-              <button
-                type="button"
-                onClick={handleQuickDemoLogin}
-                disabled={loading}
-                className="w-full py-1.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-xs font-mono flex items-center justify-center gap-1.5 transition"
-              >
-                <Zap size={13} />
-                <span>1-Click SRE Demo Login (admin / admin)</span>
-              </button>
-            )}
           </div>
         </form>
       </div>

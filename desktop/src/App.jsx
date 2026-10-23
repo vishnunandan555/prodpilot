@@ -123,23 +123,28 @@ export default function App() {
         setIncidents(data);
         setApiConnected(true);
 
-        // Check if a specific incident is in URL
-        const pathIncId = parsePathIncidentId();
-        if (pathIncId) {
-          const match = data.find((i) => i.id === pathIncId);
-          if (match) {
-            setSelectedIncident(match);
-            fetchIncidentDetail(pathIncId);
+        if (data.length === 0) {
+          setSelectedIncident(null);
+        } else {
+          // Check if a specific incident is in URL
+          const pathIncId = parsePathIncidentId();
+          if (pathIncId) {
+            const match = data.find((i) => i.id === pathIncId);
+            if (match) {
+              setSelectedIncident(match);
+              fetchIncidentDetail(pathIncId);
+            } else {
+              setSelectedIncident(null);
+            }
+          } else if (!selectedIncident || !data.some((i) => i.id === selectedIncident.id)) {
+            const active = data.find((i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED') || data[0];
+            setSelectedIncident(active);
+            fetchIncidentDetail(active.id);
           } else {
-            fetchIncidentDetail(pathIncId);
-          }
-        } else if (!selectedIncident && data.length > 0) {
-          const active = data.find((i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED') || data[0];
-          fetchIncidentDetail(active.id);
-        } else if (selectedIncident) {
-          const updated = data.find((i) => i.id === selectedIncident.id);
-          if (updated && updated.status !== selectedIncident.status) {
-            fetchIncidentDetail(updated.id);
+            const updated = data.find((i) => i.id === selectedIncident.id);
+            if (updated && updated.status !== selectedIncident.status) {
+              fetchIncidentDetail(updated.id);
+            }
           }
         }
       } else {
@@ -284,38 +289,12 @@ export default function App() {
     }
   };
 
-  // Demo Controls
-  const handleTriggerCrash = async () => {
-    try {
-      await fetch(`${PROD_BASE_URL}/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: [{ id: 'item_crash', qty: 1, price: 99.0 }] }),
-      });
-    } catch (err) {
-      // Ignored: 500 error expected
-    }
-    setTimeout(fetchIncidents, 1500);
-  };
-
-  const handleResetDemo = async () => {
-    try {
-      await fetch(`${PROD_BASE_URL}/reset`, { method: 'POST' });
-    } catch (err) {
-      // Ignored
-    }
-    setTimeout(fetchIncidents, 1000);
-  };
-
   return (
     <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden">
-      {/* Top Window Header (Hidden on small mobile screens to maximize viewable area) */}
+      {/* Top Window Header */}
       <div className="hidden sm:block flex-shrink-0">
         <WindowHeader
           apiConnected={apiConnected}
-          onTriggerCrash={handleTriggerCrash}
-          onResetDemo={handleResetDemo}
-          isRefreshing={isRefreshing}
           currentUser={currentUser}
           onLogout={handleLogout}
           onOpenAuth={() => setShowAuthModal(true)}
@@ -349,8 +328,6 @@ export default function App() {
               incidents={incidents}
               onSelectIncident={handleSelectIncident}
               onNavigate={(nav) => setActiveNav(nav)}
-              onTriggerCrash={handleTriggerCrash}
-              actionLoading={actionLoading}
               apiConnected={apiConnected}
               apiUrl={apiUrl}
             />

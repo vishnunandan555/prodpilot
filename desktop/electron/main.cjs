@@ -7,8 +7,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
     height: 920,
-    minWidth: 1024,
-    backgroundColor: '#0d1117',
+    minWidth: 900,
+    minHeight: 600,
+    resizable: true,
+    backgroundColor: '#080b11',
     title: 'ProdPilot',
     autoHideMenuBar: true,
     webPreferences: {

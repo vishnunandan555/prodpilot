@@ -92,22 +92,22 @@ export default function AgentsView({ incidents = [] }) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  Autonomous Agent Fleet
+                  Remediation Agents & Guardrails
                 </h1>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
-                  {agents.length} AGENTS ARMED
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
+                  {agents.length} READY
                 </span>
               </div>
-              <p className="text-[11px] text-[#8b949e] font-mono">
-                Google Antigravity SDK multi-agent orchestration & deterministic safety guardrails
+              <p className="text-xs text-[#8b949e] mt-0.5">
+                Multi-agent triage, worktree isolation, deterministic safety guardrails, and watchdog circuit breakers
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-1 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center gap-1.5">
+            <span className="px-2.5 py-1 rounded-md bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-medium flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-              <span>Orchestrator: ACTIVE</span>
+              <span>Engine Active</span>
             </span>
           </div>
         </div>
@@ -116,25 +116,25 @@ export default function AgentsView({ incidents = [] }) {
       <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
         {/* Architecture Specs Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
-            <span className="text-[10px] font-mono uppercase text-[#6e7681]">Orchestration SDK</span>
-            <div className="text-xs font-mono font-bold text-[#f0f6fc]">Google Antigravity</div>
-            <p className="text-[10px] text-[#8b949e] font-mono">Stream B Autonomous</p>
+          <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1">
+            <span className="text-[10px] uppercase font-semibold text-[#6e7681] tracking-wider">Engine Core</span>
+            <div className="text-xs font-semibold text-[#f0f6fc]">Google Antigravity</div>
+            <p className="text-xs text-[#8b949e]">Autonomous Orchestration</p>
           </div>
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
-            <span className="text-[10px] font-mono uppercase text-[#6e7681]">Sandbox Isolation</span>
-            <div className="text-xs font-mono font-bold text-[#3fb950]">Git Worktrees</div>
-            <p className="text-[10px] text-[#8b949e] font-mono">Zero Dirty Working Dir</p>
+          <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1">
+            <span className="text-[10px] uppercase font-semibold text-[#6e7681] tracking-wider">Sandbox Mode</span>
+            <div className="text-xs font-semibold text-[#3fb950]">Git Worktrees</div>
+            <p className="text-xs text-[#8b949e]">Isolated Working Dir</p>
           </div>
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
-            <span className="text-[10px] font-mono uppercase text-[#6e7681]">Safety Invariant</span>
-            <div className="text-xs font-mono font-bold text-[#58a6ff]">Max 1 Attempt</div>
-            <p className="text-[10px] text-[#8b949e] font-mono">Anti-Loop Defense</p>
+          <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1">
+            <span className="text-[10px] uppercase font-semibold text-[#6e7681] tracking-wider">Safety Guard</span>
+            <div className="text-xs font-semibold text-[#58a6ff]">Max 1 Attempt</div>
+            <p className="text-xs text-[#8b949e]">Anti-Loop Defense</p>
           </div>
-          <div className="p-3 rounded-md bg-[#0d111a] border border-[#1b2234] space-y-1">
-            <span className="text-[10px] font-mono uppercase text-[#6e7681]">Incident History</span>
-            <div className="text-xs font-mono font-bold text-[#e3b341]">{totalIncidents} Total</div>
-            <p className="text-[10px] text-[#8b949e] font-mono">{resolvedIncidents} Automated Fixes</p>
+          <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-1">
+            <span className="text-[10px] uppercase font-semibold text-[#6e7681] tracking-wider">Incident Load</span>
+            <div className="text-xs font-semibold text-[#e3b341]">{totalIncidents} Total</div>
+            <p className="text-xs text-[#8b949e]">{resolvedIncidents} Resolved</p>
           </div>
         </div>
 
@@ -145,37 +145,37 @@ export default function AgentsView({ incidents = [] }) {
               key={agent.id}
               className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] hover:border-[#293652] transition space-y-2.5"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2.5">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
                     <Bot size={16} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{agent.name}</h3>
-                      <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded border font-bold ${agent.statusColor}`}>
+                      <h3 className="text-xs font-semibold text-[#f0f6fc]">{agent.name}</h3>
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-medium ${agent.statusColor}`}>
                         {agent.status}
                       </span>
                     </div>
-                    <p className="text-[11px] text-[#6e7681] font-mono mt-0.5">
-                      {agent.tier} • Engine: <span className="text-[#8b949e]">{agent.model}</span>
+                    <p className="text-xs text-[#8b949e] mt-0.5">
+                      {agent.tier} • Engine: <span className="text-[#c9d1d9]">{agent.model}</span>
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs font-mono text-right flex-shrink-0">
+                <div className="flex items-center gap-4 text-xs text-right flex-shrink-0">
                   <div>
-                    <span className="text-[#6e7681] text-[10px] block">LATENCY</span>
-                    <span className="text-[#58a6ff]">{agent.latency}</span>
+                    <span className="text-[#6e7681] text-[10px] block font-semibold uppercase">LATENCY</span>
+                    <span className="text-[#58a6ff] font-mono">{agent.latency}</span>
                   </div>
                   <div>
-                    <span className="text-[#6e7681] text-[10px] block">RUN COUNT</span>
+                    <span className="text-[#6e7681] text-[10px] block font-semibold uppercase">RUN COUNT</span>
                     <span className="text-[#f0f6fc] font-semibold">{agent.runs} runs</span>
                   </div>
                 </div>
               </div>
 
-              <p className="text-xs text-[#8b949e] font-mono leading-relaxed">
+              <p className="text-xs text-[#8b949e] leading-relaxed">
                 {agent.purpose}
               </p>
             </div>

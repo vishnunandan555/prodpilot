@@ -92,7 +92,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
               <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
                 Live Telemetry & Ingest Logs
               </h1>
-              <p className="text-[11px] text-[#6e7681] font-mono">
+              <p className="text-xs text-[#8b949e] mt-0.5">
                 Real-time log tailing from POST /ingest and connected services
               </p>
             </div>
@@ -102,20 +102,20 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
             <button
               onClick={handleExport}
               disabled={filteredLogs.length === 0}
-              className="px-2 py-1 rounded bg-[#161b26] hover:bg-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1 border border-[#212a3d] transition disabled:opacity-50"
+              className="px-2.5 py-1 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-xs font-medium text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
               title="Export filtered logs as JSON"
             >
-              <Download size={12} />
+              <Download size={13} />
               <span>Export</span>
             </button>
             <button
               onClick={fetchLogs}
-              className="p-1 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] transition"
+              className="p-1.5 rounded-md bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] transition"
               title="Refresh log stream"
             >
-              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
               <span>STREAM ACTIVE</span>
             </div>
@@ -129,10 +129,10 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents =
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#485263]" />
               <input
                 type="text"
-                placeholder="Search logs by keyword, regex, or traceback..."
+                placeholder="Search logs by keyword, exception, or service..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-2.5 py-1 rounded bg-[#07090f] border border-[#1b2234] text-xs text-[#c9d1d9] placeholder-[#485263] font-mono focus:outline-none focus:border-[#388bfd]"
+                className="w-full pl-8 pr-2.5 py-1.5 rounded-md bg-[#07090f] border border-[#1b2234] text-xs text-[#c9d1d9] placeholder-[#485263] focus:outline-none focus:border-[#388bfd]"
               />
             </div>
           </div>
