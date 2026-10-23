@@ -152,7 +152,7 @@ def me_endpoint(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
 class CreateProjectRequest(BaseModel):
     name: str
     github_repo: str  # e.g. "vishnunandan555/chunkstream" or full URL
-    local_path: str   # e.g. "/home/.../chunkstream" or "projects/chunkstream"
+    local_path: Optional[str] = None  # Optional: e.g. "/home/.../chunkstream" or leave blank to auto-clone
     github_token: Optional[str] = None  # Per-project PAT (or None to use Global PAT)
     default_branch: Optional[str] = "main"
     test_cmd: Optional[str] = "pytest"
@@ -181,22 +181,60 @@ def get_active_project_endpoint() -> Dict[str, Any]:
 
 @router.post("/projects")
 def create_project_endpoint(body: CreateProjectRequest) -> Dict[str, Any]:
-    raw_path = os.path.expanduser(body.local_path.strip())
-    local_path = Path(raw_path).resolve()
-
-    # Validate or create directory
-    if not local_path.exists():
-        try:
-            local_path.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["git", "init", "-b", body.default_branch or "main"], cwd=str(local_path), capture_output=True)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Cannot initialize local path {local_path}: {e}")
-
     # Normalize GitHub repo slug
     repo_slug = GitHubClient.normalize_slug(body.github_repo)
+    token = get_effective_github_token(body.github_token)
+
+    # Determine local_path (auto-default if blank)
+    if body.local_path and body.local_path.strip():
+        raw_path = os.path.expanduser(body.local_path.strip())
+        local_path = Path(raw_path).resolve()
+    else:
+        # Default internal directory: ~/.prodpilot/projects/<owner>_<repo>
+        slug_clean = repo_slug.replace("/", "_")
+        default_dir = Path.home() / ".prodpilot" / "projects" / slug_clean
+        local_path = default_dir.resolve()
+
+    # Validate or auto-clone repository
+    needs_clone = False
+    if not local_path.exists():
+        needs_clone = True
+    elif local_path.is_dir():
+        # Check if empty or missing .git
+        contents = list(local_path.iterdir())
+        if not contents or not (local_path / ".git").exists():
+            needs_clone = True
+
+    if needs_clone:
+        try:
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            # Authenticated clone URL if token present
+            if token:
+                clone_url = f"https://x-access-token:{token}@github.com/{repo_slug}.git"
+            else:
+                clone_url = f"https://github.com/{repo_slug}.git"
+
+            logger.info(f"Auto-cloning {repo_slug} into {local_path}...")
+            clone_cmd = ["git", "clone"]
+            if body.default_branch:
+                clone_cmd.extend(["-b", body.default_branch])
+            clone_cmd.extend([clone_url, str(local_path)])
+
+            res = subprocess.run(clone_cmd, capture_output=True, text=True, timeout=120)
+            if res.returncode != 0:
+                logger.warning(f"git clone failed ({res.stderr.strip()}). Initializing empty repo as fallback.")
+                if not local_path.exists():
+                    local_path.mkdir(parents=True, exist_ok=True)
+                if not (local_path / ".git").exists():
+                    subprocess.run(["git", "init", "-b", body.default_branch or "main"], cwd=str(local_path), capture_output=True)
+        except Exception as e:
+            logger.warning(f"Auto-clone attempt raised: {e}. Fallback to git init.")
+            if not local_path.exists():
+                local_path.mkdir(parents=True, exist_ok=True)
+            if not (local_path / ".git").exists():
+                subprocess.run(["git", "init", "-b", body.default_branch or "main"], cwd=str(local_path), capture_output=True)
 
     # Validate against GitHub API if token is available
-    token = get_effective_github_token(body.github_token)
     gh_client = GitHubClient(token=token)
     repo_check = gh_client.get_repo(repo_slug, token=token)
 
@@ -214,7 +252,7 @@ def create_project_endpoint(body: CreateProjectRequest) -> Dict[str, Any]:
         "status": "created",
         "project": project,
         "github_status": repo_check,
-        "message": f"Project '{body.name}' connected successfully!",
+        "message": f"Project '{body.name}' connected successfully! (Local path: {local_path})",
     }
 
 

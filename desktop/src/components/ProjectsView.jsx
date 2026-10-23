@@ -39,6 +39,7 @@ export default function ProjectsView({ apiUrl }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // Add Project Form
   const [form, setForm] = useState({
@@ -127,11 +128,12 @@ export default function ProjectsView({ apiUrl }) {
 
   const handleCreateProject = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.github_repo || !form.local_path) {
-      alert('Please fill out Name, GitHub Repo, and Local Directory Path.');
+    if (!form.name || !form.github_repo) {
+      alert('Please fill out Project Name and GitHub Repo.');
       return;
     }
 
+    setSubmitting(true);
     try {
       const res = await fetch(`${apiUrl}/projects`, {
         method: 'POST',
@@ -155,7 +157,9 @@ export default function ProjectsView({ apiUrl }) {
         setSelectedProjectId(data.project.id);
       }
     } catch (err) {
-      alert(err.message);
+      alert(`Error connecting project: ${err.message}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -870,18 +874,17 @@ export default function ProjectsView({ apiUrl }) {
 
               <div>
                 <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
-                  Project Local Path <span className="text-[#ff7b72]">*</span>
+                  Project Local Path <span className="text-[#8b949e] font-normal">(Optional — auto-clones if blank)</span>
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. /home/vishnunandan555/Projects/chunkstream"
+                  placeholder="Leave blank to auto-clone to ~/.prodpilot/projects/"
                   value={form.local_path}
                   onChange={(e) => setForm({ ...form, local_path: e.target.value })}
                   className="w-full bg-[#080b11] border border-[#222f47] text-xs text-[#f0f6fc] px-3 py-2 rounded-lg focus:outline-none focus:border-[#58a6ff] font-mono"
                 />
                 <p className="text-[10px] text-[#8b949e] mt-1">
-                  Local path on this machine for staging git diffs and running test suites.
+                  Optional. Leave blank to automatically clone from GitHub, or enter an existing folder on this machine.
                 </p>
               </div>
 
@@ -938,15 +941,18 @@ export default function ProjectsView({ apiUrl }) {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2b40] text-[#c9d1d9] text-xs transition"
+                  disabled={submitting}
+                  className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2b40] text-[#c9d1d9] text-xs transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold shadow transition"
+                  disabled={submitting}
+                  className="px-4 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white text-xs font-bold shadow transition flex items-center gap-1.5"
                 >
-                  Connect Project
+                  {submitting && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  <span>{submitting ? 'Connecting & Cloning...' : 'Connect Project'}</span>
                 </button>
               </div>
             </form>
