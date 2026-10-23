@@ -1,246 +1,223 @@
-# ProdPilot 3-Agent Execution Plan & Runbook
+# ProdPilot 3-Agent Execution Plan & Runbook (Phase 2: Gate 2 - The Demo Floor)
 
-This document defines the 3-agent parallel operating procedure for ProdPilot.
+This document defines the Phase 2 multi-agent operating procedure for ProdPilot.
 Each agent operates in its own isolated worktree or branch with strict folder ownership.
 
 ---
 
-## 1. Multi-Agent Architecture & Strict Boundaries
+## 1. What Has Been Built (Phase 0 & Phase 1 Done & Merged to `main` - Tag `gate-1-passed`)
 
-```
-┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│     Agent 1: Stream A           │   │     Agent 2: Stream B           │   │     Agent 3: Stream C           │
-│     (The Brain / Engine)        │   │     (The Body & UI)             │   │     (Visihot Telegram Bot)      │
-├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
-│ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Directory: prodpilot/telegram │
-│ • Branch: stream-a              │   │ • Branch: stream-b              │   │ • Branch: telegram (root-level) │
-│ • Pipeline & Agent loop         │   │ • demo-prod (buggy service)     │   │ • Untracked by main git repo    │
-│ • Repro-test & Verifier         │   │ • Watcher + Git Blame           │   │ • python-telegram-bot           │
-│ • Staging & Deploy Adapter      │   │ • Reset & trigger scripts       │   │ • Inline Action Buttons         │
-│ • FastAPI & SSE API (port 8765) │   │ • Electron + React Dashboard    │   │ • Deploys directly on Visihot   │
-└─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
-```
-
-### Strict Folder Ownership:
-| Agent | Directory / Scope Owned | Strictly Forbidden |
+| Component | Files Built & Merged | Verified Functionality |
 |---|---|---|
-| **Agent 1** (Brain) | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`backend/prodpilot/decide/`<br>`backend/prodpilot/api/`<br>`backend/prodpilot/db.py` | `demo-prod/`<br>`backend/prodpilot/watcher/`<br>`desktop/`<br>`scripts/`<br>`telegram/` |
-| **Agent 2** (Body & UI) | `demo-prod/` (separate git repo inside `demo-prod`)<br>`backend/prodpilot/watcher/`<br>`desktop/` (Electron + React)<br>`scripts/` | `backend/prodpilot/pipeline/`<br>`backend/prodpilot/agents/`<br>`backend/prodpilot/staging/`<br>`telegram/` |
-| **Agent 3** (Telegram) | `telegram/` (on branch `telegram`, untracked by `main`) | Any file outside `telegram/` |
+| **Contracts** | `contracts/schema.sql`, `incident.example.json`, `events.md`, `api.md`, `project.profile.example.yaml`, `agent_interface.py` | Frozen schemas for DB, REST, SSE, and Agent signatures. |
+| **Database** | `backend/prodpilot/db.py` | Full SQLite access layer with parameterized queries, Foreign Keys, event logs, and JSON parsing. |
+| **Agent Adapters** | `backend/prodpilot/agents/antigravity_adapter.py`, `gemini_adapter.py`, `factory.py` | Primary: Antigravity SDK (`agy` CLI v1.4.6, zero paid Gemini keys required). Fallback: Gemini adapter. |
+| **Sandboxing** | `backend/prodpilot/pipeline/worktree.py` | Isolated git worktree creator and cleaner per incident. |
+| **Pipeline Engine** | `backend/prodpilot/pipeline/brief.py`, `repro_runner.py` | Autonomous context brief synthesis; failing reproduction test generation on unmodified code; patch synthesis; deterministic verification of repro + full suite. |
+| **Staging & Deploy** | `backend/prodpilot/staging/manager.py`, `deploy.py` | Side-port canaries (8001 & 8002); port-swapping deploy adapter with automatic 10s health monitoring and instant rollback. |
+| **Decisions** | `backend/prodpilot/decide/rules.py` | Typed decision engine outputting recommendations (fix-forward vs rollback), probabilities, and reasoning. |
+| **Backend & Tunnel** | `backend/prodpilot/api/server.py` | FastAPI REST & SSE streaming server on port 8765. Public Cloudflare tunnel active: `https://developing-dimensional-acknowledged-minimal.trycloudflare.com`. |
+| **Fake Prod & Scripts** | `demo-prod/`, `scripts/init_demo_prod.py`, `reset-demo.sh`, `trigger-crash.sh` | Realistic order microservice with 5 commits of git history, planted `discount` bug, reset and crash triggers. |
+| **Health Watcher** | `backend/prodpilot/watcher/watcher.py` | 5-second health poller; log tail and traceback extraction; git blame suspect commit capture. |
+| **Desktop UI** | `desktop/` (Vite + React + Tailwind + Electron) | Complete incident view, diff viewer, test evidence cards, and timeline component compiled and ready. |
+| **Telegram Bot** | `telegram/bot.py`, `app.py` (branch: `telegram`) | Interactive incident card with buttons (`[Deploy Fix]`, `[Rollback]`, `[Reject]`), `/status`, `/logs`, `/report`. Verified live with Telegram Bot API! |
 
 ---
 
-## 2. Directory & Git Setup
+## 2. What We Are Building Next (Phase 2: Gate 2 – The Demo Floor)
 
-All worktrees and branches are initialized:
-- **Main Coordinator**: `/home/vishnunandan555/Projects/prodpilot` (branch: `main`)
-- **Window 1 (Agent 1)**: `/home/vishnunandan555/Projects/prodpilot-a` (branch: `stream-a`)
-- **Window 2 (Agent 2)**: `/home/vishnunandan555/Projects/prodpilot-b` (branch: `stream-b`)
-- **Window 3 (Agent 3)**: `/home/vishnunandan555/Projects/prodpilot/telegram` (branch: `telegram`)
+**The Hero Demo Goal**: 
+Run `./scripts/trigger-crash.sh` -> Service crashes -> Watcher detects -> Pipeline auto-fixes and stages canaries on 8001 & 8002 -> Telegram buzzes your phone -> You tap **`[🚀 Deploy Fix (8001)]`** on phone -> Service restored healthy, and incident report is generated.
 
-### How Visihot Telegram Deployment Works:
-1. Agent 3 works entirely inside `/home/vishnunandan555/Projects/prodpilot/telegram`.
-2. When Agent 3 commits and pushes:
-   ```bash
-   cd /home/vishnunandan555/Projects/prodpilot/telegram
-   git push origin telegram
-   ```
-3. In the Visihot dashboard, select repository: `vishnunandan555/prodpilot`, choose branch: `telegram`, and click **Deploy**! Visihot will run `bot.py` right from the root of that branch.
+```
+[Watcher detects 500 error]
+          │
+          ▼ (SQLite row: status=OPEN)
+┌────────────────────────────────────────────────────────┐
+│  AGENT 1 (Stream A): Orchestrator Daemon               │
+│  1. Ingests OPEN incidents from SQLite                 │
+│  2. Runs brief.py -> repro_runner.py (Antigravity loop)│
+│  3. Spawns live canaries on Port 8001 & Port 8002      │
+│  4. Runs decide/rules.py (recommendation & confidence) │
+│  5. Sets status -> AWAITING_APPROVAL (streams via SSE) │
+└────────────────────────────────────────────────────────┘
+          │
+          ├──────────────────────────────────────────────┐
+          ▼                                              ▼
+┌───────────────────────────────────┐    ┌───────────────────────────────────┐
+│  AGENT 2 (Stream B): Desktop UI   │    │  AGENT 3 (Stream C): Telegram Bot │
+│  • Connect live SSE to Timeline   │    │  • Receives incident from backend │
+│  • Real-time animation of stages  │    │  • Sends card to your phone       │
+│  • Desktop Deploy/Rollback buttons│    │  • User taps [🚀 Deploy Fix]      │
+│  • Trigger Crash button in UI     │    │  • Calls POST /approve via tunnel │
+└───────────────────────────────────┘    └───────────────────────────────────┘
+          │                                              │
+          └──────────────────────┬───────────────────────┘
+                                 ▼
+┌────────────────────────────────────────────────────────┐
+│  DEPLOY ADAPTER (Automatic Verification):              │
+│  • Promotes staged fix onto production port 8000       │
+│  • Verifies health check for 10s                       │
+│  • Generates markdown post-mortem report               │
+│  • Phone & Desktop show: ✅ PROD RESTORED              │
+└────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. Prompts for the 3 Agent Windows
+## 3. Prompts for the 3 Agent Windows (Phase 2)
 
 Copy-paste each prompt into the corresponding agent window:
 
 ---
 
-### Window 1: Agent 1 (Stream A – The Brain / Engine)
+### 🟢 Window 1: Agent 1 (Stream A – Autonomous Orchestrator Daemon & Deploy Engine)
 **Working Directory**: `/home/vishnunandan555/Projects/prodpilot-a`  
 **Git Branch**: `stream-a`
 
 ```markdown
 You are Agent 1 (Stream A - The Brain) for ProdPilot.
-Your workspace is `prodpilot-a`. Your job is to build the backend pipeline, agent loop, deterministic verifier, staging canaries, and the FastAPI/SSE server.
+Your workspace is `prodpilot-a`. Your task in Phase 2 is to build the autonomous End-to-End Orchestrator Daemon that ties the Watcher, Repro-First Pipeline, Staging, and Decision Engine together.
 
 STRICT BOUNDARY:
-- You ONLY work in `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, `backend/prodpilot/decide/`, `backend/prodpilot/api/`, and `backend/prodpilot/db.py`.
+- You ONLY work in `backend/prodpilot/pipeline/`, `backend/prodpilot/staging/`, `backend/prodpilot/decide/`, `backend/prodpilot/api/`, and `backend/prodpilot/tests/`.
 - DO NOT touch `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, or `telegram/`.
-- Contracts in `contracts/` are FROZEN. Read `contracts/schema.sql`, `contracts/incident.example.json`, `contracts/api.md`, and `contracts/agent_interface.py`.
 
 TASKS TO EXECUTE:
-1. Agent Adapter (`backend/prodpilot/agents/`):
-   - Implement `antigravity_adapter.py` conforming to `contracts/agent_interface.py`.
-   - Provide fallback `gemini_adapter.py` supporting `read_file`, `write_file`, `list_dir`, `grep_search`. Gate arbitrary shell commands so verifier remains deterministic.
+1. Orchestrator Daemon (`backend/prodpilot/pipeline/orchestrator.py`):
+   - Create a continuous loop (`run_orchestrator(poll_interval=2)`) or background task that checks SQLite for incidents with `status == 'OPEN'`.
+   - When a new incident arrives:
+     a. Transition status to `INVESTIGATING` and log event `stage_started` (`UNDERSTAND`).
+     b. Run `create_brief(incident_data)` and update incident brief in DB.
+     c. Transition status to `FIXING` and run `run_repro_pipeline(...)` using `AntigravityAdapter`.
+        - Ensure a minimal failing test (`tests/test_repro.py`) is written and verified failing.
+        - Ensure patch is generated and verified (repro test + full suite green).
+        - Save artifacts: `patch_diff`, `repro_test`, `test_evidence`.
+     d. Stage Canaries:
+        - Call `StagingManager.stage_fix_forward(...)` on side port 8001 and verify canary health.
+        - Call `StagingManager.stage_rollback(...)` on side port 8002 and verify canary health.
+     e. Run Decision Engine:
+        - Call `decide(...)` to compute recommendation ("fix_forward" vs "rollback"), probabilities, and reason.
+        - Record decision in `decisions` table.
+     f. Transition status to `AWAITING_APPROVAL` and log event `awaiting_approval`.
+   - Provide CLI entrypoint: `python -m backend.prodpilot.pipeline.orchestrator --daemon` (or `--once` for single incident execution).
 
-2. Worktree Manager (`backend/prodpilot/pipeline/worktree.py`):
-   - Helper to create temporary git worktrees (`git worktree add <dir> HEAD`) and cleanly remove them (`git worktree remove --force <dir>`).
+2. Incident Post-Mortem Report Generator (`backend/prodpilot/staging/deploy.py`):
+   - When `/incidents/{id}/approve` successfully promotes the build to port 8000:
+     - Generate a comprehensive markdown report (`artifacts/incident_report.md`):
+       - Incident ID, Service, Timestamp.
+       - Root Cause Summary & Suspect Commit (`git blame` details).
+       - Reproduction Test & Test Evidence (Before & After).
+       - Patch Diff.
+       - Canary Health Verification (Ports 8001 & 8002).
+       - Who Approved & Source (Telegram / Desktop UI).
+     - Save into SQLite `artifacts` table under `kind="incident_report"`.
 
-3. Context Brief & Repro-First Pipeline (`backend/prodpilot/pipeline/`):
-   - `brief.py`: Extract structured brief from incident JSON (suspect area, suspect commit analysis).
-   - `repro_runner.py`:
-     1. Agent writes minimal reproduction test (`tests/test_repro.py`).
-     2. Verifier runs test: MUST FAIL on baseline code (if it passes, re-prompt).
-     3. Agent modifies code in worktree to fix bug.
-     4. Verifier runs repro test AND full test suite.
-     5. Bounded retry: max 2 attempts on test failure with error logs fed back to agent.
+3. Verification:
+   - Add a test script or unit test verifying that when an incident is inserted as `OPEN`, running the orchestrator advances it to `AWAITING_APPROVAL` with staged canaries on 8001/8002.
 
-4. Staging & Deploy Adapter (`backend/prodpilot/staging/`):
-   - `manager.py`:
-     - Fix-forward: Runs patched build on side port 8001, verifies canary `http://127.0.0.1:8001/health`.
-     - Rollback: In a worktree, runs `git revert <suspect_commit>` without committing, runs tests, starts on side port 8002, verifies canary `http://127.0.0.1:8002/health`.
-   - `deploy.py`: On approval, swaps build onto production port 8000, checks health for 10s, auto-reverts if health fails.
-
-5. Decision Layer (`backend/prodpilot/decide/rules.py`):
-   - `decide(incident, staging_status)` -> recommendations ("fix_forward" vs "rollback"), probabilities, and reason.
-
-6. FastAPI REST & SSE Server (`backend/prodpilot/api/`):
-   - Run on port 8765 matching `contracts/api.md`:
-     - `GET /health`
-     - `GET /incidents`
-     - `GET /incidents/{id}`
-     - `GET /incidents/{id}/events` (SSE stream from `run_events`)
-     - `POST /incidents/{id}/approve` (executes deploy adapter for "fix_forward" or "rollback")
-     - `POST /incidents/{id}/reject`
-
-EXIT CHECK:
-Run a complete test script: create mock incident in DB -> run pipeline -> stage on 8001/8002 -> trigger approval via API endpoint -> verify clean deployment. Commit all code to `stream-a`.
+Commit all code to `stream-a`.
 ```
 
 ---
 
-### Window 2: Agent 2 (Stream B – The Body / Fake Production & Desktop UI)
+### 🔵 Window 2: Agent 2 (Stream B – Desktop Live SSE Animation & Control)
 **Working Directory**: `/home/vishnunandan555/Projects/prodpilot-b`  
 **Git Branch**: `stream-b`
 
 ```markdown
 You are Agent 2 (Stream B - The Body & UI) for ProdPilot.
-Your workspace is `prodpilot-b`. Your job is to build the fake production service (`demo-prod`), demo control scripts, the health watcher with git blame capture, and the Electron+React dashboard.
+Your workspace is `prodpilot-b`. Your task in Phase 2 is to wire up live SSE event streaming to the React desktop app so the entire incident investigation, test execution, and deployment animate live in real-time.
 
 STRICT BOUNDARY:
-- You ONLY work in `demo-prod/`, `backend/prodpilot/watcher/`, `desktop/`, and `scripts/`.
+- You ONLY work in `desktop/`, `scripts/`, and `backend/prodpilot/watcher/`.
 - DO NOT touch `backend/prodpilot/pipeline/`, `backend/prodpilot/agents/`, `backend/prodpilot/staging/`, or `telegram/`.
-- Use `backend/prodpilot/db.py` to insert incidents into SQLite.
 
 TASKS TO EXECUTE:
-1. Build `demo-prod` Service (`demo-prod/`):
-   - A standalone FastAPI/Flask microservice (Order Total service).
-   - Initialize as a git repo with 5 realistic commits:
-     1: init order api
-     2: add item pricing
-     3: add tax calculation
-     4: add authentication middleware
-     5: feat: add discount support to order checkout (PLANTED BUG: accessing order['discount'] directly causing KeyError on standard orders without discounts).
-   - Endpoints: `GET /health`, `POST /orders`, `GET /orders/history`.
-   - Tests: `pytest` suite covering standard orders.
-   - Logging: writes to `service.log` with timestamp, level, tracebacks.
+1. Live SSE Subscription in Desktop UI (`desktop/src/`):
+   - In `desktop/src/App.jsx` and `Timeline.jsx`:
+     - Subscribe to `GET http://127.0.0.1:8765/incidents/{activeId}/events` using standard browser `EventSource`.
+     - Dynamically animate stages as they occur:
+       `UNDERSTAND` -> `REPRODUCE` -> `FIX` -> `VERIFY` -> `STAGE` -> `DECIDE` -> `AWAITING_APPROVAL` -> `DEPLOY` -> `RESOLVED`.
+     - Display live tool calls, test execution logs, and diff preview in real time as events arrive.
 
-2. Demo Scripts (`scripts/`):
-   - `scripts/trigger-crash.sh`: Sends POST request without `discount` key, causing an unhandled 500 error and healthcheck failure.
-   - `scripts/reset-demo.sh`: Resets `demo-prod` git repo back to the buggy commit and restarts the service on port 8000.
+2. One-Tap Actions & UI Controls:
+   - Wire the Desktop `[Deploy Fix]` and `[Rollback]` buttons in `DecisionCard.jsx` / `IncidentDetail.jsx` to call `POST http://127.0.0.1:8765/incidents/{id}/approve`.
+   - On deployment success, display a green celebration banner: `✅ PRODUCTION RESTORED (Port 8000: 200 OK)`.
+   - Add a header action button in `Header.jsx`: `[💥 Trigger Test Crash]` which calls `/scripts/trigger-crash.sh` or simulates an outage, and `[🔄 Reset Demo]` which calls `/scripts/reset-demo.sh`.
 
-3. Health Watcher & Git Blame Capture (`backend/prodpilot/watcher/watcher.py`):
-   - Polls `GET http://127.0.0.1:8000/health` every 5 seconds.
-   - 2 consecutive failures OR process exit triggers incident creation.
-   - Capture engine:
-     - Extracts traceback from `service.log`.
-     - Pulls last 200 lines of `service.log`.
-     - Runs `git log -n 5 --oneline` in `demo-prod`.
-     - Runs `git blame` on traceback file/line in `demo-prod` to identify `suspect_commit`, author, and minutes elapsed since commit.
-   - Saves incident to SQLite via `backend/prodpilot/db.py:create_incident(...)`.
+3. Post-Mortem Report Viewer:
+   - When incident is in `DEPLOYED` or `RESOLVED` status, render the markdown post-mortem report (fetched from `GET /incidents/{id}`).
 
-4. Desktop Dashboard (`desktop/`):
-   - Electron shell wrapping React (Vite + React + Vanilla CSS or Tailwind).
-   - Talks to backend API at `http://127.0.0.1:8765`.
-   - Screens:
-     - Incident List: Shows open incidents, status badges.
-     - Incident View:
-       - Incident Brief card & suspect commit badge.
-       - Live Event Timeline (subscribing to `/incidents/{id}/events` SSE).
-       - Before / After test evidence card.
-       - Diff viewer for generated patch.
-       - Decision Recommendation Card (probabilities for fix-forward vs rollback).
-       - `[Deploy Fix]` and `[Rollback]` approval buttons calling `POST /incidents/{id}/approve`.
+4. Verification:
+   - Verify `npm run build` succeeds without lint/syntax errors.
+   - Run `npm run dev` and confirm UI renders cleanly at `http://localhost:5173`.
 
-EXIT CHECK:
-Start `demo-prod`, run `trigger-crash.sh`, verify watcher creates populated incident row in SQLite with suspect commit within 10s. Start desktop app to display incident view. Commit all code to `stream-b`.
+Commit all code to `stream-b`.
 ```
 
 ---
 
-### Window 3: Agent 3 (Stream C – Visihot Hosted Telegram Bot)
+### 🟣 Window 3: Agent 3 (Stream C – Visihot Telegram Cloud Bot & Webhook Loop)
 **Working Directory**: `/home/vishnunandan555/Projects/prodpilot/telegram`  
-**Git Branch**: `telegram` (Standalone branch for Visihot deployment)
+**Git Branch**: `telegram` (Dedicated branch for Visihot cloud deployment)
 
 ```markdown
 You are Agent 3 (Stream C - Visihot Hosted Telegram Bot) for ProdPilot.
-Your workspace is `/home/vishnunandan555/Projects/prodpilot/telegram`.
-This workspace is on a dedicated git branch called `telegram` and is completely untracked by the main repository. When committed and pushed to `origin telegram`, Visihot will deploy this branch directly!
+Your workspace is `/home/vishnunandan555/Projects/prodpilot/telegram` on the `telegram` branch. Your task in Phase 2 is to ensure the bot deployed on Visihot interacts flawlessly with the live public tunnel and provides immediate phone notifications.
 
 STRICT BOUNDARY:
 - You ONLY work inside `/home/vishnunandan555/Projects/prodpilot/telegram`.
-- All bot files MUST stay at the root of this folder (`bot.py`, `requirements.txt`, etc.) because Visihot executes from root.
-- You communicate with ProdPilot through the REST/SSE API described in `contracts/api.md` (default: `http://127.0.0.1:8765` or configured via `PRODPILOT_API_URL`).
+- All bot files MUST stay at the root of this folder (`app.py`, `bot.py`, `requirements.txt`).
+- Commits are pushed directly to `origin telegram`.
 
 TASKS TO EXECUTE:
-1. Standalone Telegram Bot (`bot.py`):
-   - Build with `python-telegram-bot` (v20+ async) or `aiogram`.
-   - Read configurations from `.env` or environment variables:
-     - `TELEGRAM_BOT_TOKEN`: Bot token from @BotFather.
-     - `TELEGRAM_ALLOWED_CHAT_ID`: Restrict bot strictly to your own chat ID for security.
-     - `PRODPILOT_API_URL`: URL to ProdPilot backend (default `http://127.0.0.1:8765`).
-     - `POLL_INTERVAL`: Interval in seconds to poll for incidents needing approval (default: 3).
+1. Visihot Entrypoint & Reconnect Resilience (`app.py`, `bot.py`):
+   - Visihot launches `app.py`. Ensure `app.py` has robust retry/reconnect logic if the public tunnel URL is temporarily unavailable on boot.
+   - Use exponential backoff for backend API requests (`httpx.ConnectError`, `httpx.TimeoutException`).
 
-2. Incident Notification Card:
-   - When an incident reaches `AWAITING_APPROVAL`:
-     - Send formatted Telegram message with Markdown:
-       - 🚨 **PRODUCTION INCIDENT DETECTED**
-       - **Service**: `demo-prod`
-       - **Root Cause**: `KeyError: 'discount'` in `app.py:45`
-       - **Suspect Commit**: `a1b2c3d` by Vishnu Nandan (15 min ago)
-       - **Evidence**: Repro test failed before fix, passed after. Full suite green.
-       - **Canary Status**: Staged Fix (Port 8001: 🟢 Healthy) | Staged Rollback (Port 8002: 🟢 Healthy)
-       - **Recommendation**: Fix-Forward (85% confidence) vs Rollback (15%)
-     - Inline Keyboard Buttons:
-       - `[🚀 Deploy Fix (8001)]` (callback: `approve_fix_<id>`)
-       - `[⏪ Rollback (8002)]` (callback: `approve_rollback_<id>`)
-       - `[❌ Reject]` (callback: `reject_<id>`)
+2. Instant Notification on `AWAITING_APPROVAL`:
+   - Enhance the polling loop in `bot.py`:
+     - Every 3 seconds, query `${PRODPILOT_API_URL}/incidents?status=AWAITING_APPROVAL`.
+     - When a new incident is detected:
+       - Send the formatted card to `TELEGRAM_ALLOWED_CHAT_ID`:
+         - 🚨 **PRODUCTION INCIDENT DETECTED**
+         - Root Cause & Suspect Commit (`git blame` details)
+         - Staged Canary status (Port 8001: 🟢 Healthy | Port 8002: 🟢 Healthy)
+         - AI Recommendation with confidence percentage
+         - Inline buttons: `[🚀 Deploy Fix (8001)]`, `[⏪ Rollback (8002)]`, `[❌ Reject]`
 
-3. Interactive Button Actions:
-   - When user taps `[🚀 Deploy Fix]`:
-     - Call `POST ${PRODPILOT_API_URL}/incidents/{id}/approve` with `{"action": "fix_forward", "source": "telegram"}`.
-     - Edit message to: "⏳ Deploying fix to port 8000...".
-     - On completion: Edit message to "✅ **PROD RESTORED** - Healthcheck 200 OK. Fix deployed successfully."
-   - When user taps `[⏪ Rollback]`:
-     - Call `POST .../approve` with `{"action": "rollback", "source": "telegram"}`.
-     - On completion: Edit message to "✅ **ROLLED BACK** - Reverted suspect commit. Healthcheck 200 OK."
+3. Action Execution & Live Feedback:
+   - When the user taps `[🚀 Deploy Fix (8001)]` on Telegram:
+     - Immediately edit message to: `⏳ Deploying fix to production port 8000...`
+     - Call `${PRODPILOT_API_URL}/incidents/{id}/approve` with `{"action": "fix_forward", "source": "telegram"}`.
+     - On 200 OK: Edit message to: `✅ PROD RESTORED - Healthcheck 200 OK. Fix deployed successfully.`
+     - Append the incident report summary.
 
-4. Telegram Commands:
-   - `/start`: Welcome message with current connection status to ProdPilot.
-   - `/status`: Queries `GET /health` and `GET /incidents` to show active incident status.
-   - `/logs`: Fetches last 20 lines of service log for the active incident.
-   - `/report`: Sends the markdown incident report summary.
+4. Multi-Channel Preview (Discord Bot Adapter Skeleton - Optional):
+   - In `discord_bot.py` (optional extra), provide an equivalent Discord webhook/bot listener using `discord.py` that posts the incident card and approval buttons into a Discord channel.
 
-5. Visihot Server Execution Package:
-   - Ensure `requirements.txt` has: `python-telegram-bot>=20.0`, `httpx>=0.25.0`, `python-dotenv>=1.0.0`.
-   - Ensure `start.sh` is executable (`chmod +x start.sh`).
-   - Include a lightweight mock mode (`python3 bot.py --mock`) so the bot can be tested immediately with sample incidents and interactive buttons before Agent 1 launches the API.
+5. Verification:
+   - Run `python3 bot.py --dry-run` to ensure all handlers, formatters, and buttons pass verification.
+   - Commit and push to `origin telegram`:
+     `git add . && git commit -m "feat(telegram): phase 2 resilient cloud poller and live approval loop" && git push origin telegram`
 
-EXIT CHECK:
-Run `python3 bot.py --mock` (or against live API), verify the bot sends the interactive incident card with Deploy and Rollback buttons to your Telegram chat, and tapping the button confirms the action.
-Commit all code to the `telegram` branch:
-`git add . && git commit -m "feat(telegram): complete interactive incident bot for Visihot" && git push origin telegram`
 ```
 
 ---
 
-## 4. Gate Merging Protocol
+## 4. Phase 2 Gate 2 Merge & Demo Protocol
 
-When Agent 1 and Agent 2 finish their Phase tasks:
+When all 3 agents finish:
 ```bash
 # In /home/vishnunandan555/Projects/prodpilot (main)
-git merge stream-a -m "merge: Stream A Phase 1 complete"
-git merge stream-b -m "merge: Stream B Phase 1 complete"
-git tag gate-1-passed
+git merge stream-a -m "merge: Stream A Phase 2 (Orchestrator Daemon & Post-Mortem Report)"
+git merge stream-b -m "merge: Stream B Phase 2 (Desktop Live SSE Timeline & Controls)"
+git tag gate-2-passed
 ```
-Agent 3 pushes directly to the `telegram` branch (`git push origin telegram`), which Visihot deploys directly.
+
+**Run the 3-Minute Demo**:
+1. Terminal 1: `.venv/bin/python backend/prodpilot/watcher/watcher.py`
+2. Terminal 2: `.venv/bin/python -m backend.prodpilot.pipeline.orchestrator --daemon`
+3. Terminal 3: `./scripts/trigger-crash.sh`
+4. Phone buzzes -> Tap **Deploy Fix** on Telegram -> Service restored -> Report saved!

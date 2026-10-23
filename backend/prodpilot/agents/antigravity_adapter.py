@@ -30,10 +30,7 @@ class AntigravityAdapter:
     def is_available(self) -> bool:
         if os.environ.get("PRODPILOT_AGENT_ADAPTER", "").lower() == "gemini":
             return False
-        if os.environ.get("PRODPILOT_AGENT_ADAPTER", "").lower() == "antigravity":
-            return bool(self.agy_path and os.path.exists(self.agy_path) and os.access(self.agy_path, os.X_OK))
-        # By default in headless environments, use gemini deterministic adapter unless AGY_ENABLED is set
-        return bool(os.environ.get("AGY_ENABLED") and self.agy_path and os.path.exists(self.agy_path))
+        return bool(self.agy_path and os.path.exists(self.agy_path) and os.access(self.agy_path, os.X_OK))
 
     def run(
         self,

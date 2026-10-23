@@ -189,7 +189,7 @@ def test_full_pipeline_exit_check():
         # Approve fix_forward
         approve_res = client.post(
             f"/incidents/{incident_id}/approve",
-            json={"action": "fix_forward", "source": "telegram"},
+            json={"action": "fix_forward", "source": "telegram", "repo_path": tmp_repo_dir},
         )
         assert approve_res.status_code == 200
         approve_data = approve_res.json()
