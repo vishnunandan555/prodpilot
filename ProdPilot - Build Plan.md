@@ -109,33 +109,70 @@
 > **Strategic Decision**: Complete the UI overhaul *before* Phase 5 rehearsals and demo video recording so that the recorded 3-minute video and automated runs capture the polished, final platform.
 
 ### A. 8 Primary Navigation Sections
-- [ ] **1. Dashboard**: High-level production health overview, active SEV-1 incident alerts, live error rate metrics, log volume timeline, monitored services status cards, and recent autonomous activity stream.
-- [ ] **2. Incidents**: Comprehensive incident catalog with status filters (`Active`, `Investigating`, `Awaiting Approval`, `Resolved`), severity tags (`SEV-1 Critical`, `SEV-2 High`, `SEV-3 Low`), search bar, and one-click demo crash trigger simulation.
-- [ ] **3. Incident Details (The Hero Screen)**: The central operational hub for a single incident featuring 6 internal tabs:
+- [x] **1. Dashboard**: High-level production health overview, active SEV-1 incident alerts, live error rate metrics, log volume timeline, monitored services status cards, and real dynamic SQLite metrics.
+- [x] **2. Incidents**: Comprehensive incident catalog with status filters (`All`, `Active`, `Resolved`), severity tags (`SEV-1 Critical`, `SEV-2 High`), search bar, and clean empty state when no incidents exist.
+- [x] **3. Incident Details (The Hero Screen)**: The central operational hub for a single incident featuring 6 internal tabs:
   - **Tab 1: Overview** (Incident metadata, affected service, timeline overview, quick actions, blast radius).
   - **Tab 2: Logs & Traces** (Extracted stack traces, panic logs, surrounding log context, copy/export).
   - **Tab 3: Investigation & RCA** (Hypothesis vs confirmed facts, suspect commit, `git blame` attribution, confidence score).
-  - **Tab 4: Recovery & Canaries** (Canary 8001 fix-forward, Canary 8002 rollback, health status, 1-tap mobile approval buttons).
-  - **Tab 5: Changes & Diffs** (Unified syntax-highlighted git diff, PR branch link, repro test case).
+  - **Tab 4: Recovery & Canaries** (Canary staging environments, health status, guarded approval actions).
+  - **Tab 5: Changes & Diffs** (Unified syntax-highlighted git diff, PR branch link, Red-to-Green repro test evidence).
   - **Tab 6: Timeline & Audit** (Real-time SSE event stream, transition history, agent actions, watchdog verification).
-- [ ] **4. Logs Explorer**: Searchable log stream with live auto-scroll, log-level filters (ERROR, WARN, INFO, DEBUG), service picker, and regex search.
-- [ ] **5. Services**: Monitored microservices overview (`order_service`, `demo-prod`, etc.) displaying uptime, latency, health endpoint status, and active canaries.
-- [ ] **6. Repositories**: Source code repo intelligence (connected GitHub repo, active branches, recent commits, blame history, and automated PR links).
-- [ ] **7. Agents**: Multi-agent fleet monitor (Antigravity SDK status, isolated git worktrees, active runs, token/cost telemetry, and safety guardrails).
-- [ ] **8. Team**: SRE on-call rotation roster, escalation tiers, Slack/Telegram notification status, and access control.
-- [ ] **9. Settings**: Infrastructure connection panel (Render API Key, Render Service ID, Cloudflare Tunnel URL, GitHub PAT, Telegram Bot token).
+- [x] **4. Logs Explorer**: Searchable log stream with live auto-scroll, log-level filters (ERROR, WARN, INFO, DEBUG), service picker, and keyword/regex search.
+- [x] **5. Services**: Monitored microservices overview displaying port allocations, canary health status, live ping latency stats, and active service toggle.
+- [x] **6. Repositories**: Source code repo intelligence (connected target repository, git blame history, active branches, live commits from active repo, and connect modal).
+- [x] **7. Agents**: Multi-agent fleet monitor (Antigravity SDK status, isolated git worktrees, active runs, token/cost telemetry, and safety guardrails).
+- [x] **8. Team**: On-call team roster, escalation tiers (Tier 0, 1, 2), member management modal, and RBAC accounts synced with SQLite.
+- [x] **9. Settings**: Platform configuration (Daemon host, Cloudflare Tunnel endpoint, Render web gateway URL).
 
 ### B. Implementation Checklist (Operations UI Overhaul)
 - [x] Update `Sidebar.jsx` with the 8 primary navigation tabs and status badges.
-- [x] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and Epok-style activity stream.
-- [x] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive 1-tap mobile action bar (`[🚀 Deploy Fix]`, `[⏪ Rollback]`, `[🛑 Take Over]`).
+- [x] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and real dynamic SQLite aggregations.
+- [x] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive action bar (only rendered when awaiting operator promotion).
 - [x] Implement `LogsView.jsx` (interactive log explorer).
 - [x] Implement `ServicesView.jsx`, `RepositoriesView.jsx`, `AgentsView.jsx`, and `TeamView.jsx`.
 - [x] Verify both Desktop Electron and Render Web views render with 0 console errors and pass `npm run build`.
+- [x] Eliminate all fake/demo data from UI; wire authentication to real database (`users` table with bcrypt & JWT).
+- [x] Adopt **Inter** as primary font (`font-sans`), restricting monospace strictly to code, errors, hashes, URLs, and ports.
+- [x] Delete `demo-prod/` directory and all demo scripts (`init_demo_prod.py`, `reset-demo.sh`, `trigger-crash.sh`).
+- [x] Create root launcher script `run.sh` supporting `./run.sh`, `--backend`, `--ui`, `--status`, `--stop`.
+- [x] Add root `.env` and `.env.example` supporting `JEV_API_KEY`, `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`.
 
 ---
 
-## 5. Professional Platform Gap Analysis & Production Checklists
+## 5. Current Active Milestone: Live Integration Testing & Target Service Verification
+
+**Goal**: Connect a real target service (e.g. ChunkStream) to ProdPilot, trigger an actual telemetry exception via `/ingest`, verify autonomous triage and worktree fix generation, and test human approval via Desktop UI and Telegram bot.
+
+### A. Next Steps & Action Items
+1. **Connect Real Target Repository (ChunkStream)**:
+   - In ProdPilot Desktop, navigate to **Repositories** $\rightarrow$ click **Connect Repository**.
+   - Set Name: `chunkstream`
+   - Set Path: `/home/vishnunandan555/Projects/chunkstream`
+   - Test Command: `pytest`
+   - Health URL: `http://127.0.0.1:8000/health` (or configured port)
+   - Confirm git log and commits populate live from ChunkStream repository.
+
+2. **Connect & Probe Target Service**:
+   - In ProdPilot Desktop, navigate to **Services** $\rightarrow$ click **Connect Service**.
+   - Register ChunkStream microservice on port 8000 with `/health` probe.
+   - Verify live ping succeeds and latency is measured.
+
+3. **Live Telemetry Ingestion & Autonomous Remediation Test**:
+   - Send real log exception / 500 error to ProdPilot ingest endpoint (`POST http://127.0.0.1:8765/ingest`).
+   - Observe real-time SSE stream in Incident Details:
+     - Triage creates incident $\rightarrow$ sets severity HIGH.
+     - Worktree isolates a new branch in `.worktree/`.
+     - Reproduction test created $\rightarrow$ Red (fails on unpatched code).
+     - Antigravity agent synthesizes patch $\rightarrow$ Green (full test suite passes).
+     - Dual canaries staged (8001 fix-forward, 8002 rollback).
+     - Decision engine evaluates confidence using `JEV_API_KEY` / rules.
+     - Incident enters `AWAITING_APPROVAL`.
+
+4. **Approval & 10-Second Watchdog Test**:
+   - Click **Promote Fix to Production** (or approve via Telegram bot).
+   - Verify canary promotion to production port and watchdog 10-second health check.
+   - Confirm incident status transitions to `DEPLOYED` / `RESOLVED`.
 
 This section provides a rigorous, transparent technical audit of ProdPilot: what is genuinely implemented and operational vs. what is currently synthetic/mocked for demo purposes, followed by concrete engineering checklists to make ProdPilot a full-scale, professional SRE platform.
 
