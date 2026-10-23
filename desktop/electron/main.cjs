@@ -8,10 +8,9 @@ function createWindow() {
     width: 1380,
     height: 920,
     minWidth: 1024,
-    minHeight: 700,
-    backgroundColor: '#090d16',
-    title: 'ProdPilot • Autonomous SRE Dashboard',
-    titleBarStyle: 'hiddenInset',
+    backgroundColor: '#0d1117',
+    title: 'GitHub Copilot',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,

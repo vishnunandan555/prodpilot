@@ -16,9 +16,9 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
 |---|---|---|---|---|
 | **Phase 0: Setup & Spikes**<br>*(Passed)* | Completed | SDK works, Telegram talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
 | **Phase 1: Core Pipeline**<br>*(Passed)* | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
-| **Phase 2: Staging, Orchestrator, Telegram**<br>*(Passed)* | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2**<br>*(Demo Floor)* | ✅ **PASSED & MERGED** |
-| **Phase 3: Copilot Desktop & Issue Readiness**<br>*(4:35 PM – 8:30 PM)* | **4.0 hours** | Pixel-accurate GitHub Copilot Linux UI, Issue-to-PR readiness gate, live agent stream | **Gate 3** | 🟡 **IN PROGRESS (ACTIVE)** |
-| **Phase 4: Harden & Sponsor Integrations**<br>*(8:30 PM – 1:00 AM)* | **4.5 hours** | 3 clean runs in a row; Browser Use canary check; Adaption AI eval | **Gate 4** | ⚪ Queued |
+| **Phase 2: Staging, Orchestrator, Telegram**<br>*(Passed)* | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2**<br>*(Demo Floor)* | ✅ **PASSED (Tag: `gate-2-passed`)** |
+| **Phase 3: Copilot Desktop & Issue Readiness**<br>*(Passed)* | Completed | Pixel-accurate GitHub Copilot Linux UI, Issue-to-PR readiness gate, unified runner daemon | **Gate 3** | ✅ **PASSED (Tag: `gate-3-passed`)** |
+| **Phase 4: Rehearsal & Sponsor Hardening**<br>*(5:20 PM – 9:30 PM)* | **4.0 hours** | 3 clean runs in a row; backup demo recording; Adaption AI eval | **Gate 4** | 🟡 **IN PROGRESS (ACTIVE)** |
 | **Sleep / Buffer Window**<br>*(1:00 AM – 7:00 AM)* | **6.0 hours** | Team rest & buffer time | — | ⚪ Scheduled |
 | **Phase 5: Freeze, Backup Video & Pitch**<br>*(7:00 AM – 9:30 AM)* | **2.5 hours** | Record 3-min backup video, polish pitch slides, rehearse demo | **Done** | ⚪ Queued |
 | **Final Submission Freeze**<br>*(9:30 AM – 11:00 AM)* | **1.5 hours** | Final clean demo run, Devfolio submission, project freeze | **Ship** | ⚪ Queued |
