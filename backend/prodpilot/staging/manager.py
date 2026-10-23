@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from backend.prodpilot.pipeline.repro_runner import DeterministicVerifier
 from backend.prodpilot.pipeline.worktree import create_worktree, remove_worktree
 
 logger = logging.getLogger(__name__)
@@ -43,11 +42,7 @@ class StagingManager:
         self.rollback_worktree: Optional[str] = None
 
     def _find_python_executable(self) -> str:
-        import sys
-        if sys.executable and Path(sys.executable).exists():
-            return sys.executable
-        if Path("/home/vishnunandan555/Projects/prodpilot/.venv/bin/python").exists():
-            return "/home/vishnunandan555/Projects/prodpilot/.venv/bin/python"
+        # Check if venv python is present
         repo_venv = Path(self.repo_path).parent / ".venv" / "bin" / "python"
         if repo_venv.exists():
             return str(repo_venv)
@@ -189,6 +184,7 @@ class StagingManager:
                 return instance
 
             # 3. Deterministic verifier runs tests on reverted code
+            from backend.prodpilot.pipeline.repro_runner import DeterministicVerifier
             verifier = DeterministicVerifier()
             test_res = verifier.run_tests(workdir)
             if not test_res.passed:

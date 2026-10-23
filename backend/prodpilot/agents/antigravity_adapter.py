@@ -85,15 +85,22 @@ class AntigravityAdapter:
                 bufsize=1,
             )
 
-            if proc.stdout:
-                for line in proc.stdout:
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                logger.warning("Antigravity timed out after 10s. Falling back to GeminiAdapter...")
+                from backend.prodpilot.agents.gemini_adapter import GeminiAdapter
+                return GeminiAdapter().run(task=task, workdir=workdir, on_event=on_event, context=context)
+
+            if stdout:
+                for line in stdout.splitlines():
                     line = line.strip()
                     if not line:
                         continue
                     try:
                         record = json.loads(line)
                         summary_lines.append(str(record))
-                        # Check for tool call or step event in stream-json
                         if on_event:
                             kind = record.get("type", "tool_call")
                             on_event({
@@ -103,10 +110,6 @@ class AntigravityAdapter:
                             })
                     except json.JSONDecodeError:
                         summary_lines.append(line)
-
-            stdout, stderr = proc.communicate(timeout=180)
-            if stdout:
-                summary_lines.append(stdout)
 
             # Extract git diff in workdir
             diff_proc = subprocess.run(
@@ -140,6 +143,11 @@ class AntigravityAdapter:
                             logger.debug(f"Failed to read untracked file {file_path}: {e}")
 
             ok = proc.returncode == 0
+            if not ok or not diff:
+                logger.warning(f"Antigravity adapter returned ok={ok}, diff_len={len(diff)}. Falling back to GeminiAdapter...")
+                from backend.prodpilot.agents.gemini_adapter import GeminiAdapter
+                return GeminiAdapter().run(task=task, workdir=workdir, on_event=on_event, context=context)
+
             summary = "\n".join(summary_lines[-5:]) if summary_lines else "Antigravity task completed."
             error = None if ok else (stderr or f"Exit code {proc.returncode}")
 
@@ -150,18 +158,7 @@ class AntigravityAdapter:
                 "error": error,
             }
 
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            return {
-                "diff": "",
-                "summary": "Timeout expired while executing Antigravity task",
-                "ok": False,
-                "error": "TimeoutExpired (180s)",
-            }
         except Exception as e:
-            return {
-                "diff": "",
-                "summary": f"Failed to execute Antigravity adapter: {e}",
-                "ok": False,
-                "error": str(e),
-            }
+            logger.warning(f"Error executing Antigravity adapter: {e}. Falling back to GeminiAdapter...")
+            from backend.prodpilot.agents.gemini_adapter import GeminiAdapter
+            return GeminiAdapter().run(task=task, workdir=workdir, on_event=on_event, context=context)

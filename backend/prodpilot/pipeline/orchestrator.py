@@ -1,0 +1,267 @@
+"""ProdPilot Autonomous End-to-End Orchestrator Daemon
+Ties the Watcher, Repro-First Pipeline, Staging, and Decision Engine together.
+Monitors SQLite DB for 'OPEN' incidents and advances them to 'AWAITING_APPROVAL'
+with verified patches and active side-port canaries (8001 & 8002).
+Part of Phase 2 (Stream A).
+"""
+
+import argparse
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from backend.prodpilot.agents.factory import get_agent_adapter
+from backend.prodpilot.db import (
+    get_incident,
+    init_db,
+    list_incidents,
+    log_event,
+    update_incident_brief,
+    update_incident_status,
+)
+from backend.prodpilot.decide.rules import decide
+from backend.prodpilot.pipeline.brief import create_brief
+from backend.prodpilot.pipeline.repro_runner import run_repro_pipeline
+
+logger = logging.getLogger("prodpilot.orchestrator")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+def resolve_demo_repo_path(custom_path: Optional[str] = None) -> str:
+    """Finds the local git repository for the service (demo-prod)."""
+    if custom_path and Path(custom_path).exists():
+        return str(Path(custom_path).resolve())
+
+    env_path = os.environ.get("DEMO_PROD_PATH")
+    if env_path and Path(env_path).exists():
+        return str(Path(env_path).resolve())
+
+    # Check relative to this repo
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent.parent / "demo-prod",
+        Path.cwd() / "demo-prod",
+        Path("/home/vishnunandan555/Projects/prodpilot-a/demo-prod"),
+        Path("/home/vishnunandan555/Projects/prodpilot/demo-prod"),
+    ]
+    for c in candidates:
+        if c.exists() and (c / ".git").exists():
+            return str(c.resolve())
+
+    # Fallback to current directory if git repo
+    return str(Path.cwd().resolve())
+
+
+def process_incident(
+    incident: Dict[str, Any],
+    repo_path: Optional[str] = None,
+    mock_staging: bool = False,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Autonomous pipeline execution for a single incident.
+    
+    1. Transition status to INVESTIGATING & log UNDERSTAND stage_started.
+    2. Extract and persist incident brief.
+    3. Transition status to FIXING and run Repro-First Pipeline.
+    4. Stage canaries on side ports 8001 (fix-forward) & 8002 (rollback).
+    5. Run Decision Engine to compute recommendation and probabilities.
+    6. Transition status to AWAITING_APPROVAL & log awaiting_approval event.
+    """
+    incident_id = incident["id"]
+    target_repo = resolve_demo_repo_path(repo_path)
+    logger.info(f"Processing incident {incident_id} (service: {incident.get('service')}) in repo {target_repo}")
+
+    # a. Transition status to INVESTIGATING
+    update_incident_status(incident_id, "INVESTIGATING", db_path=db_path)
+    log_event(
+        run_id=None,
+        incident_id=incident_id,
+        stage="UNDERSTAND",
+        kind="stage_started",
+        payload={"stage": "UNDERSTAND", "message": f"Analyzing incident {incident_id} root cause and git history..."},
+        db_path=db_path,
+    )
+
+    # b. Extract brief
+    brief = create_brief(incident)
+    update_incident_brief(incident_id, brief, db_path=db_path)
+    logger.info(f"Generated brief: {brief['summary']} (suspect: {brief['suspected_area']})")
+
+    # c. Transition status to FIXING and run repro pipeline
+    update_incident_status(incident_id, "FIXING", db_path=db_path)
+    adapter = get_agent_adapter()
+    pipeline_res = run_repro_pipeline(
+        incident=incident,
+        repo_path=target_repo,
+        agent_adapter=adapter,
+        db_path=db_path,
+    )
+
+    if not pipeline_res.ok:
+        logger.error(f"Repro pipeline failed for {incident_id}: {pipeline_res.error}")
+        update_incident_status(incident_id, "FAILED", db_path=db_path)
+        log_event(
+            run_id=pipeline_res.run_id,
+            incident_id=incident_id,
+            stage="FIX",
+            kind="error",
+            payload={"error": pipeline_res.error or "Failed test verification after retries"},
+            db_path=db_path,
+        )
+        return {"status": "FAILED", "incident_id": incident_id, "error": pipeline_res.error}
+
+    logger.info(f"Verified fix for {incident_id}. Evidence: before={pipeline_res.test_evidence.get('before')}, after={pipeline_res.test_evidence.get('after')}")
+
+    # d. Stage Canaries (8001 & 8002)
+    log_event(
+        run_id=pipeline_res.run_id,
+        incident_id=incident_id,
+        stage="STAGE",
+        kind="stage_started",
+        payload={"stage": "STAGE", "message": "Spinning up side-port canary instances (8001 & 8002)..."},
+        db_path=db_path,
+    )
+
+    from backend.prodpilot.staging.manager import StagingManager
+    staging_mgr = StagingManager(repo_path=target_repo)
+    suspect_hash = brief.get("introduced_by") or "HEAD~1"
+
+    # Stage fix-forward on 8001
+    staging_mgr.stage_fix_forward(
+        patched_worktree=pipeline_res.worktree_path,
+        port=8001,
+        mock_mode=mock_staging,
+    )
+
+    # Stage rollback on 8002
+    staging_mgr.stage_rollback(
+        suspect_commit=suspect_hash,
+        port=8002,
+        mock_mode=mock_staging,
+    )
+
+    staging_status = staging_mgr.get_status()
+    logger.info(f"Canary status: fix_forward={staging_status['fix_forward']}, rollback={staging_status['rollback']}")
+
+    # e. Run Decision Engine
+    log_event(
+        run_id=pipeline_res.run_id,
+        incident_id=incident_id,
+        stage="DECIDE",
+        kind="stage_started",
+        payload={"stage": "DECIDE", "message": "Evaluating diff size, commit recency, and canary health..."},
+        db_path=db_path,
+    )
+
+    decision = decide(
+        incident=incident,
+        staging_status=staging_status,
+        patch_diff=pipeline_res.patch_diff,
+        run_id=pipeline_res.run_id,
+        db_path=db_path,
+    )
+
+    log_event(
+        run_id=pipeline_res.run_id,
+        incident_id=incident_id,
+        stage="DECIDE",
+        kind="decision",
+        payload=decision,
+        db_path=db_path,
+    )
+    logger.info(f"Decision: {decision['recommendation']} ({decision['probabilities']}) - {decision['reason']}")
+
+    # f. Transition status to AWAITING_APPROVAL
+    update_incident_status(incident_id, "AWAITING_APPROVAL", db_path=db_path)
+    log_event(
+        run_id=pipeline_res.run_id,
+        incident_id=incident_id,
+        stage="AWAIT_APPROVAL",
+        kind="awaiting_approval",
+        payload={
+            "recommendation": decision["recommendation"],
+            "options": {
+                "fix_forward": {
+                    "port": 8001,
+                    "health_ok": staging_status.get("fix_forward", {}).get("health", False),
+                    "diff_stats": f"+{len(pipeline_res.patch_diff.splitlines())} lines",
+                },
+                "rollback": {
+                    "port": 8002,
+                    "health_ok": staging_status.get("rollback", {}).get("health", False),
+                    "revert_commit": suspect_hash,
+                },
+            },
+        },
+        db_path=db_path,
+    )
+
+    return {
+        "status": "AWAITING_APPROVAL",
+        "incident_id": incident_id,
+        "run_id": pipeline_res.run_id,
+        "brief": brief,
+        "patch_diff": pipeline_res.patch_diff,
+        "decision": decision,
+        "staging": staging_status,
+        "staging_manager": staging_mgr,
+    }
+
+
+def run_orchestrator(
+    poll_interval: float = 2.0,
+    once: bool = False,
+    repo_path: Optional[str] = None,
+    mock_staging: bool = False,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Polls database for 'OPEN' incidents and processes them."""
+    init_db(db_path=db_path)
+    logger.info(f"ProdPilot Orchestrator started (poll_interval={poll_interval}s, once={once})")
+
+    processed = []
+    try:
+        while True:
+            open_incidents = list_incidents(status="OPEN", db_path=db_path)
+            if open_incidents:
+                logger.info(f"Found {len(open_incidents)} OPEN incident(s) needing resolution.")
+                for inc in open_incidents:
+                    try:
+                        res = process_incident(
+                            incident=inc,
+                            repo_path=repo_path,
+                            mock_staging=mock_staging,
+                            db_path=db_path,
+                        )
+                        processed.append(res)
+                    except Exception as e:
+                        logger.exception(f"Unhandled error processing incident {inc.get('id')}: {e}")
+                        update_incident_status(inc["id"], "FAILED", db_path=db_path)
+
+            if once:
+                break
+            time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        logger.info("Orchestrator stopped by operator.")
+
+    return processed
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ProdPilot Autonomous Orchestrator")
+    parser.add_argument("--daemon", action="store_true", help="Run in continuous background polling daemon mode")
+    parser.add_argument("--once", action="store_true", help="Process current open incidents and exit")
+    parser.add_argument("--poll-interval", type=float, default=2.0, help="Poll interval in seconds")
+    parser.add_argument("--repo-path", type=str, default=None, help="Custom path to target service git repository")
+    parser.add_argument("--mock-staging", action="store_true", help="Run staging in mock mode (useful for testing)")
+    args = parser.parse_args()
+
+    is_once = args.once or (not args.daemon)
+    run_orchestrator(
+        poll_interval=args.poll_interval,
+        once=is_once,
+        repo_path=args.repo_path,
+        mock_staging=args.mock_staging,
+    )

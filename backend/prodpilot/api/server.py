@@ -35,7 +35,7 @@ from backend.prodpilot.db import (
     record_approval,
 )
 from backend.prodpilot.decide.rules import decide
-from backend.prodpilot.staging.deploy import DeployAdapter
+from backend.prodpilot.staging.deploy import DeployAdapter, generate_incident_report
 
 logger = logging.getLogger(__name__)
 
@@ -329,8 +329,12 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         if a.get("kind") == "patch_diff":
             patch_diff = a.get("content", "")
 
-    # Execute Deploy Adapter: if no patch/suspect commit exists (e.g. pure API test), use mock mode
-    mock_deploy = not bool(patch_diff or suspect_commit_hash) or not (repo_path and Path(repo_path).exists())
+    # Execute Deploy Adapter: if no patch (for fix_forward) or no suspect commit (for rollback), use mock mode
+    mock_deploy = (
+        not (repo_path and Path(repo_path).exists())
+        or (action == "fix_forward" and not patch_diff)
+        or (action == "rollback" and not suspect_commit_hash)
+    )
     deploy_res = deploy_adapter.deploy(
         action=action,
         repo_path=repo_path or ".",
@@ -341,6 +345,16 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
 
     new_status = "DEPLOYED" if deploy_res.get("status") == "DEPLOYED" else "ROLLED_BACK"
     update_incident_status(incident_id, new_status)
+
+    if new_status == "DEPLOYED":
+        try:
+            generate_incident_report(
+                incident_id=incident_id,
+                action=action,
+                approver_source=body.source,
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate post-mortem report for {incident_id}: {e}")
 
     log_event(
         run_id=None,
