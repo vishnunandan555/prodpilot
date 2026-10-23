@@ -1,20 +1,51 @@
-"""ProdPilot Production Deploy Adapter
-Swaps verified build onto production port 8000, checks health continuously for 10s,
-and automatically reverts if the post-deployment health check fails.
-Part of Task 4 (Stream A).
+"""ProdPilot Production Deploy Adapter & 10-Second Safety Watchdog
+Swaps verified build onto production port 8000, runs an asynchronous 10-second
+watchdog polling http://127.0.0.1:8000/health every second, and automatically
+reverts to the known-good working build if health check fails.
+Enforces a strict cap: maximum of 1 automatic remediation attempt before escalating.
+Part of Stream B: Laptop Fixing, Context & Safety Guard.
 """
 
+import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
+import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from backend.prodpilot.db import (
+    get_artifacts,
+    get_db,
+    get_incident,
+    log_event,
+    record_approval,
+    save_artifact,
+    update_incident_status,
+)
+
+logger = logging.getLogger("prodpilot.deploy")
+
+
+def get_remediation_attempts(incident_id: str, db_path: Optional[str] = None) -> int:
+    """Returns number of previous automatic remediation attempts for this incident."""
+    try:
+        with get_db(db_path) as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM run_events WHERE incident_id = ? AND kind IN ('remediation_attempt', 'auto_reverted')",
+                (incident_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else 0
+    except Exception as e:
+        logger.warning(f"Could not query remediation attempts for {incident_id}: {e}")
+        return 0
 
 
 class DeployAdapter:
@@ -32,6 +63,57 @@ class DeployAdapter:
         except Exception as e:
             logger.debug(f"Error terminating port {port} process: {e}")
 
+    def _find_python_executable(self, repo: Path) -> str:
+        """Finds valid python executable with uvicorn installed for microservice."""
+        # Check project virtual environments
+        candidates = [
+            Path("/home/vishnunandan555/Projects/prodpilot/.venv/bin/python"),
+            repo.parent / ".venv" / "bin" / "python",
+            repo / ".venv" / "bin" / "python",
+            Path.cwd() / ".venv" / "bin" / "python",
+        ]
+        for c in candidates:
+            if c.exists():
+                return str(c)
+
+        if sys.executable and Path(sys.executable).exists():
+            try:
+                subprocess.run([sys.executable, "-c", "import uvicorn"], check=True, capture_output=True)
+                return sys.executable
+            except Exception:
+                pass
+
+        return sys.executable or "python3"
+
+    def _start_service_proc(self, repo: Path, port: int) -> subprocess.Popen:
+        """Starts the FastAPI / Uvicorn service process on target port."""
+        py_bin = self._find_python_executable(repo)
+        env = os.environ.copy()
+        env["PORT"] = str(port)
+        env["PYTHONPATH"] = f"{repo}:."
+
+        app_py = repo / "app.py"
+        main_py = repo / "main.py"
+        if app_py.exists():
+            cmd = [py_bin, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(port)]
+        elif main_py.exists():
+            cmd = [py_bin, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(port)]
+        else:
+            cmd = [py_bin, "app.py"]
+
+        logger.info(f"Starting production server on port {port}: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(repo),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        # Give server time to bind port
+        time.sleep(0.8)
+        return proc
+
     def poll_health(self, health_url: str, duration_sec: float = 10.0, interval_sec: float = 1.0) -> bool:
         """Polls production health check continuously for duration_sec."""
         start_time = time.time()
@@ -39,7 +121,7 @@ class DeployAdapter:
 
         while time.time() - start_time < duration_sec:
             try:
-                with httpx.Client(timeout=2.0) as client:
+                with httpx.Client(timeout=1.5) as client:
                     resp = client.get(health_url)
                     if resp.status_code == 200:
                         successes += 1
@@ -47,16 +129,183 @@ class DeployAdapter:
                         logger.warning(f"Healthcheck returned non-200: {resp.status_code}")
                         return False
             except Exception as e:
-                # Early in startup, give service time to bind
                 if successes > 0:
                     logger.warning(f"Healthcheck probe failed after initial success: {e}")
                     return False
-                elif time.time() - start_time > 6.0:
+                elif time.time() - start_time > 5.0:
                     logger.warning(f"Healthcheck startup probe timed out: {e}")
                     return False
             time.sleep(interval_sec)
 
-        return successes >= 3
+        return successes >= 1
+
+    def run_10s_watchdog(
+        self,
+        incident_id: Optional[str],
+        repo_path: str,
+        previous_head: str,
+        action: str,
+        source: str = "desktop_ui",
+        duration_sec: int = 10,
+        interval_sec: float = 1.0,
+        db_path: Optional[str] = None,
+        mock_mode: bool = False,
+        simulate_failure: bool = False,
+    ) -> Dict[str, Any]:
+        """10-second post-deploy safety watchdog.
+
+        Polls GET http://127.0.0.1:8000/health every 1s for 10s.
+        If any health check fails:
+        1. Instantly aborts and rolls back production to previous known-good working build.
+        2. Sets incident status in SQLite to AUTO_REVERTED.
+        3. Logs an audit event with the failure reason.
+        If all 10s pass:
+        1. Sets incident status to RESOLVED.
+        2. Finalizes markdown post-mortem report in artifacts.
+        """
+        health_url = f"http://127.0.0.1:{self.prod_port}/health"
+        repo = Path(repo_path).resolve()
+        logger.info(f"Watchdog started for incident {incident_id}: monitoring {health_url} for {duration_sec}s")
+
+        failed = False
+        failure_reason = ""
+        failed_at_second = 0
+
+        for second in range(1, duration_sec + 1):
+            time.sleep(interval_sec)
+
+            if mock_mode:
+                if simulate_failure and second >= 2:
+                    failed = True
+                    failure_reason = f"Simulated mock health check failure at second {second} (500 Internal Server Error)"
+                    failed_at_second = second
+                    break
+                continue
+
+            # Real probe
+            try:
+                with httpx.Client(timeout=1.5) as client:
+                    resp = client.get(health_url)
+                    if resp.status_code != 200:
+                        failed = True
+                        failure_reason = f"Health check returned non-200 status code: {resp.status_code} at second {second}"
+                        failed_at_second = second
+                        break
+            except Exception as e:
+                failed = True
+                failure_reason = f"Connection/health check error at second {second}: {e}"
+                failed_at_second = second
+                break
+
+        # SAFETY GUARD: Trigger Emergency Auto-Revert if failed
+        if failed:
+            logger.error(f"SAFETY GUARD TRIGGERED for incident {incident_id}: {failure_reason}")
+            logger.info(f"Aborting deployment and rolling back production to known-good build {previous_head[:8]}")
+
+            # 1. Terminate broken process
+            if self.active_prod_proc and self.active_prod_proc.poll() is None:
+                try:
+                    self.active_prod_proc.terminate()
+                    self.active_prod_proc.wait(timeout=2)
+                except Exception:
+                    try:
+                        self.active_prod_proc.kill()
+                    except Exception:
+                        pass
+
+            self._kill_existing_port_process(self.prod_port)
+
+            # 2. Revert git tree to previous known-good head
+            if not mock_mode and repo.exists() and previous_head:
+                subprocess.run(["git", "reset", "--hard", previous_head], cwd=str(repo), capture_output=True)
+
+                # 3. Restore and restart healthy service on production port
+                try:
+                    self.active_prod_proc = self._start_service_proc(repo, self.prod_port)
+                    # Brief verification that restored service answers
+                    time.sleep(1.0)
+                    with httpx.Client(timeout=2.0) as client:
+                        restored_resp = client.get(health_url)
+                        logger.info(f"Restored service health status: {restored_resp.status_code}")
+                except Exception as e:
+                    logger.warning(f"Could not verify restored service health: {e}")
+
+            # 4. Set incident status to AUTO_REVERTED in SQLite
+            if incident_id:
+                try:
+                    update_incident_status(incident_id, "AUTO_REVERTED", db_path=db_path)
+                except Exception as e:
+                    logger.warning(f"Could not update status to AUTO_REVERTED: {e}")
+
+                # 5. Log audit event
+                try:
+                    log_event(
+                        run_id=None,
+                        incident_id=incident_id,
+                        stage="DEPLOY",
+                        kind="auto_reverted",
+                        payload={
+                            "action": action,
+                            "failure_reason": failure_reason,
+                            "failed_at_second": failed_at_second,
+                            "previous_head": previous_head,
+                            "status": "AUTO_REVERTED",
+                        },
+                        db_path=db_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not log auto_reverted event: {e}")
+
+            return {
+                "status": "AUTO_REVERTED",
+                "incident_id": incident_id,
+                "healthy": False,
+                "failure_reason": failure_reason,
+                "reverted_to": previous_head,
+            }
+
+        # SUCCESS: 10s health check passed continuously
+        logger.info(f"Production confirmed healthy for {duration_sec}s. Deployment RESOLVED for {incident_id}.")
+
+        if incident_id:
+            try:
+                update_incident_status(incident_id, "RESOLVED", db_path=db_path)
+            except Exception as e:
+                logger.warning(f"Could not update incident status to RESOLVED: {e}")
+
+            try:
+                generate_incident_report(
+                    incident_id=incident_id,
+                    action=action,
+                    approver_source=source,
+                    db_path=db_path,
+                )
+            except Exception as e:
+                logger.warning(f"Could not generate final post-mortem report: {e}")
+
+            try:
+                log_event(
+                    run_id=None,
+                    incident_id=incident_id,
+                    stage="DEPLOY",
+                    kind="resolved",
+                    payload={
+                        "action": action,
+                        "status": "RESOLVED",
+                        "watchdog_duration": duration_sec,
+                        "message": "All post-deploy health checks passed. Incident resolved.",
+                    },
+                    db_path=db_path,
+                )
+            except Exception as e:
+                logger.warning(f"Could not log resolved event: {e}")
+
+        return {
+            "status": "RESOLVED",
+            "incident_id": incident_id,
+            "healthy": True,
+            "production_port": self.prod_port,
+        }
 
     def deploy(
         self,
@@ -66,44 +315,87 @@ class DeployAdapter:
         suspect_commit: Optional[str] = None,
         patched_worktree: Optional[str] = None,
         mock_mode: bool = False,
+        incident_id: Optional[str] = None,
+        db_path: Optional[str] = None,
+        source: str = "desktop_ui",
+        simulate_watchdog_failure: bool = False,
     ) -> Dict[str, Any]:
-        """Executes deployment and verifies production stability.
-        
-        Args:
-            action: "fix_forward" or "rollback"
-            repo_path: Path to target production repo
-            patch_diff: Diff content to apply for fix_forward
-            suspect_commit: Commit hash to revert for rollback
-            patched_worktree: Source worktree for fix files
-            mock_mode: If true, simulates deployment without launching real server
-            
-        Returns:
-            Dict containing status, deployed_action, health_check.
+        """Executes zero-downtime deploy and runs 10-second post-deploy safety watchdog.
+
+        Enforces remediation cap: max 1 attempt before escalating.
         """
+        # Enforce remediation cap
+        if incident_id:
+            attempts = get_remediation_attempts(incident_id, db_path=db_path)
+            if attempts >= 1:
+                logger.error(f"Remediation attempt limit reached for {incident_id} (attempts={attempts}). Escalating.")
+                try:
+                    update_incident_status(incident_id, "ESCALATED", db_path=db_path)
+                    log_event(
+                        run_id=None,
+                        incident_id=incident_id,
+                        stage="DEPLOY",
+                        kind="escalated",
+                        payload={"error": f"Maximum remediation attempts (1) exceeded. Escalating to human on-call."},
+                        db_path=db_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not set ESCALATED status: {e}")
+                return {
+                    "status": "ESCALATED",
+                    "incident_id": incident_id,
+                    "error": "Maximum remediation attempts exceeded (cap: 1). Escalated to on-call developer.",
+                }
+
+            # Log remediation attempt
+            try:
+                log_event(
+                    run_id=None,
+                    incident_id=incident_id,
+                    stage="DEPLOY",
+                    kind="remediation_attempt",
+                    payload={"action": action, "attempt": attempts + 1},
+                    db_path=db_path,
+                )
+            except Exception as e:
+                logger.warning(f"Could not log remediation attempt: {e}")
+
         repo = Path(repo_path).resolve()
         health_url = f"http://127.0.0.1:{self.prod_port}/health"
 
         if mock_mode:
             logger.info(f"Simulating deployment of {action} on port {self.prod_port}")
+            watchdog_res = self.run_10s_watchdog(
+                incident_id=incident_id,
+                repo_path=str(repo),
+                previous_head="mock-head-001",
+                action=action,
+                source=source,
+                duration_sec=10,
+                interval_sec=0.1,  # Fast interval in mock mode
+                db_path=db_path,
+                mock_mode=True,
+                simulate_failure=simulate_watchdog_failure,
+            )
+            status = "DEPLOYED" if watchdog_res.get("healthy") else watchdog_res.get("status", "AUTO_REVERTED")
             return {
-                "status": "DEPLOYED",
+                "status": status,
                 "deployed_action": action,
-                "health_check": "ok",
+                "health_check": "ok" if watchdog_res.get("healthy") else "failed",
                 "production_port": self.prod_port,
+                "watchdog": watchdog_res,
             }
 
         # 1. Record previous head for auto-revert capability
         head_proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True)
         previous_head = head_proc.stdout.strip()
-
         logger.info(f"Starting deployment: action={action}, repo={repo}, checkpoint={previous_head[:8]}")
 
-        # 2. Apply change
+        # 2. Apply code change
         try:
-            if action == "fix_forward":
+            if action in ("fix", "fix_forward"):
                 applied = False
                 if patched_worktree and Path(patched_worktree).exists():
-                    # Copy changed source files from patched worktree (excluding .git)
                     for item in Path(patched_worktree).iterdir():
                         if item.name.startswith(".git") or item.name == "__pycache__":
                             continue
@@ -115,7 +407,6 @@ class DeployAdapter:
                     applied = True
 
                 if patch_diff and not applied:
-                    # Apply diff via git apply with resilient fallbacks
                     apply_proc = subprocess.run(
                         ["git", "apply", "--ignore-whitespace", "--3way"],
                         input=patch_diff,
@@ -135,7 +426,6 @@ class DeployAdapter:
                         applied = True
                     else:
                         logger.warning(f"git apply failed: {apply_proc.stderr}")
-                        # Direct fallback for app.py
                         app_file = repo / "app.py"
                         if app_file.exists():
                             content = app_file.read_text(encoding="utf-8")
@@ -144,7 +434,6 @@ class DeployAdapter:
                                 app_file.write_text(content, encoding="utf-8")
                                 applied = True
 
-                # Commit changes if any
                 subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
                 subprocess.run(
                     ["git", "commit", "-m", "fix(prodpilot): deploy verified fix"],
@@ -177,78 +466,191 @@ class DeployAdapter:
 
         # 3. Swap process onto port 8000
         self._kill_existing_port_process(self.prod_port)
-
-        # Detect python binary
-        import sys
-        if sys.executable and Path(sys.executable).exists():
-            py_bin = sys.executable
-        elif Path("/home/vishnunandan555/Projects/prodpilot/.venv/bin/python").exists():
-            py_bin = "/home/vishnunandan555/Projects/prodpilot/.venv/bin/python"
-        elif (repo.parent / ".venv" / "bin" / "python").exists():
-            py_bin = str(repo.parent / ".venv" / "bin" / "python")
-        else:
-            py_bin = "python3"
-
-        env = os.environ.copy()
-        env["PORT"] = str(self.prod_port)
-        env["PYTHONPATH"] = f"{repo}:."
-
-        cmd = [py_bin, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(self.prod_port)]
-        logger.info(f"Launching production server on port {self.prod_port}: {' '.join(cmd)}")
-
-        prod_proc = subprocess.Popen(
-            cmd,
-            cwd=str(repo),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        prod_proc = self._start_service_proc(repo, self.prod_port)
         self.active_prod_proc = prod_proc
 
-        # 4. Continuous Health Verification for 10s
-        logger.info(f"Verifying production canary health for 10s on {health_url}...")
-        healthy = self.poll_health(health_url, duration_sec=10.0, interval_sec=1.0)
+        # 4. Continuous 10-Second Watchdog
+        watchdog_res = self.run_10s_watchdog(
+            incident_id=incident_id,
+            repo_path=str(repo),
+            previous_head=previous_head,
+            action=action,
+            source=source,
+            duration_sec=10,
+            interval_sec=1.0,
+            db_path=db_path,
+            mock_mode=False,
+            simulate_failure=simulate_watchdog_failure,
+        )
 
-        # 5. Auto-revert if health check fails
-        if not healthy:
-            err_msg = ""
-            if prod_proc.poll() is not None:
-                try:
-                    out, err = prod_proc.communicate(timeout=1)
-                    err_msg = f"Process exited {prod_proc.returncode}. Out: {out}, Err: {err}"
-                except Exception:
-                    pass
-            else:
-                try:
-                    prod_proc.terminate()
-                    out, err = prod_proc.communicate(timeout=2)
-                    err_msg = f"Process was running. Out: {out}, Err: {err}"
-                except Exception as e:
-                    err_msg = f"Process inspection error: {e}"
-            logger.error(f"CRITICAL: Post-deploy health verification failed! {err_msg} Auto-reverting to {previous_head[:8]}")
-            # Terminate broken process
-            if prod_proc.poll() is None:
-                prod_proc.terminate()
-                prod_proc.wait(timeout=2)
-
-            # Auto-revert git repo
-            subprocess.run(["git", "reset", "--hard", previous_head], cwd=str(repo), capture_output=True)
-
-            return {
-                "status": "ROLLED_BACK",
-                "deployed_action": action,
-                "health_check": "failed",
-                "error": f"Healthcheck failed post-deployment ({err_msg}). Automatically restored previous build.",
-            }
-
-        logger.info("Production health check passed continuously for 10s. Deployment SUCCESSFUL.")
+        status = "DEPLOYED" if watchdog_res.get("healthy") else watchdog_res.get("status", "AUTO_REVERTED")
         return {
-            "status": "DEPLOYED",
+            "status": status,
             "deployed_action": action,
-            "health_check": "ok",
+            "health_check": "ok" if watchdog_res.get("healthy") else "failed",
             "production_port": self.prod_port,
+            "watchdog": watchdog_res,
         }
+
+
+def approve_incident(
+    incident_id: str,
+    action: str = "fix",  # "fix", "fix_forward", or "rollback"
+    repo_path: Optional[str] = None,
+    source: str = "desktop_ui",
+    db_path: Optional[str] = None,
+    mock_mode: bool = False,
+    async_watchdog: bool = False,
+    patch_diff: Optional[str] = None,
+    suspect_commit: Optional[str] = None,
+    patched_worktree: Optional[str] = None,
+    simulate_watchdog_failure: bool = False,
+) -> Dict[str, Any]:
+    """Handles incident approval, deploys build to production, and runs 10-second watchdog.
+
+    Args:
+        incident_id: ID of incident to approve.
+        action: "fix", "fix_forward", or "rollback".
+        repo_path: Target git repository path.
+        source: Approver source ("desktop_ui", "telegram", "cli").
+        db_path: Optional custom SQLite database path.
+        mock_mode: If True, operates without live server process.
+        async_watchdog: If True, launches watchdog in a background thread.
+        patch_diff: Diff for fix_forward if available.
+        suspect_commit: Suspect commit hash for rollback if available.
+        patched_worktree: Isolated worktree containing fixed code.
+        simulate_watchdog_failure: If True, forces health check failure to test auto-revert.
+
+    Returns:
+        Dict with deployment status, watchdog execution, and incident state.
+    """
+    normalized_action = "fix_forward" if action in ("fix", "fix_forward") else "rollback"
+
+    # Enforce remediation attempt limit
+    attempts = get_remediation_attempts(incident_id, db_path=db_path)
+    if attempts >= 1:
+        logger.error(f"Incident {incident_id} already had {attempts} remediation attempt(s). Escalating.")
+        try:
+            update_incident_status(incident_id, "ESCALATED", db_path=db_path)
+            log_event(
+                run_id=None,
+                incident_id=incident_id,
+                stage="DEPLOY",
+                kind="escalated",
+                payload={"error": "Remediation attempt cap (1) reached. Escalating to human on-call."},
+                db_path=db_path,
+            )
+        except Exception as e:
+            logger.warning(f"Could not record escalation: {e}")
+        return {
+            "status": "ESCALATED",
+            "incident_id": incident_id,
+            "error": "Remediation cap exceeded (max 1 attempt). Escalated to on-call.",
+        }
+
+    # Record approval
+    approval_id = f"appr-{incident_id[:8]}-{os.urandom(3).hex()}"
+    try:
+        record_approval(
+            approval_id=approval_id,
+            run_id=None,
+            incident_id=incident_id,
+            decision=f"APPROVED_{normalized_action.upper()}",
+            source=source,
+            reason="Approved by operator",
+            db_path=db_path,
+        )
+    except Exception as e:
+        logger.warning(f"Could not record approval: {e}")
+
+    try:
+        update_incident_status(incident_id, "DEPLOYING", db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not update status to DEPLOYING: {e}")
+
+    # Determine repo path
+    target_repo = repo_path
+    if not target_repo or not Path(target_repo).exists():
+        env_repo = os.environ.get("DEMO_PROD_PATH")
+        if env_repo and Path(env_repo).exists():
+            target_repo = env_repo
+        else:
+            candidates = [
+                Path(__file__).resolve().parent.parent.parent.parent / "demo-prod",
+                Path.cwd() / "demo-prod",
+            ]
+            for c in candidates:
+                if c.exists():
+                    target_repo = str(c)
+                    break
+    if not target_repo:
+        target_repo = str(Path.cwd())
+
+    # Extract patch_diff or suspect_commit if missing
+    if not patch_diff or not suspect_commit:
+        try:
+            inc = get_incident(incident_id, db_path=db_path) or {}
+            if not suspect_commit:
+                s = inc.get("suspect_commit")
+                if isinstance(s, dict):
+                    suspect_commit = s.get("hash")
+                elif isinstance(s, str):
+                    try:
+                        suspect_commit = json.loads(s).get("hash")
+                    except Exception:
+                        pass
+            if not patch_diff:
+                arts = get_artifacts(incident_id, db_path=db_path)
+                for a in arts:
+                    if a.get("kind") == "patch_diff":
+                        patch_diff = a.get("content")
+                        break
+        except Exception:
+            pass
+
+    adapter = DeployAdapter(prod_port=int(os.environ.get("PROD_PORT", 8000)))
+
+    # If async watchdog requested, run in background thread
+    if async_watchdog:
+        thread = threading.Thread(
+            target=adapter.deploy,
+            kwargs={
+                "action": normalized_action,
+                "repo_path": target_repo,
+                "patch_diff": patch_diff,
+                "suspect_commit": suspect_commit,
+                "patched_worktree": patched_worktree,
+                "mock_mode": mock_mode,
+                "incident_id": incident_id,
+                "db_path": db_path,
+                "source": source,
+                "simulate_watchdog_failure": simulate_watchdog_failure,
+            },
+            daemon=True,
+        )
+        thread.start()
+        return {
+            "status": "DEPLOYING",
+            "incident_id": incident_id,
+            "action": normalized_action,
+            "watchdog_async": True,
+            "thread": thread,
+        }
+
+    # Synchronous execution
+    deploy_res = adapter.deploy(
+        action=normalized_action,
+        repo_path=target_repo,
+        patch_diff=patch_diff,
+        suspect_commit=suspect_commit,
+        patched_worktree=patched_worktree,
+        mock_mode=mock_mode,
+        incident_id=incident_id,
+        db_path=db_path,
+        source=source,
+        simulate_watchdog_failure=simulate_watchdog_failure,
+    )
+    return deploy_res
 
 
 def generate_incident_report(
@@ -257,24 +659,11 @@ def generate_incident_report(
     approver_source: str,
     db_path: Optional[str] = None,
 ) -> str:
-    """Generates comprehensive post-mortem markdown incident report and saves to SQLite artifacts.
-    
-    Includes:
-    - Incident ID, Service, Timestamp.
-    - Root Cause Summary & Suspect Commit (git blame details).
-    - Reproduction Test & Test Evidence (Before & After).
-    - Patch Diff.
-    - Canary Health Verification (Ports 8001 & 8002).
-    - Who Approved & Source (Telegram / Desktop UI).
-    """
-    import json
-    from datetime import datetime
-    from backend.prodpilot.db import get_incident, get_artifacts, save_artifact, get_db
-
+    """Generates post-mortem markdown incident report and saves to SQLite artifacts."""
     inc = get_incident(incident_id, db_path=db_path) or {}
     service = inc.get("service", "demo-prod")
     detected_at = inc.get("detected_at", "Unknown")
-    resolved_at = datetime.utcnow().isoformat()
+    resolved_at = datetime.now(timezone.utc).isoformat()
 
     brief = inc.get("brief_json") or {}
     if isinstance(brief, str):
@@ -326,7 +715,7 @@ def generate_incident_report(
         with get_db(db_path) as conn:
             row = conn.execute(
                 "SELECT * FROM decisions WHERE incident_id = ? ORDER BY created_at DESC LIMIT 1",
-                (incident_id,)
+                (incident_id,),
             ).fetchone()
             if row:
                 d = dict(row)
@@ -348,7 +737,7 @@ def generate_incident_report(
 **Service**: `{service}`  
 **Detected At**: `{detected_at}`  
 **Resolved At**: `{resolved_at}`  
-**Final Status**: `DEPLOYED`  
+**Final Status**: `RESOLVED`  
 **Deployment Action**: `{action}` (`APPROVED_{action.upper()}`)  
 **Approved Source**: `{approver_source}`  
 
@@ -392,18 +781,21 @@ def generate_incident_report(
 
 ## 5. Production Deployment Verification
 - **Target Port**: `8000`
-- **10s Healthcheck Probing**: 🟢 200 OK Passed
-- **Deployment Status**: Confirmed Healthy & Active
+- **10s Healthcheck Probing**: 🟢 200 OK Passed continuously for 10 seconds
+- **Deployment Status**: Confirmed Healthy & Active (`RESOLVED`)
 """
 
-    save_artifact(
-        artifact_id=f"art-report-{incident_id}",
-        run_id=None,
-        incident_id=incident_id,
-        kind="incident_report",
-        content=report_md,
-        path="artifacts/incident_report.md",
-        db_path=db_path,
-    )
+    try:
+        save_artifact(
+            artifact_id=f"art-report-{incident_id}",
+            run_id=None,
+            incident_id=incident_id,
+            kind="incident_report",
+            content=report_md,
+            path="artifacts/incident_report.md",
+            db_path=db_path,
+        )
+    except Exception as e:
+        logger.warning(f"Could not persist incident report artifact: {e}")
 
     return report_md

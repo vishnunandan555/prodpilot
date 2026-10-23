@@ -382,7 +382,14 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         mock_mode=mock_deploy,
     )
 
-    new_status = "DEPLOYED" if deploy_res.get("status") == "DEPLOYED" else "ROLLED_BACK"
+    deploy_status = deploy_res.get("status")
+    if deploy_status in ("DEPLOYED", "RESOLVED"):
+        new_status = "DEPLOYED"
+    elif deploy_status == "AUTO_REVERTED":
+        new_status = "AUTO_REVERTED"
+    else:
+        new_status = "ROLLED_BACK"
+
     update_incident_status(incident_id, new_status)
 
     if new_status == "DEPLOYED":

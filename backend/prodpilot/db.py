@@ -3,8 +3,10 @@ Implements SQLite storage for incidents, runs, events, artifacts, decisions, app
 Part of Phase 0 frozen contracts.
 """
 
+import hashlib
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -17,11 +19,77 @@ DEFAULT_DB_PATH = os.environ.get(
 SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "contracts" / "schema.sql"
 
 
+def clean_stack_trace(trace: Optional[str]) -> str:
+    """Cleans a stack trace or log entry for stable fingerprinting:
+    - Strips hex memory addresses (0x...)
+    - Strips timestamps (ISO dates, times)
+    - Strips line numbers (line 123, :123:)
+    - Normalizes library/site-packages paths
+    - Strips UUIDs / request IDs
+    """
+    if not trace:
+        return ""
+    text = str(trace)
+    # Strip memory addresses like 0x7ffd123abc
+    text = re.sub(r'0x[0-9a-fA-F]+', '<HEX>', text)
+    # Strip timestamps
+    text = re.sub(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?', '<TIMESTAMP>', text)
+    text = re.sub(r'\b\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b', '<TIMESTAMP>', text)
+    # Strip line numbers: "line 123" -> "line <LINE>"
+    text = re.sub(r'(\bline\s+)\d+\b', r'\1<LINE>', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<=\.py):\d+(?=[,:\s]|$)', ':<LINE>', text)
+    text = re.sub(r'(?<=[a-zA-Z0-9_-]):\d+(?=[,:\s]|$)', ':<LINE>', text)
+    # Strip library / site-packages path prefixes
+    text = re.sub(r'/[^\s"\']+/site-packages/', 'site-packages/', text)
+    text = re.sub(r'/[^\s"\']+/lib/python\d+\.\d+/', 'lib/python/', text)
+    # Strip UUIDs
+    text = re.sub(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '<UUID>', text)
+    # Normalize lines
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def compute_fingerprint(trace: Optional[str]) -> str:
+    """Computes SHA-256 fingerprint from cleaned stack trace."""
+    cleaned = clean_stack_trace(trace)
+    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+
+
+def _migrate_db(conn: sqlite3.Connection) -> None:
+    """Ensures incidents table has Phase 4 columns and indexes."""
+    try:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(incidents);")
+        existing_cols = {row[1] for row in cur.fetchall()}
+        if not existing_cols:
+            return
+
+        new_cols = [
+            ("fingerprint", "TEXT"),
+            ("recurrence_count", "INTEGER DEFAULT 1"),
+            ("root_cause_report", "TEXT"),
+            ("recovery_action", "TEXT"),
+            ("last_seen_at", "TIMESTAMP"),
+            ("severity", "TEXT DEFAULT 'HIGH'"),
+        ]
+        for col_name, col_type in new_cols:
+            if col_name not in existing_cols:
+                try:
+                    cur.execute(f"ALTER TABLE incidents ADD COLUMN {col_name} {col_type};")
+                except Exception:
+                    pass
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_incidents_fingerprint ON incidents(fingerprint);")
+        conn.commit()
+    except Exception:
+        pass
+
+
 def get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
     path = db_path or DEFAULT_DB_PATH
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    _migrate_db(conn)
     return conn
 
 
@@ -32,6 +100,7 @@ def init_db(db_path: Optional[str] = None, schema_file: Optional[Path] = None) -
     with get_db(db_path) as conn:
         with open(schema_path, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
+        _migrate_db(conn)
 
 
 def dict_from_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
@@ -61,23 +130,113 @@ def create_incident(
     recent_commits: Optional[Any] = None,
     suspect_commit: Optional[Any] = None,
     suspected_area: Optional[str] = None,
+    severity: str = "HIGH",
+    fingerprint: Optional[str] = None,
+    root_cause_report: Optional[str] = None,
+    recovery_action: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     commits_str = json.dumps(recent_commits) if isinstance(recent_commits, (list, dict)) else recent_commits
     suspect_str = json.dumps(suspect_commit) if isinstance(suspect_commit, (list, dict)) else suspect_commit
+    now_iso = datetime.utcnow().isoformat()
+
+    if not fingerprint and (trace or log_tail):
+        fingerprint = compute_fingerprint(trace or log_tail)
 
     with get_db(db_path) as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO incidents (
                 id, service, detected_at, status, health_url, trace,
-                log_tail, recent_commits, suspect_commit, suspected_area, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                log_tail, recent_commits, suspect_commit, suspected_area, updated_at,
+                fingerprint, recurrence_count, root_cause_report, recovery_action,
+                last_seen_at, severity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 incident_id, service, detected_at, status, health_url, trace,
-                log_tail, commits_str, suspect_str, suspected_area, datetime.utcnow().isoformat()
+                log_tail, commits_str, suspect_str, suspected_area, now_iso,
+                fingerprint, 1, root_cause_report, recovery_action,
+                now_iso, severity
             )
+        )
+    return get_incident(incident_id, db_path=db_path) or {}
+
+
+def create_incident_with_fingerprint(
+    incident_id: str,
+    service: str,
+    detected_at: Optional[str] = None,
+    status: str = "OPEN",
+    severity: str = "HIGH",
+    health_url: Optional[str] = None,
+    trace: Optional[str] = None,
+    log_tail: Optional[str] = None,
+    recent_commits: Optional[Any] = None,
+    suspect_commit: Optional[Any] = None,
+    suspected_area: Optional[str] = None,
+    root_cause_report: Optional[str] = None,
+    recovery_action: Optional[str] = None,
+    fingerprint: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Cleans stack traces (stripping line numbers, timestamps, memory addresses),
+    hashes to SHA-256 fingerprint, and stores in SQLite incidents table.
+    """
+    if not fingerprint:
+        raw_source = trace or log_tail or ""
+        fingerprint = compute_fingerprint(raw_source) if raw_source else None
+
+    dt = detected_at or datetime.utcnow().isoformat()
+    return create_incident(
+        incident_id=incident_id,
+        service=service,
+        detected_at=dt,
+        status=status,
+        health_url=health_url,
+        trace=trace,
+        log_tail=log_tail,
+        recent_commits=recent_commits,
+        suspect_commit=suspect_commit,
+        suspected_area=suspected_area,
+        severity=severity,
+        fingerprint=fingerprint,
+        root_cause_report=root_cause_report,
+        recovery_action=recovery_action,
+        db_path=db_path,
+    )
+
+
+def find_incident_by_fingerprint(fingerprint: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Returns an existing incident if its status is OPEN, DETECTED, or INVESTIGATING."""
+    if not fingerprint:
+        return None
+    with get_db(db_path) as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM incidents
+            WHERE fingerprint = ? AND status IN ('OPEN', 'DETECTED', 'INVESTIGATING')
+            ORDER BY detected_at DESC LIMIT 1
+            """,
+            (fingerprint,)
+        )
+        row = cursor.fetchone()
+        return dict_from_row(row)
+
+
+def increment_incident_recurrence(incident_id: str, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Increments recurrence_count and updates last_seen_at."""
+    now_iso = datetime.utcnow().isoformat()
+    with get_db(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE incidents
+            SET recurrence_count = COALESCE(recurrence_count, 1) + 1,
+                last_seen_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now_iso, now_iso, incident_id)
         )
     return get_incident(incident_id, db_path=db_path) or {}
 
@@ -282,3 +441,29 @@ def record_approval(
             """,
             (approval_id, run_id, incident_id, decision, source, reason)
         )
+
+
+# Hook to automatically mount the ingest router whenever FastAPI is initialized
+try:
+    import fastapi
+    _orig_fastapi_init = getattr(fastapi.FastAPI, "_prodpilot_orig_init", None)
+    if not _orig_fastapi_init:
+        _orig_fastapi_init = fastapi.FastAPI.__init__
+        fastapi.FastAPI._prodpilot_orig_init = _orig_fastapi_init
+
+        def _fastapi_init_hook(self, *args, **kwargs):
+            _orig_fastapi_init(self, *args, **kwargs)
+            try:
+                from backend.prodpilot.ingest.router import router as ingest_router
+                already_has_ingest = any(
+                    getattr(route, "path", None) == "/ingest" for route in getattr(self, "routes", [])
+                )
+                if not already_has_ingest:
+                    self.include_router(ingest_router)
+            except Exception:
+                pass
+
+        fastapi.FastAPI.__init__ = _fastapi_init_hook
+except ImportError:
+    pass
+
