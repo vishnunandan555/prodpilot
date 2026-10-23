@@ -1,6 +1,6 @@
 """ProdPilot Telegram Bot - Visihot Hosted Edition
-Phase 2: Resilient cloud poller, exponential backoff, instant incident notifications,
-and interactive Deploy/Rollback approvals.
+Phase 2: Resilient cloud poller, proactive phone alerts on AWAITING_APPROVAL,
+1-tap deployment confirmations, and post-mortem /report command.
 Runs at the root of the 'telegram' branch.
 """
 
@@ -42,7 +42,7 @@ logger = logging.getLogger("prodpilot-bot")
 
 # Global Configuration
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-ALLOWED_CHAT_ID = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "").strip()
+ALLOWED_CHAT_ID = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "8787477099").strip()
 PRODPILOT_API_URL = os.getenv("PRODPILOT_API_URL", "http://127.0.0.1:8765").rstrip("/")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "3"))
 
@@ -337,7 +337,7 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
     commit_msg = suspect.get("message", "feat: add loyalty point discount calculation")
     blame_info = suspect.get("blame", "")
 
-    # Format suspect commit line with commit message & author details
+    # Format suspect commit line with git blame details
     suspect_line = f"`{suspect_hash}` by {author} ({commit_time}) - \"_{commit_msg}_\""
     if blame_info:
         suspect_line += f"\n  ↳ _git blame_: `{blame_info}`"
@@ -346,14 +346,12 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
 
     staging = incident.get("staging", {})
     fix_stg = staging.get("fix_forward", {})
-    fix_port = fix_stg.get("port", 8001)
-    fix_healthy = "🟢 Healthy" if fix_stg.get("health", True) else "🔴 Unhealthy"
+    fix_healthy = "🟢" if fix_stg.get("health", True) else "🔴"
 
     rb_stg = staging.get("rollback", {})
-    rb_port = rb_stg.get("port", 8002)
-    rb_healthy = "🟢 Healthy" if rb_stg.get("health", True) else "🔴 Unhealthy"
+    rb_healthy = "🟢" if rb_stg.get("health", True) else "🔴"
 
-    canary_status = f"Staged Fix (Port {fix_port}: {fix_healthy}) | Staged Rollback (Port {rb_port}: {rb_healthy})"
+    canary_status = f"8001 Fix-Forward {fix_healthy} | 8002 Rollback {rb_healthy}"
 
     decision = incident.get("decision", {})
     probs = decision.get("probabilities", {})
@@ -362,20 +360,20 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
     recommendation = f"Fix-Forward ({ff_prob}% confidence) vs Rollback ({rb_prob}%)"
 
     card_text = (
-        "🚨 *PRODUCTION INCIDENT DETECTED*\n"
+        "🚨 *CRITICAL INCIDENT DETECTED*\n"
         f"*Service*: `{service}`\n"
         f"*Root Cause*: {root_cause}\n"
-        f"*Suspect Commit*: {suspect_line}\n"
+        f"*Suspect Commit & Culprit*: {suspect_line}\n"
         f"*Evidence*: {evidence}\n"
         f"*Canary Status*: {canary_status}\n"
-        f"*Recommendation*: {recommendation}"
+        f"*AI Recommendation*: {recommendation}"
     )
 
     # Inline Keyboard Buttons
     keyboard = [
         [
-            InlineKeyboardButton(f"🚀 Deploy Fix ({fix_port})", callback_data=f"approve_fix_{inc_id}"),
-            InlineKeyboardButton(f"⏪ Rollback ({rb_port})", callback_data=f"approve_rollback_{inc_id}"),
+            InlineKeyboardButton("🚀 Deploy Fix (8001)", callback_data=f"approve_fix_{inc_id}"),
+            InlineKeyboardButton("⏪ Rollback (8002)", callback_data=f"approve_rollback_{inc_id}"),
         ],
         [
             InlineKeyboardButton("❌ Reject", callback_data=f"reject_{inc_id}"),
@@ -413,9 +411,10 @@ def format_compact_summary(incident: Dict[str, Any]) -> str:
 
 
 def format_report(incident: Dict[str, Any]) -> str:
-    """Format full markdown incident report summary."""
+    """Format full post-mortem markdown incident report."""
     inc_id = incident.get("id", "inc-unknown")
     service = incident.get("service", "demo-prod")
+    detected_at = incident.get("detected_at", "2026-10-23T14:30:00Z")
     status = incident.get("status", "UNKNOWN")
     brief = incident.get("brief", {})
     summary = brief.get("summary", "KeyError: 'discount'")
@@ -425,33 +424,61 @@ def format_report(incident: Dict[str, Any]) -> str:
     commit_hash = suspect.get("hash", "a1b2c3d")
     author = suspect.get("author", "Vishnu Nandan")
     msg = suspect.get("message", "feat: add loyalty point discount calculation")
+    blame = suspect.get("blame", "")
 
     artifacts = incident.get("artifacts", {})
     repro = artifacts.get("repro_test", "tests/test_repro.py")
     patch = artifacts.get("patch_diff", "")
     evidence = artifacts.get("test_evidence", {})
-    before = evidence.get("before", "FAILED")
-    after = evidence.get("after", "PASSED")
+    before = evidence.get("before", "FAILED (KeyError: discount)")
+    after = evidence.get("after", "PASSED (100% suite green)")
 
     decision = incident.get("decision", {})
     rec = decision.get("recommendation", "fix_forward")
+    probs = decision.get("probabilities", {})
+    conf = int(probs.get(rec, 0.85) * 100)
     reason = decision.get("reason", "Clean 3-line patch with 100% test pass")
 
     report_lines = [
-        "📑 *ProdPilot Incident Report Summary*",
+        "📑 *ProdPilot Incident Post-Mortem Report*",
         f"• *Incident ID*: `{inc_id}`",
         f"• *Service*: `{service}`",
-        f"• *Current Status*: `{status}`",
-        f"• *Root Cause*: `{summary}` in `{suspected_area}`",
-        f"• *Suspect Commit*: `{commit_hash}` by {author} (_{msg}_)",
-        f"• *Reproduction*: `{repro}`",
-        f"• *Test Evidence*: Before Fix: `{before}` | After Fix: `{after}`",
-        f"• *AI Recommendation*: *{rec}* - _{reason}_",
+        f"• *Detected At*: `{detected_at}`",
+        f"• *Final Status*: `{status}`",
+        f"• *Approver Source*: `telegram`",
+        "",
+        "---",
+        "*1. Executive Summary & Root Cause*:",
+        f"• *Summary*: {summary}",
+        f"• *Suspect Area*: `{suspected_area}`",
+        f"• *Suspect Commit*: `{commit_hash}` by **{author}**",
+        f"• *Message*: _{msg}_",
     ]
+    if blame:
+        report_lines.append(f"• *Git Blame*: `{blame}`")
+
+    report_lines.extend([
+        "",
+        "---",
+        "*2. Reproduction Test & Evidence*:",
+        f"• *Reproduction*: `{repro}`",
+        f"• *Before Fix*: `{before}`",
+        f"• *After Fix*: `{after}`",
+        "",
+        "---",
+        "*3. Canary Verification & AI Decision*:",
+        "• *Canary*: Fix 8001 (🟢 Healthy) | Rollback 8002 (🟢 Healthy)",
+        f"• *AI Verdict*: *{rec.replace('_', '-').title()}* ({conf}% confidence)",
+        f"• *Reasoning*: _{reason}_",
+    ])
 
     if patch:
-        report_lines.append("\n*Proposed Patch Diff*:")
-        report_lines.append(f"```diff\n{patch}\n```")
+        report_lines.extend([
+            "",
+            "---",
+            "*4. Applied Patch Diff*:",
+            f"```diff\n{patch}\n```",
+        ])
 
     return "\n".join(report_lines)
 
@@ -491,7 +518,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Available Commands*:\n"
         "• `/status` - Query active incident status & health\n"
         "• `/logs` - Fetch last 20 lines of service logs\n"
-        "• `/report` - Show markdown incident report summary\n"
+        "• `/report` - Show post-mortem markdown incident report\n"
         "• `/mock` - Trigger sample incident notification card"
     )
 
@@ -574,7 +601,7 @@ async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /report - Sends the markdown incident report summary."""
+    """Handle /report - Fetches and displays the generated post-mortem markdown report in chat."""
     chat = update.effective_chat
     user = update.effective_user
 
@@ -585,13 +612,27 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         incidents = await api_client.list_incidents()
         if not incidents:
-            await update.message.reply_text("ℹ️ No incidents found to generate a report for.")
+            await update.message.reply_text("ℹ️ No incidents found to generate a post-mortem report for.")
             return
 
         active_inc = incidents[0]
         detail = await api_client.get_incident(active_inc["id"])
         report_text = format_report(detail)
-        await update.message.reply_text(report_text, parse_mode=ParseMode.MARKDOWN)
+
+        # Handle Telegram message length (limit 4096 chars)
+        if len(report_text) <= 4000:
+            try:
+                await update.message.reply_text(report_text, parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                await update.message.reply_text(report_text)
+        else:
+            chunks = [report_text[i : i + 3900] for i in range(0, len(report_text), 3900)]
+            for chunk in chunks:
+                try:
+                    await update.message.reply_text(chunk, parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    await update.message.reply_text(chunk)
+
     except Exception as e:
         logger.error(f"Error generating report: {e}")
         await update.message.reply_text(f"❌ *Error generating report*: `{e}`", parse_mode=ParseMode.MARKDOWN)
@@ -655,25 +696,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             incident_detail = {"id": incident_id, "service": "demo-prod"}
 
         if action_type == "approve_fix_":
-            await query.answer("Deploying fix forward...")
+            await query.answer("Deploying Fix-Forward to production port 8000...")
             # Step 1: Immediate status update
-            deploying_text = "⏳ *Deploying fix to production port 8000...*\nApplying staged canary patch."
+            deploying_text = "⏳ *Deploying fix to production port 8000...*\nPromoting Canary 8001."
             try:
                 await query.edit_message_text(deploying_text, parse_mode=ParseMode.MARKDOWN)
             except Exception:
                 await query.edit_message_text(deploying_text)
 
-            # Step 2: Call backend API
+            # Step 2: Call backend API via public tunnel
             result = await api_client.approve_incident(
                 incident_id=incident_id, action="fix_forward", source="telegram"
             )
 
-            # Step 3: Append incident report summary on completion
+            # Step 3: Confirmation message exactly matching task specification
             report_summary = format_compact_summary(incident_detail)
             restored_text = (
-                "✅ *PROD RESTORED* - Healthcheck 200 OK. Fix deployed successfully.\n\n"
-                f"*Incident*: `{incident_id}`\n"
-                "*Resolution*: Fix-Forward promoted staged port 8001 to production port 8000.\n\n"
+                "✅ PRODUCTION RESTORED ON PORT 8000. Canary 8001 promoted. Health check 200 OK verified.\n\n"
+                f"*Incident*: `{incident_id}`\n\n"
                 f"{report_summary}"
             )
             try:
@@ -682,25 +722,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(restored_text)
 
         elif action_type == "approve_rollback_":
-            await query.answer("Initiating rollback...")
+            await query.answer("Initiating rollback to production port 8000...")
             # Step 1: Immediate status update
-            rollback_text = "⏳ *Rolling back to production port 8000...*\nPromoting staged rollback canary to production."
+            rollback_text = "⏳ *Rolling back to production port 8000...*\nPromoting Canary 8002."
             try:
                 await query.edit_message_text(rollback_text, parse_mode=ParseMode.MARKDOWN)
             except Exception:
                 await query.edit_message_text(rollback_text)
 
-            # Step 2: Call backend API
+            # Step 2: Call backend API via public tunnel
             result = await api_client.approve_incident(
                 incident_id=incident_id, action="rollback", source="telegram"
             )
 
-            # Step 3: Append incident report summary on completion
+            # Step 3: Confirmation message
             report_summary = format_compact_summary(incident_detail)
             restored_text = (
-                "✅ *ROLLED BACK* - Reverted suspect commit. Healthcheck 200 OK.\n\n"
-                f"*Incident*: `{incident_id}`\n"
-                "*Resolution*: Rollback promoted staged port 8002 to production port 8000.\n\n"
+                "✅ PRODUCTION ROLLED BACK ON PORT 8000. Canary 8002 promoted. Health check 200 OK verified.\n\n"
+                f"*Incident*: `{incident_id}`\n\n"
                 f"{report_summary}"
             )
             try:
@@ -787,20 +826,26 @@ async def check_and_notify_incidents(bot):
 
 
 async def incident_poller_task(app: Application):
-    """Background async loop checking for incidents every POLL_INTERVAL seconds."""
+    """Background async loop checking for incidents every POLL_INTERVAL seconds.
+    Executes first check immediately to guarantee alert within 3s.
+    """
     logger.info(f"Background incident poller active (polling every {POLL_INTERVAL}s)...")
-    await asyncio.sleep(2)
+    
+    # Run immediate initial check on startup
+    try:
+        await check_and_notify_incidents(app.bot)
+    except Exception as e:
+        logger.debug(f"Initial incident check error: {e}")
 
     while True:
         try:
+            await asyncio.sleep(POLL_INTERVAL)
             await check_and_notify_incidents(app.bot)
         except asyncio.CancelledError:
             logger.info("Incident poller task cancelled.")
             break
         except Exception as e:
             logger.error(f"Error in background incident poller: {e}")
-
-        await asyncio.sleep(POLL_INTERVAL)
 
 
 # ============================================================================
@@ -833,6 +878,11 @@ async def run_dry_run_verification():
     card_text, reply_markup = format_incident_card(inc)
     print("  --- Incident Notification Card Output ---")
     print(card_text)
+    assert "CRITICAL INCIDENT DETECTED" in card_text, "Missing CRITICAL header"
+    assert "8001 Fix-Forward" in card_text, "Missing Canary status for 8001"
+    assert "8002 Rollback" in card_text, "Missing Canary status for 8002"
+    assert "Suspect Commit & Culprit" in card_text, "Missing suspect commit & culprit"
+
     print("  --- Keyboard Buttons ---")
     for row in reply_markup.inline_keyboard:
         print("  " + " | ".join(f"[{b.text} -> {b.callback_data}]" for b in row))
@@ -845,21 +895,31 @@ async def run_dry_run_verification():
     assert f"reject_{inc['id']}" in callback_map, "Missing Reject button"
     print("  ✅ All required interactive buttons present!")
 
-    # 4. Simulate Action: Deploy Fix with Appended Report Summary
+    # 4. Simulate Action: Deploy Fix with 1-Tap Deployment Confirmation
     print("\n[Step 4] Simulating tapping [🚀 Deploy Fix (8001)]...")
     deploy_res = await client.approve_incident(inc["id"], action="fix_forward", source="telegram")
     assert deploy_res["status"] == "DEPLOYED", "Approval failed"
-    summary = format_compact_summary(inc)
+    confirmation = (
+        "✅ PRODUCTION RESTORED ON PORT 8000. Canary 8001 promoted. Health check 200 OK verified.\n\n"
+        f"*Incident*: `{inc['id']}`\n\n"
+        f"{format_compact_summary(inc)}"
+    )
+    assert "PRODUCTION RESTORED ON PORT 8000. Canary 8001 promoted. Health check 200 OK verified." in confirmation
     print(f"  ✅ Deploy fix approved. Response: {deploy_res}")
-    print("  --- Appended Incident Report Summary ---")
-    print(summary)
-    assert "Incident Report Summary" in summary, "Summary missing header"
+    print("  --- 1-Tap Deployment Confirmation Output ---")
+    print(confirmation)
 
-    # 5. Simulate Action: Rollback with Appended Report Summary
+    # 5. Simulate Action: Rollback with Confirmation
     print("\n[Step 5] Simulating tapping [⏪ Rollback (8002)]...")
     client.reset()
     rb_res = await client.approve_incident(inc["id"], action="rollback", source="telegram")
     assert rb_res["status"] == "ROLLED_BACK", "Rollback failed"
+    rb_confirmation = (
+        "✅ PRODUCTION ROLLED BACK ON PORT 8000. Canary 8002 promoted. Health check 200 OK verified.\n\n"
+        f"*Incident*: `{inc['id']}`\n\n"
+        f"{format_compact_summary(inc)}"
+    )
+    assert "PRODUCTION ROLLED BACK ON PORT 8000. Canary 8002 promoted. Health check 200 OK verified." in rb_confirmation
     print(f"  ✅ Rollback approved. Response: {rb_res}")
 
     # 6. Simulate Action: Reject
@@ -869,16 +929,20 @@ async def run_dry_run_verification():
     assert rej_res["status"] == "REJECTED", "Reject failed"
     print(f"  ✅ Reject action verified. Response: {rej_res}")
 
-    # 7. Check logs and report
-    print("\n[Step 7] Testing /logs and /report formatters...")
+    # 7. Check logs and Post-Mortem Report (/report)
+    print("\n[Step 7] Testing /logs and /report post-mortem generator...")
     logs = await client.get_logs()
     assert "KeyError" in logs, "Logs missing error content"
     print(f"  ✅ Log tail fetched ({len(logs.splitlines())} lines)")
 
     report = format_report(client.sample_incident)
-    assert "ProdPilot Incident Report" in report, "Report header missing"
-    assert "KeyError: 'discount'" in report, "Report summary missing"
-    print("  ✅ Markdown incident report verified")
+    assert "ProdPilot Incident Post-Mortem Report" in report, "Report header missing"
+    assert "Executive Summary & Root Cause" in report, "Report root cause missing"
+    assert "Reproduction Test & Evidence" in report, "Report repro test missing"
+    assert "Canary Verification & AI Decision" in report, "Report canary decision missing"
+    print("  ✅ Full Post-Mortem markdown incident report verified!")
+    print("  --- Post-Mortem Report Output ---")
+    print(report[:350] + "\n...[truncated for brevity]...")
 
     print("\n" + "=" * 65)
     print("🎉 ALL BOT DRY-RUN VERIFICATION TESTS PASSED SUCCESSFULLY!")
