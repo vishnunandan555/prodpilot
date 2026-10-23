@@ -786,7 +786,7 @@ export default function SettingsView({
                   <span>Jev Decision Engine (OpenRouter API Key)</span>
                 </label>
                 <p className="text-xs text-[#8b949e] mt-0.5">
-                  Powers fast System 1 incident classification, risk scoring, and Gemini routing.
+                  Powers TypeSafe Jev System 1 decision primitives (Choice, Noul, Score) via OpenRouter Decisions API.
                 </p>
               </div>
 

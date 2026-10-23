@@ -305,7 +305,7 @@ export default function DashboardView({
                     <span className="font-medium text-[#f0f6fc]">Jev Engine</span>
                     <span className="text-[10px] text-[#3fb950] font-mono font-bold">ONLINE</span>
                   </div>
-                  <p className="text-[11px] text-[#6e7681]">System 1 Triage & Model Routing</p>
+                  <p className="text-[11px] text-[#6e7681]">TypeSafe Decision Model</p>
                 </div>
 
                 <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">

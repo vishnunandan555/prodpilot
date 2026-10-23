@@ -60,7 +60,7 @@ ProdPilot connects your **real production server (Render)** and **source code re
 │  │ 3. Server Manager: Render REST API v1 (Live Discovery, Deploys, Log Stream)      │  │
 │  │ 4. Monitoring Engine: Real log ingestion from Render API with rule filters        │  │
 │  │ 5. Agent Fleet: Google Antigravity SDK fix loop in isolated git worktree         │  │
-│  │ 6. Decision Engine: Jev (OpenRouter Gemini 2.5 Flash token-budgeted scoring)     │  │
+│  │ 6. Decision Engine: TypeSafe Jev (OpenRouter Decisions API typesafe/jev-1.14)     │  │
 │  │ 7. Verification Watchdog: 10-second post-deploy health check & auto-revert       │  │
 │  │ 8. Telegram Bot API: Instant push alert with Render mobile web link              │  │
 │  │ 9. Twilio Voice Engine: Emergency Sev-1 voice call tree & DTMF response          │  │

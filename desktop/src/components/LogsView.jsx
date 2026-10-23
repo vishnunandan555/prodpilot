@@ -22,6 +22,8 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
   const [searchTerm, setSearchTerm] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [streamConnected, setStreamConnected] = useState(false);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [waking, setWaking] = useState(false);
 
   // Fetch registered servers
   const fetchServers = async () => {
@@ -64,7 +66,6 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
     }
 
     setLoading(true);
-    setErrorMsg('');
     try {
       const res = await fetch(`${apiUrl}/servers/${currentServer.id}/logs`);
       if (res.ok) {
@@ -73,9 +74,12 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
           setErrorMsg(data.error || 'Failed to fetch logs from Render');
           setLogs([]);
           setStreamConnected(false);
+          setIsSuspended(false);
         } else {
           setLogs(data.logs || []);
           setStreamConnected(true);
+          setErrorMsg('');
+          setIsSuspended(!!data.is_suspended);
         }
       } else {
         setStreamConnected(false);
@@ -85,6 +89,20 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
       setStreamConnected(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleWakeServer = async () => {
+    if (!currentServer?.id) return;
+    setWaking(true);
+    try {
+      await fetch(`${apiUrl}/servers/${currentServer.id}/probe`, { method: 'POST' });
+      await fetchLogs();
+      await fetchServers();
+    } catch (e) {
+      console.warn('Wake attempt pinged endpoint:', e);
+    } finally {
+      setWaking(false);
     }
   };
 
@@ -141,14 +159,14 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
                   Logs Explorer
                 </h1>
-                {currentServer?.render_service_id ? (
-                  <span className="text-[10px] px-2 py-0.2 rounded font-mono bg-[#161f30] text-[#79c0ff] border border-[#263550]">
-                    Render API: {currentServer.render_service_id}
+                {currentServer?.name ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-[#161f30] text-[#79c0ff] border border-[#263550]">
+                    {currentServer.name}
                   </span>
                 ) : null}
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Live log stream via Render REST API v1 (/services/{'{id}'}/logs)
+                Real-time deployment lifecycle events, container builds & live health telemetry
               </p>
             </div>
           </div>
@@ -192,7 +210,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
             {streamConnected ? (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
-                <span>RENDER STREAM LIVE</span>
+                <span>TELEMETRY STREAM LIVE</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#161b26] border border-[#212a3d] text-[#8b949e] text-[10px] font-mono">
@@ -241,6 +259,24 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
 
       {/* Log Feed */}
       <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1.5 bg-[#080b11]">
+        {isSuspended && (
+          <div className="p-3 mb-3 rounded-lg bg-[#1c180e] border border-[#3b2e13] text-xs text-[#e3b341] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Clock size={15} className="text-[#e3b341]" />
+              <span>
+                <strong>Service in Standby:</strong> '{currentServer?.name}' is spun down on Render (free-tier inactivity). It will auto-wake upon incoming requests.
+              </span>
+            </div>
+            <button
+              onClick={handleWakeServer}
+              disabled={waking}
+              className="px-3 py-1 rounded bg-[#e3b341] hover:bg-[#d29922] text-[#0d1117] font-bold text-[11px] transition shrink-0"
+            >
+              {waking ? 'Waking Server...' : 'Wake Server Now'}
+            </button>
+          </div>
+        )}
+
         {errorMsg && (
           <div className="p-3 mb-3 rounded-lg bg-[#241316] border border-[#481c25] text-xs text-[#ff7b72] flex items-center gap-2">
             <ShieldAlert size={15} />

@@ -136,47 +136,102 @@ class RenderClient:
             return {"ok": False, "error": str(e), "deploys": []}
 
     def get_logs(self, service_id: str, api_key: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        """Fetches recent logs from Render REST API or stream endpoint."""
+        """Fetches live logs and telemetry from Render API (combining service events, builds, and deploys)."""
         sid = service_id.strip()
-        url = f"{RENDER_API_BASE}/services/{sid}/logs?limit={limit}"
         headers = self._headers(api_key)
 
         if not headers.get("Authorization"):
             return {
                 "ok": False,
-                "error": "Render API key not provided. Add your key in Settings to stream live logs from Render.",
+                "error": "Render API key not provided. Add your key in Settings to stream live telemetry from Render.",
                 "logs": [],
+                "is_suspended": False,
             }
 
         try:
             with httpx.Client(timeout=10.0) as client:
-                res = client.get(url, headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    logs = []
-                    # Render logs format: list of log entries or text lines
-                    if isinstance(data, list):
-                        for entry in data:
-                            if isinstance(entry, dict):
-                                logs.append({
-                                    "timestamp": entry.get("timestamp", entry.get("createdAt", "")),
-                                    "message": entry.get("message", entry.get("text", "")),
-                                    "level": entry.get("level", "INFO").upper(),
-                                })
-                            elif isinstance(entry, str):
-                                logs.append({
-                                    "timestamp": "",
-                                    "message": entry,
-                                    "level": "ERROR" if any(w in entry.lower() for w in ["error", "traceback", "exception", "failed"]) else "INFO",
-                                })
-                    return {"ok": True, "logs": logs, "count": len(logs)}
-                elif res.status_code == 401:
+                # 1. Fetch service info to check if spun down / suspended
+                s_res = client.get(f"{RENDER_API_BASE}/services/{sid}", headers=headers)
+                svc = s_res.json() if s_res.status_code == 200 else {}
+                is_suspended = svc.get("suspended") == "suspended"
+                svc_name = svc.get("name", "production-service")
+
+                # 2. Fetch events from official Render API (/services/{id}/events)
+                events_url = f"{RENDER_API_BASE}/services/{sid}/events?limit={limit}"
+                evts_res = client.get(events_url, headers=headers)
+
+                logs = []
+
+                # If suspended (Render free-tier inactivity spin-down), inject explanatory banner log
+                if is_suspended:
+                    logs.append({
+                        "timestamp": "",
+                        "level": "WARN",
+                        "message": f"[STANDBY] Service '{svc_name}' is currently in sleep / suspended state (Render free-tier inactivity). Send an HTTP request to cold-start it.",
+                        "service": svc_name,
+                    })
+
+                if evts_res.status_code == 200:
+                    raw_events = evts_res.json()
+                    if isinstance(raw_events, list):
+                        for item in raw_events:
+                            e = item.get("event") if isinstance(item, dict) and "event" in item else item
+                            if not isinstance(e, dict):
+                                continue
+
+                            t = e.get("timestamp", "")
+                            etype = e.get("type", "")
+                            d = e.get("details") or {}
+
+                            lvl = "INFO"
+                            msg = f"[{etype.upper()}] Event recorded on {svc_name}"
+
+                            if etype == "deploy_ended":
+                                st = d.get("deployStatus", "")
+                                lvl = "INFO" if st == "succeeded" else "ERROR"
+                                dep_id = d.get("deployId", "")
+                                msg = f"[DEPLOY] Deployment {dep_id} status: {st.upper()}"
+                            elif etype == "build_ended":
+                                st = d.get("buildStatus", "")
+                                lvl = "INFO" if st == "succeeded" else "ERROR"
+                                bld_id = d.get("buildId", "")
+                                msg = f"[BUILD] Container image build {bld_id} {st.upper()}"
+                            elif etype == "build_started":
+                                trigger_user = d.get("trigger", {}).get("user", {}).get("email", "git push")
+                                bld_id = d.get("buildId", "")
+                                msg = f"[BUILD] Build {bld_id} started for {svc_name} (Trigger: {trigger_user})"
+                            elif etype == "deploy_started":
+                                dep_id = d.get("deployId", "")
+                                msg = f"[DEPLOY] Deploy {dep_id} started for {svc_name}"
+                            elif "suspend" in etype.lower():
+                                lvl = "WARN"
+                                msg = f"[POWER] Server entered standby / suspended state (inactivity spin-down)"
+                            elif "resume" in etype.lower():
+                                lvl = "INFO"
+                                msg = f"[POWER] Server container spun up / resumed"
+
+                            logs.append({
+                                "timestamp": t,
+                                "level": lvl,
+                                "message": msg,
+                                "service": svc_name,
+                            })
+
+                    return {
+                        "ok": True,
+                        "logs": logs,
+                        "count": len(logs),
+                        "is_suspended": is_suspended,
+                        "service_name": svc_name,
+                    }
+                elif evts_res.status_code == 401:
                     return {"ok": False, "error": "Invalid Render API Key (401 Unauthorized)", "logs": []}
-                elif res.status_code == 404:
+                elif evts_res.status_code == 404:
                     return {"ok": False, "error": f"Service '{sid}' not found on Render (404)", "logs": []}
                 else:
-                    return {"ok": False, "error": f"Render log query failed: HTTP {res.status_code}", "logs": []}
+                    return {"ok": False, "error": f"Render events query failed: HTTP {evts_res.status_code}", "logs": []}
         except Exception as e:
+            logger.warning(f"Failed to query Render service logs/events: {e}")
             return {"ok": False, "error": str(e), "logs": []}
 
     @staticmethod
