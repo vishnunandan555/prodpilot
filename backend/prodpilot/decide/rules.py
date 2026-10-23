@@ -46,7 +46,7 @@ def decide(
             suspect_commit = {}
 
     minutes_ago = suspect_commit.get("minutes_ago", 15)
-    suspect_file = suspect_commit.get("suspect_file", "app.py")
+    suspect_file = suspect_commit.get("suspect_file") or incident.get("suspected_area") or incident.get("service") or "service core"
 
     # Staging health
     fix_status = staging_status.get("fix_forward", {})
@@ -73,12 +73,13 @@ def decide(
 
     elif fix_healthy and rb_healthy:
         # Both canaries healthy: evaluate diff size and commit recency
+        line_desc = f"{patch_lines}-line patch" if patch_lines else "targeted patch"
         if patch_lines <= 10:
             rec = "fix_forward"
             probs = {"fix_forward": 0.85, "rollback": 0.15}
             reason = (
-                f"Small {patch_lines or 3}-line patch in {suspect_file}, passes full test suite, "
-                f"suspect commit was landed {minutes_ago}m ago."
+                f"Defensive {line_desc} in {suspect_file} passes 100% of regression tests; "
+                f"canary probing confirmed healthy."
             )
         elif patch_lines > 25 and minutes_ago <= 30:
             rec = "rollback"

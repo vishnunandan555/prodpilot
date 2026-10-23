@@ -954,47 +954,6 @@ export default function IncidentDetail({
               actionLoading={actionLoading}
             />
 
-            {/* Decision Engine Recommendation Card (Only active when awaiting approval or decision exists) */}
-            {decision && !isResolved && (
-              <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <Zap size={14} className="text-[#e3b341]" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[#8b949e]">
-                      Remediation Assessment
-                    </span>
-                  </div>
-                  <span className="text-xs font-semibold text-[#3fb950] bg-[#0d1e17] px-2 py-0.5 rounded border border-[#1b3d2b]">
-                    {ffConfidence}% Confidence Fix-Forward
-                  </span>
-                </div>
-
-                <p className="text-xs text-[#c9d1d9] leading-relaxed">
-                  {decision.reason || 'Synthesized defensive patch verified against reproduction tests. Safe to promote to production.'}
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
-                  <div className="p-3 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#3fb950] text-xs">Option A: Fix-Forward</span>
-                      <span className="text-[#3fb950] font-mono font-semibold text-xs">{ffConfidence}%</span>
-                    </div>
-                    <p className="text-xs text-[#8b949e]">
-                      Deploy verified canary patch with zero service downtime.
-                    </p>
-                  </div>
-                  <div className="p-3 rounded bg-[#07090f] border border-[#2e2350] space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#a371f7] text-xs">Option B: Rollback</span>
-                      <span className="text-[#a371f7] font-mono font-semibold text-xs">{rbConfidence}%</span>
-                    </div>
-                    <p className="text-xs text-[#8b949e]">
-                      Revert codebase to previous stable commit.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
