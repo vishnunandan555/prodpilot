@@ -110,7 +110,7 @@ def generate_rca_report(
     - recovery_recommendation: "ROLLBACK" or "FIX_FORWARD" override
     """
     incident_id = incident.get("id", "inc-unknown")
-    service = incident.get("service", "demo-prod")
+    service = incident.get("service") or "production-service"
     trace = incident.get("trace") or ""
     log_tail = incident.get("log_tail") or ""
 

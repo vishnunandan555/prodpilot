@@ -238,7 +238,7 @@ export default function IncidentDetail({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap text-xs">
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#07090f] text-[#58a6ff] border border-[#1b2234]">
-                      {incident.service || 'demo-prod'}
+                      {incident.service || 'production-service'}
                     </span>
                     <span className="text-[#6e7681]">·</span>
                     <span className="text-xs text-[#8b949e] flex items-center gap-1">

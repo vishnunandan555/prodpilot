@@ -36,7 +36,7 @@ class LogEntry(BaseModel):
 
 
 class IngestPayload(BaseModel):
-    service: str = "demo-prod"
+    service: str = "production-service"
     logs: List[Union[LogEntry, Dict[str, Any], str]] = Field(default_factory=list)
 
 

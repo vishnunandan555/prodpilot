@@ -660,7 +660,7 @@ def generate_incident_report(
 ) -> str:
     """Generates post-mortem markdown incident report and saves to SQLite artifacts."""
     inc = get_incident(incident_id, db_path=db_path) or {}
-    service = inc.get("service", "demo-prod")
+    service = inc.get("service") or "production-service"
     detected_at = inc.get("detected_at", "Unknown")
     resolved_at = datetime.now(timezone.utc).isoformat()
 

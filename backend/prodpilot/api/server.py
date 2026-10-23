@@ -89,7 +89,7 @@ class IssueAnalyzeRequest(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
     author: Optional[str] = "contributor"
-    repo: Optional[str] = "demo-prod"
+    repo: Optional[str] = "production-service"
 
 
 class IssueClarifyRequest(BaseModel):
@@ -494,7 +494,7 @@ def analyze_issue_endpoint(issue_id: str, body: Optional[IssueAnalyzeRequest] = 
             "title": body.title or f"Issue #{issue_id}",
             "body": body.body or "",
             "author": body.author or "contributor",
-            "repo": body.repo or "demo-prod",
+            "repo": body.repo or "production-service",
         }
         ISSUE_BRIEF_CACHE[str(issue_id)] = issue_dict
     elif str(issue_id) in ISSUE_BRIEF_CACHE:
@@ -508,7 +508,7 @@ def analyze_issue_endpoint(issue_id: str, body: Optional[IssueAnalyzeRequest] = 
                 "title": f"Incident {issue_id}: {inc.get('service', 'service')}",
                 "body": f"Trace:\n{inc.get('trace') or ''}\nLogs:\n{inc.get('log_tail') or ''}",
                 "author": "watcher",
-                "repo": inc.get("service", "demo-prod"),
+                "repo": inc.get("service", "production-service"),
             }
         else:
             issue_dict = {
@@ -516,7 +516,7 @@ def analyze_issue_endpoint(issue_id: str, body: Optional[IssueAnalyzeRequest] = 
                 "title": f"Issue #{issue_id}",
                 "body": "",
                 "author": "contributor",
-                "repo": "demo-prod",
+                "repo": "production-service",
             }
 
     # Run readiness analysis
