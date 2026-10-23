@@ -13,6 +13,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from backend.prodpilot.agents.factory import get_agent_adapter
 from backend.prodpilot.db import (
     get_incident,

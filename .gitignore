@@ -32,6 +32,11 @@ prodpilot.db
 *.log
 service.log
 
+# Environment & Secrets
+.env
+.env.local
+*.env
+
 # Node / Electron
 node_modules/
 dist-electron/
