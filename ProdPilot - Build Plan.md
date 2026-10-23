@@ -1,21 +1,27 @@
 # ProdPilot - Build Plan
 
-Realm Hack 2026 | 24-hour build window | Vishnu Nandan
+Realm Hack 2026 | Deadline: Tomorrow, 11:00 AM | Vishnu Nandan
+
+> **Current Time**: Friday, 4:07 PM (23 Oct 2026)  
+> **Submission Deadline**: Saturday, 11:00 AM (24 Oct 2026)  
+> **Total Time Remaining**: **~19 Hours (18h 53m)**
 
 Build in six phases across three decoupled parallel streams. Each phase ends at a verified gate; do not start the next phase until the gate passes. The demo floor is Gate 2: crash the service, tap Deploy on your phone, the service is healthy again. Everything after Gate 2 is a bonus.
 
 ---
 
-## 1. Phase Overview & Current Status
+## 1. Timeline & Phase Schedule (19-Hour Countdown)
 
-| Phase | Hours | Goal | Gate | Status |
+| Phase & Timeline | Duration | Goal | Gate | Status |
 |---|---|---|---|---|
-| **0. Setup and Spikes** | 0-2 | SDK works, Telegram talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
-| **1. Core Pipeline** | 2-8 | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
-| **2. Staging, Decisions, Telegram** | 8-14 | Phone approval restores service with post-mortem report | **Gate 2** (Demo Floor) | 🟡 **IN PROGRESS (ACTIVE)** |
-| **3. Desktop Dashboard** | 14-19 | Live SSE timeline, diff viewer, before/after evidence UI | **Gate 3** | ⚪ Prepared (Ready to wire) |
-| **4. Harden and Sponsor Integrations** | 19-22 | 3 clean runs in a row; Browser Use canary & Adaption AI eval | **Gate 4** | ⚪ Queued |
-| **5. Freeze and Pitch** | 22-24 | Backup video, slides, rehearsal | **Done** | ⚪ Queued |
+| **Phase 0: Setup & Spikes**<br>*(Passed)* | Completed | SDK works, Telegram talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
+| **Phase 1: Core Pipeline**<br>*(Passed)* | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
+| **Phase 2: Staging, Decisions, Telegram**<br>*(4:00 PM – 7:30 PM)* | **3.5 hours** | **Autonomous Orchestrator**: Phone approval restores service with post-mortem report | **Gate 2**<br>*(Demo Floor)* | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Phase 3: Desktop Live Dashboard**<br>*(7:30 PM – 11:30 PM)* | **4.0 hours** | Live SSE timeline, diff viewer, before/after evidence UI | **Gate 3** | ⚪ Prepared (Ready to wire) |
+| **Phase 4: Harden & Sponsor Integrations**<br>*(11:30 PM – 4:00 AM)* | **4.5 hours** | 3 clean runs in a row; Browser Use canary check; Adaption AI eval | **Gate 4** | ⚪ Queued |
+| **Sleep / Buffer Window**<br>*(4:00 AM – 7:00 AM)* | **3.0 hours** | Team rest & buffer time | — | ⚪ Scheduled |
+| **Phase 5: Freeze, Backup Video & Pitch**<br>*(7:00 AM – 9:30 AM)* | **2.5 hours** | Record 3-min backup video, polish pitch slides, rehearse demo | **Done** | ⚪ Queued |
+| **Final Submission Freeze**<br>*(9:30 AM – 11:00 AM)* | **1.5 hours** | Final clean demo run, Devfolio submission, project freeze | **Ship** | ⚪ Queued |
 
 ---
 
@@ -42,7 +48,7 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
 
 ---
 
-## 3. Current Phase: Phase 2 (Hours 8-14) – Gate 2 (The Demo Floor)
+## 3. Current Phase: Phase 2 (4:00 PM – 7:30 PM) – Gate 2 (The Demo Floor)
 
 **Goal**: Crash the service with `./scripts/trigger-crash.sh` -> Phone buzzes on Telegram with diagnosis and canary status -> Tap **`[🚀 Deploy Fix (8001)]`** on phone -> Service on port 8000 restored healthy, and an Incident Post-Mortem Report is saved.
 
@@ -54,10 +60,11 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
   - Spawns live canary instances: Fix-forward on `http://127.0.0.1:8001` and Rollback on `http://127.0.0.1:8002`.
   - Runs Decision Engine (`decide/rules.py`) to compute recommendation and confidence.
   - Advances incident status to `AWAITING_APPROVAL` and emits SSE event.
-- [ ] **Deploy Adapter & Post-Mortem Report (`backend/prodpilot/staging/deploy.py`)**:
+- [x] **Post-Mortem Report Generator (`backend/prodpilot/staging/deploy.py`)**:
+  - Implemented `generate_incident_report(...)` saving comprehensive markdown report to SQLite `artifacts` table.
+- [ ] **Deploy Adapter Verification**:
   - On `/incidents/{id}/approve`, promotes the chosen canary onto production port 8000.
   - Monitors health for 10s (triggers automatic emergency rollback if health check fails).
-  - Generates comprehensive markdown post-mortem report (`artifacts/incident_report.md`) containing root cause, git blame suspect commit, test evidence before/after, diff, and approval log.
 
 ### Stream B Tasks (Agent 2 - Desktop Live Experience):
 - [ ] **Live SSE Timeline Integration (`desktop/src/`)**:
@@ -71,9 +78,8 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
   - Render the generated post-mortem report when incident reaches `DEPLOYED`.
 
 ### Stream C Tasks (Agent 3 - Visihot Telegram Cloud Bot):
-- [ ] **Visihot Reconnect Resilience (`app.py`, `bot.py`)**:
-  - Ensure bot handles network reconnects to the Cloudflare public tunnel (`https://developing-dimensional-acknowledged-minimal.trycloudflare.com`).
-- [ ] **Live Approval Action**:
+- [x] **Visihot Entrypoint**: Added `app.py` forwarding to `bot.py` for Pterodactyl container.
+- [ ] **Live Approval Action via Cloudflare Tunnel**:
   - Receive proactive alert when incident enters `AWAITING_APPROVAL`.
   - Tapping `[🚀 Deploy Fix (8001)]` calls public tunnel `/approve` endpoint, updates message to `⏳ Deploying...`, and confirms with `✅ PROD RESTORED`.
   - Command `/report` sends the markdown post-mortem report summary.
@@ -88,28 +94,26 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
 
 ---
 
-## 4. Phase 3: Dashboard & Polish (Hours 14-19)
+## 4. Phase 3: Desktop Dashboard & Polish (7:30 PM – 11:30 PM)
 
-- Desktop Electron app packaging dev mode.
+- Desktop Electron app packaging / dev mode verification.
 - Agent Follow-Up Panel: allows operator to submit extra instructions ("use dict.get instead of removing schema") and re-runs pipeline on same worktree.
 - Read-only GitHub issue sync (if time permits).
 
 ---
 
-## 5. Phase 4: Harden & Sponsor Track Integrations (Hours 19-22)
+## 5. Phase 4: Harden & Sponsor Integrations (11:30 PM – 4:00 AM)
 
-- **Browser Use (Hero Sponsor)**: Autonomous browser-based canary check on `http://localhost:8001/checkout` ensuring visual checkout completion.
+- **3 Consecutive Clean Runs**: Trigger crash -> autonomous fix -> deploy -> verify 3 times in a row without manual code edits.
+- **Browser Use (Hero Sponsor)**: Autonomous browser-based canary check on `http://localhost:8001/checkout` ensuring visual checkout completion without error screens.
 - **Adaption AI ($500 Credits)**: Route LLM brief synthesis and evaluation benchmarking through Adaption AI endpoints.
 - **Render (Innovation Partner)**: Optional remote deploy webhook adapter.
 
 ---
 
-## 6. Phase 5: Freeze & Pitch (Hours 22-24)
+## 6. Phase 5: Freeze, Backup Video & Pitch (7:00 AM – 11:00 AM)
 
-- Code freeze, tag final version.
-- Record 3-minute demo backup video.
-- Rehearse 3-minute pitch:
-  1. Problem (15s): AI writes code fast, but verifying & recovering in production is manual.
-  2. The Demo (90s): Crash service -> Phone buzzes with diagnosis & two staged options -> Tap Deploy Fix on phone -> Service back in seconds.
-  3. Unique Value (45s): Repro-first proof, typed decision engine, canary staging, local-first control.
-  4. Roadmap (30s): Server daemon mode, Docker/K8s adapters, APM integration.
+- **7:00 AM – 8:30 AM**: Record 3-minute demo backup video showing the phone approval and desktop timeline.
+- **8:30 AM – 9:30 AM**: Polish pitch slides (highlighting problem, last-mile restart-ready innovation, sponsor tracks, and roadmap).
+- **9:30 AM – 10:30 AM**: Dry run pitch twice with the backup video on standby.
+- **10:30 AM – 11:00 AM**: Final freeze and Devfolio project submission!
