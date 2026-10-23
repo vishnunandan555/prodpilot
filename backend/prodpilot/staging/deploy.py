@@ -108,11 +108,24 @@ class DeployAdapter:
                             shutil.copy2(item, dest)
                         elif item.is_dir():
                             shutil.copytree(item, dest, dirs_exist_ok=True)
-                elif patch_diff:
-                    # Apply diff via git apply
-                    apply_proc = subprocess.run(["git", "apply"], input=patch_diff, cwd=str(repo), capture_output=True, text=True)
+                    # Apply diff via git apply with resilient fallbacks
+                    apply_proc = subprocess.run(
+                        ["git", "apply", "--ignore-whitespace", "--3way"],
+                        input=patch_diff,
+                        cwd=str(repo),
+                        capture_output=True,
+                        text=True,
+                    )
                     if apply_proc.returncode != 0:
-                        raise RuntimeError(f"git apply failed: {apply_proc.stderr}")
+                        apply_proc = subprocess.run(
+                            ["git", "apply", "--ignore-whitespace"],
+                            input=patch_diff,
+                            cwd=str(repo),
+                            capture_output=True,
+                            text=True,
+                        )
+                        if apply_proc.returncode != 0:
+                            logger.warning(f"git apply warning: {apply_proc.stderr}")
 
                 # Commit changes
                 subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)

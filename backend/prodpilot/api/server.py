@@ -61,6 +61,7 @@ deploy_adapter = DeployAdapter(prod_port=int(os.environ.get("PROD_PORT", 8000)))
 class ApproveRequest(BaseModel):
     action: str  # "fix_forward" or "rollback"
     source: str = "desktop_ui"  # "telegram", "desktop_ui", or "cli"
+    repo_path: Optional[str] = None
 
 
 class RejectRequest(BaseModel):
@@ -309,7 +310,7 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
     )
 
     # Find repo path for the service (demo-prod)
-    repo_path = os.environ.get("DEMO_PROD_PATH")
+    repo_path = body.repo_path or os.environ.get("DEMO_PROD_PATH")
     if not repo_path or not Path(repo_path).exists():
         # Look in workspace
         candidate = Path(__file__).resolve().parent.parent.parent.parent / "demo-prod"
