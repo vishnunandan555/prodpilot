@@ -1,12 +1,13 @@
 import React from 'react';
-import { User, LogOut } from 'lucide-react';
+import { User, LogOut, RefreshCw } from 'lucide-react';
 
 export default function WindowHeader({
   apiConnected,
   currentUser,
   onLogout,
   onOpenAuth,
-  onOpenProfile
+  onOpenProfile,
+  isRefreshing = false
 }) {
   return (
     <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
@@ -20,7 +21,13 @@ export default function WindowHeader({
 
       {/* Right: API Status & Operator Profile */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+        <div className="flex items-center gap-2 text-xs text-[#8b949e]">
+          {isRefreshing && (
+            <span className="flex items-center gap-1.5 text-[#58a6ff] px-2 py-0.5 rounded bg-[#161f30] border border-[#263550] text-[10px] font-mono animate-in fade-in duration-150">
+              <RefreshCw size={10} className="animate-spin" />
+              <span className="hidden sm:inline">Syncing...</span>
+            </span>
+          )}
           {apiConnected ? (
             <span className="flex items-center gap-1.5 text-[#3fb950] px-2 py-0.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[11px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />

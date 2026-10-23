@@ -5,6 +5,7 @@ and stream live production logs.
 """
 
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 import httpx
@@ -12,6 +13,11 @@ import httpx
 logger = logging.getLogger(__name__)
 
 RENDER_API_BASE = "https://api.render.com/v1"
+
+# In-memory caches to respect Render API rate limits (30 req/min on /v1/logs)
+_SERVICE_META_CACHE: Dict[str, Dict[str, Any]] = {}
+_OWNER_ID_CACHE: Dict[str, str] = {}
+_LAST_LOGS_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 class RenderClient:
@@ -136,7 +142,7 @@ class RenderClient:
             return {"ok": False, "error": str(e), "deploys": []}
 
     def get_logs(self, service_id: str, api_key: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        """Fetches live logs and telemetry from Render API (combining service events, builds, and deploys)."""
+        """Fetches live application stdout/stderr logs from Render API v1 with rate limit tracking."""
         sid = service_id.strip()
         headers = self._headers(api_key)
 
@@ -148,88 +154,134 @@ class RenderClient:
                 "is_suspended": False,
             }
 
+        now = time.time()
+
         try:
             with httpx.Client(timeout=10.0) as client:
-                # 1. Fetch service info to check if spun down / suspended
-                s_res = client.get(f"{RENDER_API_BASE}/services/{sid}", headers=headers)
-                svc = s_res.json() if s_res.status_code == 200 else {}
-                is_suspended = svc.get("suspended") == "suspended"
-                svc_name = svc.get("name", "production-service")
+                # 1. Resolve service metadata with 60s cache to preserve Render API quota
+                cached_meta = _SERVICE_META_CACHE.get(sid)
+                if not cached_meta or (now - cached_meta.get("cached_at", 0)) > 60:
+                    s_res = client.get(f"{RENDER_API_BASE}/services/{sid}", headers=headers)
+                    if s_res.status_code == 200:
+                        svc = s_res.json()
+                        cached_meta = {
+                            "is_suspended": svc.get("suspended") == "suspended",
+                            "svc_name": svc.get("name", "production-service"),
+                            "owner_id": svc.get("ownerId"),
+                            "cached_at": now,
+                        }
+                        _SERVICE_META_CACHE[sid] = cached_meta
+                    else:
+                        cached_meta = cached_meta or {
+                            "is_suspended": False,
+                            "svc_name": "production-service",
+                            "owner_id": None,
+                            "cached_at": now,
+                        }
 
-                # 2. Fetch events from official Render API (/services/{id}/events)
-                events_url = f"{RENDER_API_BASE}/services/{sid}/events?limit={limit}"
-                evts_res = client.get(events_url, headers=headers)
+                is_suspended = cached_meta.get("is_suspended", False)
+                svc_name = cached_meta.get("svc_name", "production-service")
+                owner_id = cached_meta.get("owner_id")
+
+                # Resolve owner_id with long-lived cache
+                cache_key = headers.get("Authorization", "")
+                if not owner_id:
+                    owner_id = _OWNER_ID_CACHE.get(cache_key)
+                if not owner_id:
+                    owners_res = client.get(f"{RENDER_API_BASE}/owners", headers=headers)
+                    if owners_res.status_code == 200:
+                        raw_owners = owners_res.json()
+                        if raw_owners and isinstance(raw_owners, list):
+                            owner_id = raw_owners[0].get("owner", {}).get("id")
+                            if owner_id:
+                                _OWNER_ID_CACHE[cache_key] = owner_id
+                                cached_meta["owner_id"] = owner_id
 
                 logs = []
+                rate_limit = {"limit": 30, "remaining": 30, "reset": 0}
 
-                # If suspended (Render free-tier inactivity spin-down), inject explanatory banner log
+                # 2. Query official Render application runtime logs endpoint (GET /v1/logs)
+                if owner_id:
+                    logs_url = f"{RENDER_API_BASE}/logs?ownerId={owner_id}&resource={sid}&limit={limit}&direction=backward"
+                    logs_res = client.get(logs_url, headers=headers)
+
+                    # Extract rate limit headers from Render response
+                    try:
+                        rate_limit = {
+                            "limit": int(logs_res.headers.get("ratelimit-limit", 30)),
+                            "remaining": int(logs_res.headers.get("ratelimit-remaining", 30)),
+                            "reset": int(logs_res.headers.get("ratelimit-reset", 0)),
+                        }
+                    except Exception:
+                        pass
+
+                    if logs_res.status_code == 429:
+                        # Graceful handling for rate limit ceiling: return cached logs
+                        logger.warning(f"Render API rate limit reached (429). Reset in {rate_limit.get('reset')}s")
+                        last_cache = _LAST_LOGS_CACHE.get(sid, {})
+                        return {
+                            "ok": True,
+                            "logs": last_cache.get("logs", []),
+                            "count": len(last_cache.get("logs", [])),
+                            "is_suspended": is_suspended,
+                            "service_name": svc_name,
+                            "rate_limit": rate_limit,
+                            "rate_limited": True,
+                        }
+
+                    if logs_res.status_code == 200:
+                        raw_logs = logs_res.json().get("logs", [])
+                        for item in raw_logs:
+                            raw_msg = item.get("message", "")
+                            # Strip ANSI formatting codes
+                            clean_msg = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]', '', raw_msg).strip()
+                            if not clean_msg:
+                                continue
+
+                            labels = item.get("labels", [])
+                            raw_lvl = next((l.get("value") for l in labels if l.get("name") == "level"), "INFO").upper()
+
+                            msg_lower = clean_msg.lower()
+                            if raw_lvl in ("CRITICAL", "ERROR") or "zerodivisionerror" in msg_lower or "fatal" in msg_lower or "traceback" in msg_lower:
+                                lvl = "ERROR"
+                            elif raw_lvl in ("WARN", "WARNING") or "warning" in msg_lower:
+                                lvl = "WARN"
+                            else:
+                                lvl = "INFO"
+
+                            logs.append({
+                                "id": item.get("id"),
+                                "timestamp": item.get("timestamp", ""),
+                                "level": lvl,
+                                "message": clean_msg,
+                                "service": svc_name,
+                            })
+
+                # Sort logs by timestamp descending (newest first)
+                logs.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+
+                # Cache recent logs for rate limit fallbacks
+                _LAST_LOGS_CACHE[sid] = {"logs": logs, "cached_at": now}
+
+                # If suspended (Render free-tier inactivity spin-down), inject banner at top
                 if is_suspended:
-                    logs.append({
+                    logs.insert(0, {
+                        "id": "banner-standby",
                         "timestamp": "",
                         "level": "WARN",
                         "message": f"[STANDBY] Service '{svc_name}' is currently in sleep / suspended state (Render free-tier inactivity). Send an HTTP request to cold-start it.",
                         "service": svc_name,
                     })
 
-                if evts_res.status_code == 200:
-                    raw_events = evts_res.json()
-                    if isinstance(raw_events, list):
-                        for item in raw_events:
-                            e = item.get("event") if isinstance(item, dict) and "event" in item else item
-                            if not isinstance(e, dict):
-                                continue
-
-                            t = e.get("timestamp", "")
-                            etype = e.get("type", "")
-                            d = e.get("details") or {}
-
-                            lvl = "INFO"
-                            msg = f"[{etype.upper()}] Event recorded on {svc_name}"
-
-                            if etype == "deploy_ended":
-                                st = d.get("deployStatus", "")
-                                lvl = "INFO" if st == "succeeded" else "ERROR"
-                                dep_id = d.get("deployId", "")
-                                msg = f"[DEPLOY] Deployment {dep_id} status: {st.upper()}"
-                            elif etype == "build_ended":
-                                st = d.get("buildStatus", "")
-                                lvl = "INFO" if st == "succeeded" else "ERROR"
-                                bld_id = d.get("buildId", "")
-                                msg = f"[BUILD] Container image build {bld_id} {st.upper()}"
-                            elif etype == "build_started":
-                                trigger_user = d.get("trigger", {}).get("user", {}).get("email", "git push")
-                                bld_id = d.get("buildId", "")
-                                msg = f"[BUILD] Build {bld_id} started for {svc_name} (Trigger: {trigger_user})"
-                            elif etype == "deploy_started":
-                                dep_id = d.get("deployId", "")
-                                msg = f"[DEPLOY] Deploy {dep_id} started for {svc_name}"
-                            elif "suspend" in etype.lower():
-                                lvl = "WARN"
-                                msg = f"[POWER] Server entered standby / suspended state (inactivity spin-down)"
-                            elif "resume" in etype.lower():
-                                lvl = "INFO"
-                                msg = f"[POWER] Server container spun up / resumed"
-
-                            logs.append({
-                                "timestamp": t,
-                                "level": lvl,
-                                "message": msg,
-                                "service": svc_name,
-                            })
-
-                    return {
-                        "ok": True,
-                        "logs": logs,
-                        "count": len(logs),
-                        "is_suspended": is_suspended,
-                        "service_name": svc_name,
-                    }
-                elif evts_res.status_code == 401:
-                    return {"ok": False, "error": "Invalid Render API Key (401 Unauthorized)", "logs": []}
-                elif evts_res.status_code == 404:
-                    return {"ok": False, "error": f"Service '{sid}' not found on Render (404)", "logs": []}
-                else:
-                    return {"ok": False, "error": f"Render events query failed: HTTP {evts_res.status_code}", "logs": []}
+                return {
+                    "ok": True,
+                    "logs": logs,
+                    "count": len(logs),
+                    "is_suspended": is_suspended,
+                    "service_name": svc_name,
+                    "rate_limit": rate_limit,
+                    "rate_limited": False,
+                }
         except Exception as e:
             logger.warning(f"Failed to query Render service logs/events: {e}")
             return {"ok": False, "error": str(e), "logs": []}

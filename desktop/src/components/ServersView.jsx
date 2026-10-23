@@ -19,6 +19,7 @@ import {
   FolderGit2,
   Sparkles
 } from 'lucide-react';
+import { ListItemSkeleton } from './LoadingSkeleton';
 
 export default function ServersView({ apiUrl, onNavigateToLogs }) {
   const [servers, setServers] = useState([]);
@@ -345,7 +346,15 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
       </div>
 
       {/* Main Content Area */}
-      {servers.length === 0 ? (
+      {loading && servers.length === 0 ? (
+        <div className="flex-1 p-8 max-w-4xl w-full mx-auto space-y-4 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-2">
+            <RefreshCw size={13} className="animate-spin" />
+            <span>Discovering production servers...</span>
+          </div>
+          <ListItemSkeleton count={2} />
+        </div>
+      ) : servers.length === 0 ? (
         /* Empty State */
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#121824] border border-[#23314d] flex items-center justify-center text-[#58a6ff] mb-4 shadow-xl">
@@ -464,7 +473,15 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                     )}
                   </div>
 
-                  {renderDetails?.service ? (
+                  {detailsLoading && !renderDetails?.service ? (
+                    <div className="py-2 space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                        <RefreshCw size={12} className="animate-spin" />
+                        <span>Fetching Render service details...</span>
+                      </div>
+                      <ListItemSkeleton count={2} />
+                    </div>
+                  ) : renderDetails?.service ? (
                     <div className="space-y-3 text-xs">
                       <div className="flex justify-between py-1 border-b border-[#161f30]">
                         <span className="text-[#8b949e]">Service Name</span>
@@ -519,7 +536,15 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                     </span>
                   </div>
 
-                  {renderDetails?.deploys && renderDetails.deploys.length > 0 ? (
+                  {detailsLoading && (!renderDetails?.deploys || renderDetails.deploys.length === 0) ? (
+                    <div className="py-2 space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                        <RefreshCw size={12} className="animate-spin" />
+                        <span>Querying deployment history...</span>
+                      </div>
+                      <ListItemSkeleton count={2} />
+                    </div>
+                  ) : renderDetails?.deploys && renderDetails.deploys.length > 0 ? (
                     <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                       {renderDetails.deploys.map((dep) => (
                         <div

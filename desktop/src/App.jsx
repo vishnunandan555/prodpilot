@@ -12,6 +12,7 @@ import TeamView from './components/TeamView';
 import SettingsView from './components/SettingsView';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
+import { GlobalProgressBar } from './components/LoadingSkeleton';
 
 // Read API URL from Vite environment variable (Cloudflare Tunnel URL) with localStorage fallback
 const getInitialApiUrl = () => {
@@ -298,7 +299,10 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden">
+    <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden relative">
+      {/* Top Ambient Activity Bar */}
+      <GlobalProgressBar active={isRefreshing} />
+
       {/* Top Window Header */}
       <div className="hidden sm:block flex-shrink-0">
         <WindowHeader
@@ -307,6 +311,7 @@ export default function App() {
           onLogout={handleLogout}
           onOpenAuth={() => setShowAuthModal(true)}
           onOpenProfile={() => setShowProfileModal(true)}
+          isRefreshing={isRefreshing}
         />
       </div>
 
@@ -327,6 +332,7 @@ export default function App() {
             apiBaseUrl={apiUrl}
             incidentFilter={incidentFilter}
             setIncidentFilter={setIncidentFilter}
+            isRefreshing={isRefreshing}
           />
         )}
 

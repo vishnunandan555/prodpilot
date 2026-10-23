@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   X
 } from 'lucide-react';
+import { ListItemSkeleton } from './LoadingSkeleton';
 
 export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser = null, onOpenProfile = null }) {
   const [users, setUsers] = useState([]);
@@ -158,7 +159,15 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
 
       {/* Main Content */}
       <div className="p-6 max-w-4xl w-full mx-auto space-y-4">
-        {users.length === 0 ? (
+        {loading && users.length === 0 ? (
+          <div className="space-y-3 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+              <RefreshCw size={13} className="animate-spin" />
+              <span>Loading on-call team roster...</span>
+            </div>
+            <ListItemSkeleton count={3} />
+          </div>
+        ) : users.length === 0 ? (
           /* Empty State */
           <div className="p-12 text-center rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
             <div className="w-12 h-12 rounded-xl bg-[#121824] border border-[#222f47] flex items-center justify-center text-[#8b949e] mx-auto">

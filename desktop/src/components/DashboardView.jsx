@@ -21,6 +21,7 @@ import {
   GitBranch,
   Radio
 } from 'lucide-react';
+import { StatCardsSkeleton, ListItemSkeleton } from './LoadingSkeleton';
 
 export default function DashboardView({
   incidents = [],
@@ -34,6 +35,7 @@ export default function DashboardView({
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [services, setServices] = useState([]);
 
   const fetchTopology = async () => {
@@ -61,6 +63,7 @@ export default function DashboardView({
       console.warn('Dashboard topology fetch error:', err);
     } finally {
       setLoading(false);
+      setInitialLoaded(true);
     }
   };
 
@@ -179,8 +182,18 @@ export default function DashboardView({
 
       {/* Main Body */}
       <div className="p-6 max-w-6xl w-full mx-auto space-y-6">
-        {/* CASE A: USER HAS NO PROJECTS YET (Clean, Zero-Mock User Onboarding State) */}
-        {!hasProjects ? (
+        {!initialLoaded && loading ? (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+              <RefreshCw size={13} className="animate-spin" />
+              <span>Loading telemetry and dashboard topology...</span>
+            </div>
+            <StatCardsSkeleton />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <ListItemSkeleton count={3} />
+            </div>
+          </div>
+        ) : !hasProjects ? (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Welcome & Connect Hero */}
             <div className="p-8 rounded-2xl bg-gradient-to-b from-[#0e1422] to-[#0a0e17] border border-[#1b253b] shadow-xl text-center relative overflow-hidden">

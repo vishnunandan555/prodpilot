@@ -110,3 +110,41 @@ code, pre, .font-mono {
   color: #ffffff;
   border-color: #da3633;
 }
+
+/* Smooth Shimmer & Progress Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    rgba(22, 31, 48, 0.45) 25%,
+    rgba(38, 54, 84, 0.75) 50%,
+    rgba(22, 31, 48, 0.45) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+@keyframes topProgress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.top-progress-bar {
+  animation: topProgress 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+

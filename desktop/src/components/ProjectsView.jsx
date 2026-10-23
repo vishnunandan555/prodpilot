@@ -18,6 +18,7 @@ import {
   Search,
   MessageSquare
 } from 'lucide-react';
+import { ListItemSkeleton } from './LoadingSkeleton';
 
 export default function ProjectsView({ apiUrl }) {
   const [projects, setProjects] = useState([]);
@@ -322,7 +323,15 @@ export default function ProjectsView({ apiUrl }) {
       </div>
 
       {/* Main Content Area */}
-      {projects.length === 0 ? (
+      {loading && projects.length === 0 ? (
+        <div className="flex-1 p-8 max-w-4xl w-full mx-auto space-y-4 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-2">
+            <RefreshCw size={13} className="animate-spin" />
+            <span>Connecting to project repositories...</span>
+          </div>
+          <ListItemSkeleton count={3} />
+        </div>
+      ) : projects.length === 0 ? (
         /* Empty State */
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#121824] border border-[#23314d] flex items-center justify-center text-[#58a6ff] mb-4 shadow-xl">
@@ -525,7 +534,15 @@ export default function ProjectsView({ apiUrl }) {
                   </span>
                 </div>
 
-                {issues.length === 0 ? (
+                {dataLoading && issues.length === 0 ? (
+                  <div className="py-4 space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                      <RefreshCw size={12} className="animate-spin" />
+                      <span>Fetching issues from GitHub...</span>
+                    </div>
+                    <ListItemSkeleton count={3} />
+                  </div>
+                ) : issues.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
                     <CheckCircle2 size={28} className="mx-auto text-[#3fb950] mb-2" />
                     <p className="text-xs text-[#f0f6fc] font-semibold">No issues found</p>
@@ -651,7 +668,15 @@ export default function ProjectsView({ apiUrl }) {
                   </span>
                 </div>
 
-                {prs.length === 0 ? (
+                {dataLoading && prs.length === 0 ? (
+                  <div className="py-4 space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                      <RefreshCw size={12} className="animate-spin" />
+                      <span>Fetching pull requests from GitHub...</span>
+                    </div>
+                    <ListItemSkeleton count={3} />
+                  </div>
+                ) : prs.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
                     <GitPullRequest size={28} className="mx-auto text-[#8b949e] mb-2" />
                     <p className="text-xs text-[#f0f6fc] font-semibold">No pull requests</p>
@@ -758,7 +783,15 @@ export default function ProjectsView({ apiUrl }) {
                   <span className="text-xs text-[#8b949e] font-mono">Real-time status via GitHub REST API</span>
                 </div>
 
-                {deploys.length === 0 ? (
+                {dataLoading && deploys.length === 0 ? (
+                  <div className="py-4 space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                      <RefreshCw size={12} className="animate-spin" />
+                      <span>Checking GitHub Actions workflow runs...</span>
+                    </div>
+                    <ListItemSkeleton count={3} />
+                  </div>
+                ) : deploys.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
                     <CheckCircle2 size={28} className="mx-auto text-[#8b949e] mb-2" />
                     <p className="text-xs text-[#f0f6fc] font-semibold">No GitHub Actions workflow runs found</p>
@@ -857,7 +890,15 @@ export default function ProjectsView({ apiUrl }) {
                   <span className="text-xs text-[#8b949e] font-mono">{currentProject?.local_path}</span>
                 </div>
 
-                {commits.length === 0 ? (
+                {dataLoading && commits.length === 0 ? (
+                  <div className="py-4 space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                      <RefreshCw size={12} className="animate-spin" />
+                      <span>Reading local git commits...</span>
+                    </div>
+                    <ListItemSkeleton count={3} />
+                  </div>
+                ) : commits.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
                     <GitBranch size={28} className="mx-auto text-[#8b949e] mb-2" />
                     <p className="text-xs text-[#f0f6fc] font-semibold">No commits found</p>

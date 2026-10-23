@@ -21,7 +21,8 @@ export default function Sidebar({
   onSelectIncident,
   apiConnected,
   incidentFilter = 'all',
-  setIncidentFilter
+  setIncidentFilter,
+  isRefreshing = false
 }) {
   const activeCount = incidents.filter(
     (i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK'
@@ -134,7 +135,12 @@ export default function Sidebar({
 
         {/* Scrollable Incident Items */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-          {filteredIncidents.length === 0 ? (
+          {isRefreshing && incidents.length === 0 ? (
+            <div className="space-y-2 p-1 animate-in fade-in duration-200">
+              <div className="h-14 rounded-md bg-[#161f30]/60 animate-pulse border border-[#1b2234]" />
+              <div className="h-14 rounded-md bg-[#161f30]/40 animate-pulse border border-[#1b2234]" />
+            </div>
+          ) : filteredIncidents.length === 0 ? (
             <div className="py-8 text-center text-[#6e7681] text-xs">
               No {incidentFilter === 'all' ? '' : incidentFilter} incidents
             </div>
