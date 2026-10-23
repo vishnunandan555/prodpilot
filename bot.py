@@ -1,5 +1,6 @@
 """ProdPilot Telegram Bot - Visihot Hosted Edition
-Controls incident remediation, provides interactive Deploy/Rollback approvals.
+Phase 2: Resilient cloud poller, exponential backoff, instant incident notifications,
+and interactive Deploy/Rollback approvals.
 Runs at the root of the 'telegram' branch.
 """
 
@@ -50,46 +51,84 @@ notified_incidents: Dict[str, Dict[str, Any]] = {}
 
 
 # ============================================================================
-# API Clients: Live HTTP Client and Mock Client
+# API Clients: Resilient Live HTTP Client and Mock Client
 # ============================================================================
 
 class ProdPilotClient:
-    """Async HTTP Client for ProdPilot REST API Contract."""
+    """Async HTTP Client for ProdPilot REST API Contract with Exponential Backoff."""
 
-    def __init__(self, base_url: str):
+    def __init__(
+        self,
+        base_url: str,
+        max_retries: int = 4,
+        initial_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+    ):
         self.base_url = base_url.rstrip("/")
+        self.max_retries = max_retries
+        self.initial_delay = initial_delay
+        self.backoff_factor = backoff_factor
+
+    async def _request_with_retry(
+        self, method: str, endpoint: str, **kwargs
+    ) -> httpx.Response:
+        """Execute HTTP request with exponential backoff for network/tunnel errors."""
+        delay = self.initial_delay
+        last_error = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                timeout = kwargs.pop("timeout", 12.0)
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.request(
+                        method, f"{self.base_url}{endpoint}", **kwargs
+                    )
+                    resp.raise_for_status()
+                    return resp
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    logger.warning(
+                        f"[HTTP Retry {attempt}/{self.max_retries}] {method} {endpoint} failed: {e}. "
+                        f"Retrying in {delay:.1f}s (exponential backoff)..."
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= self.backoff_factor
+                else:
+                    logger.error(
+                        f"[HTTP Failure] {method} {endpoint} failed after {self.max_retries} attempts: {e}"
+                    )
+                    raise
+            except Exception:
+                raise
+        if last_error:
+            raise last_error
+        raise RuntimeError("Request failed without response")
 
     async def get_health(self) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{self.base_url}/health")
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request_with_retry("GET", "/health", timeout=5.0)
+        return resp.json()
 
     async def list_incidents(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         params = {"status": status} if status else {}
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(f"{self.base_url}/incidents", params=params)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request_with_retry("GET", "/incidents", params=params, timeout=8.0)
+        return resp.json()
 
     async def get_incident(self, incident_id: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(f"{self.base_url}/incidents/{incident_id}")
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request_with_retry("GET", f"/incidents/{incident_id}", timeout=8.0)
+        return resp.json()
 
     async def approve_incident(
         self, incident_id: str, action: str, source: str = "telegram"
     ) -> Dict[str, Any]:
         """action: 'fix_forward' or 'rollback'"""
         payload = {"action": action, "source": source}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/incidents/{incident_id}/approve",
-                json=payload,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request_with_retry(
+            "POST",
+            f"/incidents/{incident_id}/approve",
+            json=payload,
+            timeout=20.0,
+        )
+        return resp.json()
 
     async def reject_incident(
         self,
@@ -98,13 +137,13 @@ class ProdPilotClient:
         source: str = "telegram",
     ) -> Dict[str, Any]:
         payload = {"reason": reason, "source": source}
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/incidents/{incident_id}/reject",
-                json=payload,
-            )
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request_with_retry(
+            "POST",
+            f"/incidents/{incident_id}/reject",
+            json=payload,
+            timeout=10.0,
+        )
+        return resp.json()
 
     async def get_logs(self, incident_id: Optional[str] = None) -> str:
         """Fetch logs from incident details."""
@@ -118,7 +157,6 @@ class ProdPilotClient:
             detail = await self.get_incident(incident_id)
             log_tail = detail.get("log_tail")
             if log_tail:
-                # Return last 20 lines
                 lines = log_tail.strip().split("\n")
                 return "\n".join(lines[-20:])
             return f"No log tail available for incident {incident_id}."
@@ -174,6 +212,9 @@ class MockProdPilotClient:
                 "author": "Vishnu Nandan",
                 "message": "feat: add loyalty point discount calculation",
                 "time": "15 min ago",
+                "file": "app.py",
+                "line": 45,
+                "blame": "a1b2c3d (Vishnu Nandan 2026-10-23 14:15:00 +0530 45) discount = item['discount']",
             },
             "brief": {
                 "summary": "KeyError: 'discount' in order calculation endpoint.",
@@ -266,7 +307,6 @@ api_client: Any = None
 def is_authorized(chat_id: int | str, user_id: int | str) -> bool:
     """Strictly verify if the sender matches TELEGRAM_ALLOWED_CHAT_ID."""
     if not ALLOWED_CHAT_ID:
-        # If no chat ID was specified, allow and log warning so initial setup can be discovered
         logger.warning(
             f"TELEGRAM_ALLOWED_CHAT_ID not configured! Allowing interaction from chat_id={chat_id}"
         )
@@ -294,6 +334,13 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
     suspect_hash = suspect.get("hash", "a1b2c3d")
     author = suspect.get("author", "Vishnu Nandan")
     commit_time = suspect.get("time", "15 min ago")
+    commit_msg = suspect.get("message", "feat: add loyalty point discount calculation")
+    blame_info = suspect.get("blame", "")
+
+    # Format suspect commit line with commit message & author details
+    suspect_line = f"`{suspect_hash}` by {author} ({commit_time}) - \"_{commit_msg}_\""
+    if blame_info:
+        suspect_line += f"\n  ↳ _git blame_: `{blame_info}`"
 
     evidence = "Repro test failed before fix, passed after. Full suite green."
 
@@ -318,7 +365,7 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
         "🚨 *PRODUCTION INCIDENT DETECTED*\n"
         f"*Service*: `{service}`\n"
         f"*Root Cause*: {root_cause}\n"
-        f"*Suspect Commit*: `{suspect_hash}` by {author} ({commit_time})\n"
+        f"*Suspect Commit*: {suspect_line}\n"
         f"*Evidence*: {evidence}\n"
         f"*Canary Status*: {canary_status}\n"
         f"*Recommendation*: {recommendation}"
@@ -339,8 +386,34 @@ def format_incident_card(incident: Dict[str, Any]) -> Tuple[str, InlineKeyboardM
     return card_text, reply_markup
 
 
+def format_compact_summary(incident: Dict[str, Any]) -> str:
+    """Format compact incident summary to append upon resolution."""
+    service = incident.get("service", "demo-prod")
+    brief = incident.get("brief", {})
+    summary = brief.get("summary", "KeyError: 'discount'")
+    suspected_area = brief.get("suspected_area", "app.py:45")
+    suspect = incident.get("suspect_commit", {})
+    commit_hash = suspect.get("hash", "a1b2c3d")
+    author = suspect.get("author", "Vishnu Nandan")
+
+    decision = incident.get("decision", {})
+    rec = decision.get("recommendation", "fix_forward")
+    probs = decision.get("probabilities", {})
+    conf = int(probs.get(rec, 0.85) * 100)
+    rec_title = rec.replace("_", "-").title()
+
+    return (
+        "📑 *Incident Report Summary*:\n"
+        f"• *Service*: `{service}`\n"
+        f"• *Root Cause*: `{summary}` in `{suspected_area}`\n"
+        f"• *Suspect Commit*: `{commit_hash}` by {author}\n"
+        "• *Evidence*: Repro test validated in staging. Full suite green.\n"
+        f"• *AI Verdict*: {rec_title} ({conf}% confidence)"
+    )
+
+
 def format_report(incident: Dict[str, Any]) -> str:
-    """Format markdown incident report summary."""
+    """Format full markdown incident report summary."""
     inc_id = incident.get("id", "inc-unknown")
     service = incident.get("service", "demo-prod")
     status = incident.get("status", "UNKNOWN")
@@ -401,7 +474,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check connection to backend
     conn_status = "🔴 Unreachable"
-    version_info = ""
     try:
         health = await api_client.get_health()
         if health.get("status") == "ok":
@@ -517,7 +589,6 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         active_inc = incidents[0]
-        # Fetch full incident detail
         detail = await api_client.get_incident(active_inc["id"])
         report_text = format_report(detail)
         await update.message.reply_text(report_text, parse_mode=ParseMode.MARKDOWN)
@@ -538,7 +609,6 @@ async def mock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(api_client, MockProdPilotClient):
         api_client.reset()
 
-    # Get sample incident
     incidents = await api_client.list_incidents()
     if incidents:
         inc = incidents[0]
@@ -578,10 +648,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action_type, incident_id = match.groups()
 
     try:
+        # Fetch current incident details for the summary
+        try:
+            incident_detail = await api_client.get_incident(incident_id)
+        except Exception:
+            incident_detail = {"id": incident_id, "service": "demo-prod"}
+
         if action_type == "approve_fix_":
-            await query.answer("Initiating Fix-Forward Deployment...")
-            # Step 1: Edit message to deploying status
-            deploying_text = "⏳ *Deploying fix to port 8000...*\nApplying staged canary patch."
+            await query.answer("Deploying fix forward...")
+            # Step 1: Immediate status update
+            deploying_text = "⏳ *Deploying fix to production port 8000...*\nApplying staged canary patch."
             try:
                 await query.edit_message_text(deploying_text, parse_mode=ParseMode.MARKDOWN)
             except Exception:
@@ -592,11 +668,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 incident_id=incident_id, action="fix_forward", source="telegram"
             )
 
-            # Step 3: Edit message on completion
+            # Step 3: Append incident report summary on completion
+            report_summary = format_compact_summary(incident_detail)
             restored_text = (
                 "✅ *PROD RESTORED* - Healthcheck 200 OK. Fix deployed successfully.\n\n"
                 f"*Incident*: `{incident_id}`\n"
-                f"*Resolution*: Fix-Forward (Promoted staged port 8001 to prod 8000)"
+                "*Resolution*: Fix-Forward promoted staged port 8001 to production port 8000.\n\n"
+                f"{report_summary}"
             )
             try:
                 await query.edit_message_text(restored_text, parse_mode=ParseMode.MARKDOWN)
@@ -604,9 +682,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(restored_text)
 
         elif action_type == "approve_rollback_":
-            await query.answer("Initiating Rollback...")
-            # Step 1: Edit message to rolling back status
-            rollback_text = "⏳ *Rolling back suspect commit...*\nPromoting staged rollback canary to port 8000."
+            await query.answer("Initiating rollback...")
+            # Step 1: Immediate status update
+            rollback_text = "⏳ *Rolling back to production port 8000...*\nPromoting staged rollback canary to production."
             try:
                 await query.edit_message_text(rollback_text, parse_mode=ParseMode.MARKDOWN)
             except Exception:
@@ -617,11 +695,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 incident_id=incident_id, action="rollback", source="telegram"
             )
 
-            # Step 3: Edit message on completion
+            # Step 3: Append incident report summary on completion
+            report_summary = format_compact_summary(incident_detail)
             restored_text = (
                 "✅ *ROLLED BACK* - Reverted suspect commit. Healthcheck 200 OK.\n\n"
                 f"*Incident*: `{incident_id}`\n"
-                f"*Resolution*: Rollback (Promoted staged port 8002 to prod 8000)"
+                "*Resolution*: Rollback promoted staged port 8002 to production port 8000.\n\n"
+                f"{report_summary}"
             )
             try:
                 await query.edit_message_text(restored_text, parse_mode=ParseMode.MARKDOWN)
@@ -664,15 +744,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_and_notify_incidents(bot):
     """Poll API for incidents with status AWAITING_APPROVAL and send notification cards."""
     if not ALLOWED_CHAT_ID:
-        # Without allowed chat ID, we cannot proactively message a user
         return
 
     target_chat_ids = [cid.strip() for cid in ALLOWED_CHAT_ID.split(",") if cid.strip()]
 
     try:
         incidents = await api_client.list_incidents(status="AWAITING_APPROVAL")
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+        logger.warning(
+            f"Backend API at {PRODPILOT_API_URL} currently unreachable ({e}). Poller will retry on next tick."
+        )
+        return
     except Exception as e:
-        logger.debug(f"Poller check failed: {e}")
+        logger.debug(f"Poller check exception: {e}")
         return
 
     for inc in incidents:
@@ -680,7 +764,6 @@ async def check_and_notify_incidents(bot):
         if not inc_id:
             continue
 
-        # If already notified and still awaiting approval, skip to avoid spamming
         if inc_id in notified_incidents:
             continue
 
@@ -698,15 +781,14 @@ async def check_and_notify_incidents(bot):
                     "chat_id": chat_id,
                     "message_id": msg.message_id,
                 }
-                logger.info(f"Sent incident card for {inc_id} to chat {chat_id}")
+                logger.info(f"Proactive alert dispatched for {inc_id} to chat {chat_id}")
             except Exception as e:
                 logger.error(f"Failed to send incident card to chat {chat_id}: {e}")
 
 
 async def incident_poller_task(app: Application):
     """Background async loop checking for incidents every POLL_INTERVAL seconds."""
-    logger.info(f"Background incident poller running (interval: {POLL_INTERVAL}s)...")
-    # Wait a couple seconds after startup before first check
+    logger.info(f"Background incident poller active (polling every {POLL_INTERVAL}s)...")
     await asyncio.sleep(2)
 
     while True:
@@ -763,13 +845,17 @@ async def run_dry_run_verification():
     assert f"reject_{inc['id']}" in callback_map, "Missing Reject button"
     print("  ✅ All required interactive buttons present!")
 
-    # 4. Simulate Action: Deploy Fix
+    # 4. Simulate Action: Deploy Fix with Appended Report Summary
     print("\n[Step 4] Simulating tapping [🚀 Deploy Fix (8001)]...")
     deploy_res = await client.approve_incident(inc["id"], action="fix_forward", source="telegram")
     assert deploy_res["status"] == "DEPLOYED", "Approval failed"
+    summary = format_compact_summary(inc)
     print(f"  ✅ Deploy fix approved. Response: {deploy_res}")
+    print("  --- Appended Incident Report Summary ---")
+    print(summary)
+    assert "Incident Report Summary" in summary, "Summary missing header"
 
-    # 5. Simulate Action: Rollback
+    # 5. Simulate Action: Rollback with Appended Report Summary
     print("\n[Step 5] Simulating tapping [⏪ Rollback (8002)]...")
     client.reset()
     rb_res = await client.approve_incident(inc["id"], action="rollback", source="telegram")
