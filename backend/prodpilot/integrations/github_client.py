@@ -198,3 +198,83 @@ class GitHubClient:
         except Exception as e:
             logger.warning(f"Error reading local commits from {local_path}: {e}")
             return []
+
+    def create_pull_request(
+        self,
+        repo_slug: str,
+        title: str,
+        body: str,
+        head_branch: str,
+        base_branch: str = "main",
+        draft: bool = False,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Creates a Pull Request on GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/pulls"
+        headers = self._headers(token)
+        payload = {
+            "title": title,
+            "head": head_branch,
+            "base": base_branch,
+            "body": body,
+            "draft": draft,
+        }
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(url, json=payload, headers=headers)
+                if res.status_code in (200, 201):
+                    data = res.json()
+                    return {
+                        "ok": True,
+                        "pr_number": data.get("number"),
+                        "pr_url": data.get("html_url"),
+                        "raw": data,
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def merge_pull_request(
+        self,
+        repo_slug: str,
+        pr_number: int,
+        commit_title: Optional[str] = None,
+        commit_message: Optional[str] = None,
+        merge_method: str = "merge",
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Merges a Pull Request on GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/pulls/{pr_number}/merge"
+        headers = self._headers(token)
+        payload: Dict[str, Any] = {"merge_method": merge_method}
+        if commit_title:
+            payload["commit_title"] = commit_title
+        if commit_message:
+            payload["commit_message"] = commit_message
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.put(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    return {
+                        "ok": True,
+                        "sha": data.get("sha"),
+                        "merged": data.get("merged", True),
+                        "message": data.get("message", "PR merged successfully"),
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API merge error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+

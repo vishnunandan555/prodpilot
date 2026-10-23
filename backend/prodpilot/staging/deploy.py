@@ -576,7 +576,7 @@ def approve_incident(
             target_repo = env_repo
         else:
             try:
-                from prodpilot.db import get_active_repo
+                from backend.prodpilot.db import get_active_repo
                 active = get_active_repo(db_path=db_path)
                 if active and active.get("local_path") and Path(active["local_path"]).exists():
                     target_repo = str(Path(active["local_path"]).resolve())
@@ -649,6 +649,24 @@ def approve_incident(
         source=source,
         simulate_watchdog_failure=simulate_watchdog_failure,
     )
+
+    if not mock_mode and deploy_res.get("status") in ("DEPLOYED", "RESOLVED"):
+        try:
+            from backend.prodpilot.pipeline.github_pr_workflow import execute_github_pr_lifecycle
+            pr_res = execute_github_pr_lifecycle(
+                incident_id=incident_id,
+                action=normalized_action,
+                repo_path=target_repo,
+                patch_diff=patch_diff,
+                suspect_commit_hash=suspect_commit,
+                source=source,
+                db_path=db_path,
+            )
+            deploy_res["pr_url"] = pr_res.get("pr_url")
+            deploy_res["pr_number"] = pr_res.get("pr_number")
+        except Exception as e:
+            logger.warning(f"Could not execute GitHub PR lifecycle: {e}")
+
     return deploy_res
 
 

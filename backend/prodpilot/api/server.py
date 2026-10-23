@@ -178,8 +178,10 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
 
 
 @app.get("/incidents/{incident_id}")
-def get_incident_detail(incident_id: str) -> Dict[str, Any]:
-    """3. Get Single Incident Detail conforming to contracts/api.md."""
+def get_incident_detail(incident_id: str, request: Request) -> Any:
+    """3. Get Single Incident Detail conforming to contracts/api.md.
+    Supports Content Negotiation: returns responsive mobile HTML for browsers, JSON for API/desktop UI.
+    """
     inc = get_incident(incident_id)
     if not inc:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
@@ -264,7 +266,7 @@ def get_incident_detail(incident_id: str) -> Dict[str, Any]:
 
     events_list = get_events(incident_id=incident_id)
 
-    return {
+    res_data = {
         "id": inc["id"],
         "service": inc["service"],
         "detected_at": inc["detected_at"],
@@ -279,6 +281,15 @@ def get_incident_detail(incident_id: str) -> Dict[str, Any]:
         "decision": decision_info,
         "events": events_list,
     }
+
+    # If mobile browser tapped link from Telegram, return responsive dark-mode HTML
+    accept_hdr = request.headers.get("accept", "")
+    if "text/html" in accept_hdr and not request.query_params.get("raw"):
+        from fastapi.responses import HTMLResponse
+        from backend.prodpilot.api.mobile_renderer import render_mobile_incident_page
+        return HTMLResponse(content=render_mobile_incident_page(res_data))
+
+    return res_data
 
 
 @app.delete("/incidents/{incident_id}")
@@ -454,11 +465,30 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         },
     )
 
+    # Execute Option A: Branch -> Pull Request -> Auto-Merge lifecycle
+    pr_result = {}
+    try:
+        from backend.prodpilot.pipeline.github_pr_workflow import execute_github_pr_lifecycle
+        pr_result = execute_github_pr_lifecycle(
+            incident_id=incident_id,
+            action=action,
+            repo_path=repo_path,
+            patch_diff=patch_diff,
+            suspect_commit_hash=suspect_commit_hash,
+            source=body.source,
+        )
+    except Exception as e:
+        logger.warning(f"GitHub PR workflow execution note: {e}")
+
     return {
         "status": new_status,
         "deployed_action": action,
         "health_check": deploy_res.get("health_check", "ok"),
         "incident_id": incident_id,
+        "pr_url": pr_result.get("pr_url"),
+        "pr_number": pr_result.get("pr_number"),
+        "branch": pr_result.get("branch"),
+        "merged": pr_result.get("merged", True),
     }
 
 

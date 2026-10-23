@@ -43,12 +43,12 @@ def resolve_target_repo_path(custom_path: Optional[str] = None) -> str:
         return str(Path(env_path).resolve())
 
     try:
-        from prodpilot.db import get_active_repo
+        from backend.prodpilot.db import get_active_repo
         active = get_active_repo()
         if active and active.get("local_path") and Path(active["local_path"]).exists():
             return str(Path(active["local_path"]).resolve())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to resolve active repo from DB: {e}")
 
     # Fallback to current directory if git repo
     return str(Path.cwd().resolve())
@@ -91,6 +91,19 @@ def process_incident(
     brief = create_brief(incident)
     update_incident_brief(incident_id, brief, db_path=db_path)
     logger.info(f"Generated brief: {brief['summary']} (suspect: {brief['suspected_area']})")
+
+    # Dispatch Stage 2 Telegram Alert (RCA & Remediation Strategy)
+    try:
+        from backend.prodpilot.integrations.telegram_client import send_stage2_rca_plan_alert
+        send_stage2_rca_plan_alert(
+            incident_id=incident_id,
+            service_name=incident.get("service", "production-service"),
+            summary=brief.get("summary", ""),
+            suspect_commit=incident.get("suspect_commit"),
+            suspected_area=brief.get("suspected_area"),
+        )
+    except Exception as e:
+        logger.warning(f"Telegram stage 2 alert error: {e}")
 
     # c. Transition status to FIXING and run repro pipeline
     update_incident_status(incident_id, "FIXING", db_path=db_path)
@@ -200,6 +213,21 @@ def process_incident(
         },
         db_path=db_path,
     )
+
+    # Dispatch Stage 3 Telegram Alert (Fix Verified, Canaries Active, The Gate / Awaiting Operator Approval)
+    try:
+        from backend.prodpilot.integrations.telegram_client import send_stage3_approval_alert
+        send_stage3_approval_alert(
+            incident_id=incident_id,
+            service_name=incident.get("service", "production-service"),
+            diff_stats=f"+{len(pipeline_res.patch_diff.splitlines())} lines modified",
+            patch_diff=pipeline_res.patch_diff,
+            decision=decision,
+            test_evidence=pipeline_res.test_evidence,
+            staging_status=staging_status,
+        )
+    except Exception as e:
+        logger.warning(f"Telegram stage 3 alert error: {e}")
 
     return {
         "status": "AWAITING_APPROVAL",

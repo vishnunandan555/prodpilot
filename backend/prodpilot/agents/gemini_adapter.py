@@ -29,7 +29,17 @@ class GatedToolbox:
         self.workdir = Path(workdir).resolve()
 
     def _resolve(self, path: str) -> Path:
-        resolved = (self.workdir / path).resolve()
+        p_str = path.strip()
+        # Strip container mount prefixes common in Render/Docker containers
+        for prefix in ("/opt/render/project/src/", "/opt/render/project/", "/app/", "/workspace/", "/var/app/"):
+            if p_str.startswith(prefix):
+                p_str = p_str[len(prefix):]
+                break
+
+        if p_str.startswith("/"):
+            p_str = p_str.lstrip("/")
+
+        resolved = (self.workdir / p_str).resolve()
         # Ensure path stays within workdir sandbox
         if not str(resolved).startswith(str(self.workdir)):
             raise PermissionError(f"Access outside worktree is forbidden: {path}")

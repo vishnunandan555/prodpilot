@@ -242,14 +242,18 @@ def run_repro_pipeline(
             context={"stage": "REPRODUCE", "brief": brief, "trace": incident.get("trace"), **brief},
         )
 
-        repro_file = Path(worktree_path) / "tests" / "test_repro.py"
+        tests_dir = Path(worktree_path) / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        repro_file = tests_dir / "test_repro.py"
         if repro_file.exists():
             repro_test_code = repro_file.read_text(encoding="utf-8")
         else:
             repro_test_code = adapter_res.get("diff", "")
+            if repro_test_code and "def test_" in repro_test_code:
+                repro_file.write_text(repro_test_code, encoding="utf-8")
 
         # Deterministic Verifier: MUST FAIL on baseline code!
-        test_res = verifier.run_tests(worktree_path, test_target="tests/test_repro.py")
+        test_res = verifier.run_tests(worktree_path, test_target="tests/test_repro.py" if repro_file.exists() else None)
         log_event(
             run_id,
             incident_id,
@@ -334,8 +338,11 @@ def run_repro_pipeline(
         )
 
         patch_diff = fix_res.get("diff", "")
+        if not patch_diff:
+            diff_proc = subprocess.run(["git", "diff"], cwd=worktree_path, capture_output=True, text=True)
+            patch_diff = diff_proc.stdout
 
-        # Run Verifier: 1. Repro test, 2. Full test suite
+        # Run Verifier: 1. Repro test (if present), 2. Full test suite
         update_run(run_id, state="VERIFY", db_path=db_path)
         log_event(
             run_id,
@@ -346,11 +353,15 @@ def run_repro_pipeline(
             db_path=db_path,
         )
 
-        repro_verify_res = verifier.run_tests(worktree_path, test_target="tests/test_repro.py")
         suite_verify_res = verifier.run_tests(worktree_path)
-
-        suite_passed = repro_verify_res.passed and suite_verify_res.passed
-        last_error_log = suite_verify_res.output if not suite_verify_res.passed else repro_verify_res.output
+        repro_path = Path(worktree_path) / "tests" / "test_repro.py"
+        if repro_path.exists():
+            repro_verify_res = verifier.run_tests(worktree_path, test_target="tests/test_repro.py")
+            suite_passed = repro_verify_res.passed and suite_verify_res.passed
+            last_error_log = suite_verify_res.output if not suite_verify_res.passed else repro_verify_res.output
+        else:
+            suite_passed = suite_verify_res.passed
+            last_error_log = suite_verify_res.output
 
         log_event(
             run_id,

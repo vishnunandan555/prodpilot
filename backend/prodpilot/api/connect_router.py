@@ -610,57 +610,18 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
         run_id=f"run-{incident_id}",
     )
 
-    # Send Telegram alert
+    # Send Stage 1 Telegram Detection Alert (Immediate crash alert, direct error, no premature approval button)
     try:
-        tg_token = get_setting("TELEGRAM_BOT_TOKEN")
-        tg_chat = get_setting("TELEGRAM_ALLOWED_CHAT_ID")
-        if tg_token and tg_chat:
-            tunnel = get_setting("CLOUDFLARE_TUNNEL_URL") or "http://127.0.0.1:5173"
-            rec = decision.get("recommendation", "fix_forward")
-            probs = decision.get("probabilities", {})
-            prob_pct = int(probs.get(rec, decision.get("confidence", 0.95)) * 100)
-
-            # Format clean error headline and location
-            err_headline = triage.reason or "Unhandled application crash detected"
-            location_info = suspect_area or server.get("name")
-            action_label = "FIX_FORWARD" if rec == "fix_forward" else "ROLLBACK"
-
-            msg_text = (
-                f"🚨 *PRODPILOT INCIDENT ALERT*\n\n"
-                f"🔥 *Incident:* `{incident_id}`\n"
-                f"🏢 *Service:* `{server.get('name')}` (Production)\n"
-                f"⚠️ *Severity:* `SEV-1 {triage.severity}`\n\n"
-                f"💥 *Root Cause:* `{err_headline}`\n"
-                f"📍 *Location:* `{location_info}`\n\n"
-                f"🧠 *TypeSafe Jev Decision Engine:*\n"
-                f"🎯 *Recommendation:* `{action_label}` ({prob_pct}% probability)\n"
-                f"💡 *Rationale:* {decision.get('reason')}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🛡️ *Canary Environments:* Port 8001 (Fix) | Port 8002 (Rollback)\n"
-                f"👉 [Open Incident Dashboard]({tunnel}/incidents/{incident_id})"
-            )
-            httpx.post(
-                f"https://api.telegram.org/bot{tg_token}/sendMessage",
-                json={
-                    "chat_id": tg_chat,
-                    "text": msg_text,
-                    "parse_mode": "Markdown",
-                    "reply_markup": {
-                        "inline_keyboard": [
-                            [
-                                {"text": f"🚀 Approve {action_label}", "url": f"{tunnel}/incidents/{incident_id}"}
-                            ],
-                            [
-                                {"text": "🤖 Agent Console", "url": f"{tunnel}/incidents/{incident_id}?tab=agent"},
-                                {"text": "📜 Stack Trace", "url": f"{tunnel}/incidents/{incident_id}?tab=logs"}
-                            ]
-                        ]
-                    }
-                },
-                timeout=5.0,
-            )
+        from backend.prodpilot.integrations.telegram_client import send_stage1_detection_alert
+        send_stage1_detection_alert(
+            incident_id=incident_id,
+            service_name=server.get("name", "production-service"),
+            severity=f"SEV-1 {triage.severity}",
+            error_reason=triage.reason or "Unhandled application crash detected",
+            suspect_location=suspect_area or server.get("name"),
+        )
     except Exception as e:
-        logger.warning(f"Telegram notification note: {e}")
+        logger.warning(f"Telegram stage 1 notification note: {e}")
 
     # Dispatch Twilio Voice alert
     try:
