@@ -379,6 +379,8 @@ def test_reproduce_order_missing_key():
         for line in untracked.stdout.splitlines():
             if line.startswith("?? "):
                 file_rel = line[3:].strip()
+                if file_rel.startswith(".") or "/." in file_rel or "worktree" in file_rel:
+                    continue
                 fp = Path(workdir) / file_rel
                 if fp.is_file():
                     try:

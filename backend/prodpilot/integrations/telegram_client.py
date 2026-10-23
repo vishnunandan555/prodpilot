@@ -316,6 +316,12 @@ def send_stage3_approval_alert(
     fix_desc = generate_natural_fix_explanation(patch_diff=patch_diff, brief=brief, suspected_area=clean_area)
     clean_fix_desc = html.escape(fix_desc)
     clean_svc = html.escape(service_name)
+    test_evidence_dict = test_evidence or {}
+    staging_status_dict = staging_status or {}
+    repro_after = str(test_evidence_dict.get("after", "Not recorded"))
+    repro_status = "PASS" if "PASSED" in repro_after.upper() else "Not confirmed"
+    fix_health = (staging_status_dict.get("fix_forward") or {}).get("health") is True
+    rollback_health = (staging_status_dict.get("rollback") or {}).get("health") is True
 
     text = (
         f"🛡️ <b>INCIDENT #{incident_id} — PATCH READY</b>\n\n"
@@ -323,8 +329,9 @@ def send_stage3_approval_alert(
         f"📝 <b>Fix Summary:</b>\n"
         f"{clean_fix_desc}\n\n"
         f"📍 <b>Affected Area:</b> <code>{clean_area}</code>\n"
-        f"✅ <b>Verification:</b> Repro Test <b>RED ❌ ➔ GREEN 🟢</b> • Test Suite <b>100% PASSED</b>\n\n"
-        f"📲 <i>Tap <b>Approve Fix</b> to review details and auto-merge PR, or tap <b>Hold</b> to pause.</i>"
+        f"🧪 <b>Repro Test:</b> {html.escape(repro_status)}\n"
+        f"🧰 <b>Canary health:</b> Fix-forward {'PASS' if fix_health else 'not confirmed'} • Rollback {'PASS' if rollback_health else 'not confirmed'}\n\n"
+        f"📲 <i>Review the evidence before approving. Approval does not imply a Render deployment unless a provider adapter is configured.</i>"
     )
 
     reply_markup = {
@@ -350,31 +357,29 @@ def send_stage4_deploy_confirmation(
     action: str,
     branch_name: Optional[str] = None,
 ) -> bool:
-    """Dispatches Stage 4: Confirms GitHub PR was created, merged, and CI/CD deploy triggered."""
+    """Reports a prepared PR without claiming merge or deployment."""
     tunnel_url = get_effective_tunnel_url()
     mobile_link = f"{tunnel_url}/incidents/{incident_id}"
 
-    pr_text = f"<a href=\"{pr_url}\">PR #{pr_number}</a>" if pr_url and pr_number else "Automated Pull Request"
-    branch_text = f"<code>{html.escape(branch_name or f'prodpilot/fix-{incident_id[:8]}')}</code>"
+    pr_text = f"<a href=\"{pr_url}\">PR #{pr_number}</a>" if pr_url and pr_number else "No PR link available"
+    branch_text = f"<code>{html.escape(branch_name)}</code>" if branch_name else "Not available"
 
     text = (
-        f"🚀 <b>PRODPILOT DEPLOYMENT TRIGGERED</b>\n\n"
+        f"📝 <b>PRODPILOT PR PREPARED FOR REVIEW</b>\n\n"
         f"🔥 <b>Incident:</b> <code>{incident_id}</code>\n"
         f"🏢 <b>Service:</b> <code>{html.escape(service_name)}</code>\n"
         f"🎯 <b>Action:</b> <b>APPROVED_{action.upper()}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 <b>GitHub Pull Request Lifecycle:</b>\n"
+        f"📦 <b>GitHub Pull Request:</b> {pr_text}\n"
         f"• <b>Branch:</b> {branch_text}\n"
-        f"• <b>Pull Request:</b> {pr_text} (Merged into <code>main</code>)\n"
-        f"• <b>Production CI/CD:</b> Render webhook triggered auto-deploy\n"
-        f"• <b>Status:</b> <b>DEPLOYING ➔ RESOLVED</b>\n\n"
-        f"🎉 <i>Production fix deployed. 10s post-deploy watchdog initiated.</i>"
+        f"• <b>Status:</b> <b>OPEN FOR REVIEW</b>\n\n"
+        f"This PR has not been merged or deployed. Review it in GitHub before taking further action."
     )
 
     reply_markup = {
         "inline_keyboard": [
             [
-                {"text": "🔗 View Merged PR on GitHub", "url": pr_url or "https://github.com"}
+                {"text": "🔗 View PR on GitHub", "url": pr_url}
             ] if pr_url else [],
             [
                 {"text": "📊 View Post-Mortem Report", "url": mobile_link}

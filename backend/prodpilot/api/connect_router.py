@@ -711,13 +711,6 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"Twilio voice dispatch note: {e}")
 
-    # Launch background autonomous fix pipeline via Antigravity SDK
-    try:
-        from backend.prodpilot.pipeline.orchestrator import process_incident
-        threading.Thread(target=process_incident, args=(created,), daemon=True).start()
-    except Exception as e:
-        logger.warning(f"Pipeline launch note: {e}")
-
     return {
         "ok": True,
         "incident_created": True,

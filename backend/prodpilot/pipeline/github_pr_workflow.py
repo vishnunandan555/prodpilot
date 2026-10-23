@@ -1,11 +1,10 @@
 """ProdPilot GitHub PR Workflow Engine
-Implements the SRE-approved Option A: Branch -> Pull Request -> Auto-Merge lifecycle.
+Creates an isolated branch and Pull Request for human review.
 1. Creates dedicated fix/rollback branch
 2. Applies verified patch or revert
 3. Commits and pushes branch to remote GitHub repository
-4. Opens GitHub Pull Request with RCA and deterministic test evidence
-5. Merges Pull Request into base branch (triggers Render auto-deploy webhook)
-6. Sends Stage 4 Telegram deployment confirmation
+4. Opens GitHub Pull Request for human review
+5. Leaves merge and deployment to a separate, explicitly approved provider workflow
 """
 
 import json
@@ -25,7 +24,6 @@ from backend.prodpilot.db import (
     save_artifact,
 )
 from backend.prodpilot.integrations.github_client import GitHubClient
-from backend.prodpilot.integrations.telegram_client import send_stage4_deploy_confirmation
 
 logger = logging.getLogger("prodpilot.pr_workflow")
 
@@ -93,8 +91,8 @@ def format_pr_body(
 
     return f"""{header}
 {incident_link}
-**Service**: `{service_name}` (Production)  
-**Remediation Mode**: `APPROVED_{action.upper()}`  
+**Service**: `{service_name}`  
+**Proposed Remediation**: `{action.upper()}`  
 **Affected Area**: `{suspect_area}`
 
 ---
@@ -109,252 +107,167 @@ def format_pr_body(
 
 ---
 
-### 🧪 Verification Evidence
-| Check | Status | Details |
-|---|---|---|
-| **Deterministic Repro** | 🟢 **PASS (GREEN)** | Repro test created in isolated sandbox passed |
-| **Regression Suite** | 🟢 **5/5 PASSED** | All existing unit and integration tests confirmed green |
-| **Side-Port Canaries** | 🟢 **HEALTHY** | Staged on Port 8001 (Fix-Forward) & Port 8002 (Rollback) |
-| **Human-in-the-Loop** | 🟢 **APPROVED** | Operator confirmed hotfix approval on ProdPilot mobile console |
+### Verification
+
+Review the incident's recorded reproduction, regression, and canary artifacts. This PR description does not assert that those checks passed.
 
 {diff_section}
 
 ---
-*Generated and verified autonomously by ProdPilot SRE Platform.*
+*Prepared by ProdPilot for human review. This PR has not been merged or deployed.*
 """
 
 
 def execute_github_pr_lifecycle(
     incident_id: str,
-    action: str,  # "fix_forward" or "rollback"
+    action: str,
     repo_path: Optional[str] = None,
     patch_diff: Optional[str] = None,
     suspect_commit_hash: Optional[str] = None,
-    source: str = "telegram",
+    source: str = "pipeline",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Executes the complete Branch -> PR -> Merge lifecycle for the incident."""
-    inc = get_incident(incident_id, db_path=db_path) or {}
-    service_name = inc.get("service", "production-service")
+    """Prepare an isolated branch and open a PR; this function never merges."""
+    from backend.prodpilot.pipeline.worktree import create_worktree, remove_worktree
 
-    # 1. Determine local repository directory
+    if action not in ("fix_forward", "rollback"):
+        return {"ok": False, "error": f"Unsupported remediation action: {action}"}
+    if action == "fix_forward" and not patch_diff:
+        return {"ok": False, "error": "Cannot prepare a fix PR without a verified patch diff"}
+    if action == "rollback" and not suspect_commit_hash:
+        return {"ok": False, "error": "Cannot prepare a rollback PR without a suspect commit"}
+
     target_repo = repo_path
     if not target_repo or not Path(target_repo).exists():
         active = get_active_repo(db_path=db_path)
         if active and active.get("local_path") and Path(active["local_path"]).exists():
             target_repo = active["local_path"]
-
     if not target_repo or not Path(target_repo).exists():
-        target_repo = os.environ.get("TARGET_REPO_PATH") or os.environ.get("DEMO_PROD_PATH")
-
-    if not target_repo or not Path(target_repo).exists():
-        logger.warning(f"No local repo found for incident {incident_id}. Falling back to simulation.")
-        return {"ok": False, "error": "No valid git repository path found"}
+        return {"ok": False, "error": "No valid connected Git repository path found"}
 
     repo_dir = Path(target_repo).resolve()
     repo_slug, token = resolve_repo_slug_and_token(str(repo_dir))
-    gh_client = GitHubClient(token=token)
+    if not repo_slug or not token:
+        return {"ok": False, "error": "GitHub repository and write-capable token are required; no PR was created"}
 
+    active = get_active_repo(db_path=db_path) or {}
+    base_branch = active.get("default_branch") or "main"
     branch_name = f"prodpilot/{'fix' if action == 'fix_forward' else 'revert'}-{incident_id[:8]}"
-    logger.info(f"Initiating GitHub PR workflow on branch {branch_name} in {repo_dir} (slug: {repo_slug})")
-
-    # 2. Checkout new isolated branch
-    try:
-        subprocess.run(["git", "checkout", "main"], cwd=str(repo_dir), capture_output=True, text=True)
-        subprocess.run(["git", "pull", "--rebase"], cwd=str(repo_dir), capture_output=True, text=True)
-        branch_res = subprocess.run(
-            ["git", "checkout", "-B", branch_name],
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-        )
-        if branch_res.returncode != 0:
-            logger.warning(f"Failed to create branch {branch_name}: {branch_res.stderr}")
-    except Exception as e:
-        logger.warning(f"Branch checkout error: {e}")
-
-    # 3. Apply changes (patch or revert)
-    applied = False
-    try:
-        if action == "fix_forward" and patch_diff:
-            # Try applying git patch
-            p_res = subprocess.run(
-                ["git", "apply", "--ignore-whitespace", "--3way"],
-                input=patch_diff,
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-            )
-            if p_res.returncode != 0:
-                p_res = subprocess.run(
-                    ["git", "apply", "--ignore-whitespace"],
-                    input=patch_diff,
-                    cwd=str(repo_dir),
-                    capture_output=True,
-                    text=True,
-                )
-            applied = (p_res.returncode == 0)
-
-        elif action == "rollback" and suspect_commit_hash:
-            rev_res = subprocess.run(
-                ["git", "revert", "--no-edit", suspect_commit_hash],
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-            )
-            applied = (rev_res.returncode == 0)
-    except Exception as e:
-        logger.warning(f"Code application error: {e}")
-
-    # 4. Stage and commit
-    try:
-        subprocess.run(["git", "add", "-A"], cwd=str(repo_dir), capture_output=True)
-        commit_msg = (
-            f"fix(prodpilot): resolve incident {incident_id}\n\n"
-            f"Automated remediation verified with green regression tests.\n"
-            f"Action: APPROVED_{action.upper()}"
-        )
-        subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-        )
-    except Exception as e:
-        logger.warning(f"Git commit error: {e}")
-
-    # 5. Push branch to GitHub remote
-    push_ok = False
-    try:
-        push_res = subprocess.run(
-            ["git", "push", "-u", "origin", branch_name, "--force"],
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        if push_res.returncode == 0:
-            push_ok = True
-            logger.info(f"Successfully pushed branch {branch_name} to GitHub remote.")
-        else:
-            logger.warning(f"git push stderr: {push_res.stderr.strip()}")
-    except Exception as e:
-        logger.warning(f"Git push error: {e}")
-
-    # 6. Create and merge Pull Request via GitHub REST API
+    worktree_path = None
     pr_number = None
     pr_url = None
-    merged = False
 
-    from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
-    mobile_link = f"{get_effective_tunnel_url()}/incidents/{incident_id}"
-
-    if push_ok and repo_slug and token:
-        pr_title = f"fix(prodpilot): resolve incident {incident_id} [{action.upper()}]"
-        pr_body = format_pr_body(
-            incident_id=incident_id,
-            action=action,
-            patch_diff=patch_diff or "",
-            service_name=service_name,
-            suspect_commit=suspect_commit_hash,
-            mobile_url=mobile_link,
-            brief=inc.get("brief"),
-            trace=inc.get("trace"),
+    try:
+        # Base the change on the remote target branch without checking out or modifying the user's checkout.
+        fetch = subprocess.run(
+            ["git", "fetch", "origin", base_branch],
+            cwd=str(repo_dir), capture_output=True, text=True, timeout=30,
         )
+        if fetch.returncode != 0:
+            return {"ok": False, "error": f"Could not fetch origin/{base_branch}: {fetch.stderr.strip()}"}
+        base_ref = f"origin/{base_branch}"
+        verify = subprocess.run(
+            ["git", "rev-parse", "--verify", base_ref],
+            cwd=str(repo_dir), capture_output=True, text=True,
+        )
+        if verify.returncode != 0:
+            return {"ok": False, "error": f"Remote base branch {base_ref} does not exist"}
 
-        pr_res = gh_client.create_pull_request(
+        worktree_path = create_worktree(
+            str(repo_dir), commit=base_ref, prefix=f"prodpilot-pr-{incident_id[:8]}-",
+        )
+        branch = subprocess.run(
+            ["git", "switch", "-c", branch_name],
+            cwd=worktree_path, capture_output=True, text=True,
+        )
+        if branch.returncode != 0:
+            return {"ok": False, "error": f"Could not create isolated branch: {branch.stderr.strip()}"}
+
+        if action == "fix_forward":
+            apply = subprocess.run(
+                ["git", "apply", "--3way"], input=patch_diff,
+                cwd=worktree_path, capture_output=True, text=True,
+            )
+            if apply.returncode != 0:
+                return {"ok": False, "error": f"Could not apply verified patch: {apply.stderr.strip()}"}
+        else:
+            revert = subprocess.run(
+                ["git", "revert", "--no-edit", suspect_commit_hash],
+                cwd=worktree_path, capture_output=True, text=True,
+            )
+            if revert.returncode != 0:
+                subprocess.run(["git", "revert", "--abort"], cwd=worktree_path, capture_output=True)
+                return {"ok": False, "error": f"Could not prepare rollback: {revert.stderr.strip()}"}
+
+        staged = subprocess.run(["git", "add", "-A"], cwd=worktree_path, capture_output=True, text=True)
+        if staged.returncode != 0:
+            return {"ok": False, "error": f"Could not stage changes: {staged.stderr.strip()}"}
+        diff_check = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=worktree_path,
+            capture_output=True, text=True,
+        )
+        if diff_check.returncode == 0:
+            return {"ok": False, "error": "Remediation produced no changes; no PR was created"}
+        commit = subprocess.run(
+            ["git", "commit", "-m", f"fix(prodpilot): resolve incident {incident_id}"],
+            cwd=worktree_path, capture_output=True, text=True,
+        )
+        if commit.returncode != 0:
+            return {"ok": False, "error": f"Could not commit remediation: {commit.stderr.strip()}"}
+
+        push = subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=worktree_path, capture_output=True, text=True, timeout=30,
+        )
+        if push.returncode != 0:
+            return {"ok": False, "error": f"Could not push PR branch: {push.stderr.strip()}"}
+
+        inc = get_incident(incident_id, db_path=db_path) or {}
+        from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
+        mobile_link = f"{get_effective_tunnel_url()}/incidents/{incident_id}"
+        pr_res = GitHubClient(token=token).create_pull_request(
             repo_slug=repo_slug,
-            title=pr_title,
-            body=pr_body,
+            title=f"fix(prodpilot): resolve incident {incident_id} [{action.upper()}]",
+            body=format_pr_body(
+                incident_id=incident_id, action=action, patch_diff=patch_diff or "",
+                service_name=inc.get("service", "production-service"),
+                suspect_commit=suspect_commit_hash, mobile_url=mobile_link,
+                brief=inc.get("brief"), trace=inc.get("trace"),
+            ),
             head_branch=branch_name,
-            base_branch="main",
+            base_branch=base_branch,
             draft=False,
             token=token,
         )
+        if not pr_res.get("ok"):
+            return {"ok": False, "error": pr_res.get("error", "GitHub did not create the PR"), "branch": branch_name}
+        pr_number = pr_res.get("pr_number")
+        pr_url = pr_res.get("pr_url")
 
-        if pr_res.get("ok"):
-            pr_number = pr_res.get("pr_number")
-            pr_url = pr_res.get("pr_url")
-            logger.info(f"Created Pull Request #{pr_number}: {pr_url}")
-
-            # Merge the Pull Request!
-            merge_res = gh_client.merge_pull_request(
-                repo_slug=repo_slug,
-                pr_number=pr_number,
-                commit_title=f"Merge pull request #{pr_number} from {branch_name}",
-                commit_message=f"ProdPilot verified autonomous hotfix for incident {incident_id}",
-                merge_method="merge",
-                token=token,
-            )
-            if merge_res.get("ok"):
-                merged = True
-                logger.info(f"Successfully merged Pull Request #{pr_number} into main! Render webhook triggered.")
-            else:
-                logger.warning(f"Failed to merge PR #{pr_number}: {merge_res.get('error')}")
-        else:
-            logger.warning(f"Failed to create PR: {pr_res.get('error')}")
-
-    # Fallback simulation values if offline or missing permissions
-    if not pr_url:
-        pr_number = 42
-        pr_url = f"https://github.com/{repo_slug or 'vishnunandan555/chunkstream'}/pull/{pr_number}"
-        merged = True
-
-    # 7. Record PR Artifact & Log Audit Event in DB
-    try:
         save_artifact(
-            artifact_id=f"art-pr-{incident_id[:8]}",
-            run_id=None,
-            incident_id=incident_id,
-            kind="github_pr",
+            artifact_id=f"art-pr-{incident_id[:8]}", run_id=None,
+            incident_id=incident_id, kind="github_pr",
             content=json.dumps({
-                "branch": branch_name,
-                "pr_number": pr_number,
-                "pr_url": pr_url,
-                "merged": merged,
-                "action": action,
+                "branch": branch_name, "pr_number": pr_number, "pr_url": pr_url,
+                "merged": False, "action": action,
             }),
-            path=pr_url,
-            db_path=db_path,
+            path=pr_url, db_path=db_path,
         )
-    except Exception as e:
-        logger.warning(f"Could not record PR artifact: {e}")
-
-    log_event(
-        run_id=None,
-        incident_id=incident_id,
-        stage="DEPLOY",
-        kind="pr_merged" if merged else "pr_opened",
-        payload={
-            "branch": branch_name,
-            "pr_number": pr_number,
-            "pr_url": pr_url,
-            "merged": merged,
-            "action": action,
-            "source": source,
-            "message": f"PR #{pr_number} merged into main. Render auto-deployment triggered.",
-        },
-        db_path=db_path,
-    )
-
-    # 8. Send Stage 4 Telegram Deployment Confirmation
-    try:
-        send_stage4_deploy_confirmation(
-            incident_id=incident_id,
-            service_name=service_name,
-            pr_number=pr_number,
-            pr_url=pr_url,
-            action=action,
-            branch_name=branch_name,
+        log_event(
+            run_id=None, incident_id=incident_id, stage="FIX", kind="pr_opened",
+            payload={
+                "branch": branch_name, "pr_number": pr_number, "pr_url": pr_url,
+                "merged": False, "action": action, "source": source,
+                "message": f"PR #{pr_number} opened for review; it has not been merged or deployed.",
+            }, db_path=db_path,
         )
-    except Exception as e:
-        logger.warning(f"Telegram stage 4 notification note: {e}")
-
-    return {
-        "ok": True,
-        "branch": branch_name,
-        "pr_number": pr_number,
-        "pr_url": pr_url,
-        "merged": merged,
-        "action": action,
-    }
+        return {
+            "ok": True, "branch": branch_name, "pr_number": pr_number,
+            "pr_url": pr_url, "merged": False, "action": action,
+        }
+    except Exception as exc:
+        logger.exception("GitHub PR preparation failed for incident %s", incident_id)
+        return {"ok": False, "error": str(exc), "branch": branch_name}
+    finally:
+        if worktree_path:
+            remove_worktree(worktree_path, repo_path=str(repo_dir))

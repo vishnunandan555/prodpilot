@@ -194,7 +194,12 @@ def run_repro_pipeline(
     update_run(run_id, state="BRIEFED", db_path=db_path)
 
     # 2. Setup isolated worktree
-    worktree_path = create_worktree(repo_path, prefix=f"repro-{incident_id[:8]}-")
+    worktree_path = create_worktree(
+        repo_path,
+        prefix=f"repro-{incident_id[:8]}-",
+        incident_id=incident_id,
+        auto_cleanup=False,
+    )
     logger.info(f"Initialized isolated pipeline worktree: {worktree_path}")
 
     evidence: Dict[str, str] = {}
@@ -337,10 +342,17 @@ def run_repro_pipeline(
             context={"stage": "FIX", "brief": brief, "trace": incident.get("trace"), **brief},
         )
 
-        patch_diff = fix_res.get("diff", "")
-        if not patch_diff:
-            diff_proc = subprocess.run(["git", "diff"], cwd=worktree_path, capture_output=True, text=True)
-            patch_diff = diff_proc.stdout
+        diff_proc = subprocess.run(
+            ["git", "diff", "HEAD", "--", ".", ":(exclude)tests", ":(exclude).worktree*", ":(exclude).prodpilot*"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        patch_diff = diff_proc.stdout or ""
+        if not patch_diff and fix_res.get("diff"):
+            patch_diff = fix_res.get("diff", "")
+        if patch_diff and not patch_diff.endswith("\n"):
+            patch_diff += "\n"
 
         # Run Verifier: 1. Repro test (if present), 2. Full test suite
         update_run(run_id, state="VERIFY", db_path=db_path)
@@ -398,17 +410,22 @@ def run_repro_pipeline(
         db_path=db_path,
     )
 
+    returned_worktree = worktree_path
     if suite_passed:
         update_run(run_id, state="STAGED", db_path=db_path)
         update_incident_status(incident_id, "AWAITING_APPROVAL", db_path=db_path)
     else:
         update_run(run_id, state="FAILED", ended=True, db_path=db_path)
+        if worktree_path:
+            logger.info(f"Verification failed; cleaning up unverified candidate worktree: {worktree_path}")
+            remove_worktree(worktree_path, repo_path=repo_path)
+            returned_worktree = ""
 
     return PipelineResult(
         ok=suite_passed,
         run_id=run_id,
         incident_id=incident_id,
-        worktree_path=worktree_path,
+        worktree_path=returned_worktree,
         patch_diff=patch_diff,
         repro_test=repro_test_code,
         test_evidence=evidence,

@@ -42,9 +42,13 @@ from backend.prodpilot.db import (
     save_artifact,
     delete_incident,
     clear_incidents_by_status,
+    get_active_repo,
+    get_active_server,
+    get_project,
 )
 from backend.prodpilot.decide.rules import decide
 from backend.prodpilot.pipeline.brief import analyze_issue_readiness
+from backend.prodpilot.pipeline.worktree import cleanup_stale_worktrees, list_active_worktrees
 from backend.prodpilot.staging.deploy import DeployAdapter, generate_incident_report
 
 logger = logging.getLogger(__name__)
@@ -73,6 +77,17 @@ app.include_router(ingest_router)
 # Autonomous Watchdog Daemon Loop (every 12s)
 @app.on_event("startup")
 async def startup_watchdog_event():
+    # Prune any stale/abandoned worktrees on server startup
+    try:
+        active_repo_info = get_active_repo()
+        clean_target = (active_repo_info or {}).get("local_path") or os.getcwd()
+        if Path(clean_target).exists() and (Path(clean_target) / ".git").exists():
+            pruned = cleanup_stale_worktrees(clean_target)
+            if pruned:
+                logger.info(f"Server startup pruned {len(pruned)} stale worktree(s)")
+    except Exception as e:
+        logger.debug(f"Server worktree startup notice: {e}")
+
     async def autonomous_render_watchdog_loop():
         logger.info("🔭 Starting Autonomous Render Log Watcher & Triage loop (every 20s)...")
         await asyncio.sleep(6)
@@ -90,6 +105,51 @@ async def startup_watchdog_event():
             await asyncio.sleep(20)
 
     asyncio.create_task(autonomous_render_watchdog_loop())
+
+    async def incident_remediation_worker_loop():
+        """Process one eligible incident at a time and supervise failures."""
+        logger.info("Starting supervised incident remediation worker")
+        await asyncio.sleep(8)
+        while True:
+            try:
+                active_server = get_active_server()
+                active_repo = get_active_repo()
+                if active_server and active_server.get("name"):
+                    project = get_project(active_server.get("project_id")) if active_server.get("project_id") else None
+                    repo_path = (project or {}).get("local_path") or (active_repo or {}).get("local_path")
+                    if repo_path and Path(repo_path).is_dir() and (Path(repo_path) / ".git").exists():
+                        pending = list_incidents(status="OPEN")
+                        eligible = next(
+                            (inc for inc in pending if inc.get("service") == active_server.get("name")),
+                            None,
+                        )
+                        if eligible:
+                            logger.info("Dispatching incident %s to supervised remediation worker", eligible["id"])
+                            try:
+                                from backend.prodpilot.pipeline.orchestrator import process_incident
+                                await asyncio.to_thread(
+                                    process_incident,
+                                    incident=eligible,
+                                    repo_path=repo_path,
+                                )
+                            except Exception as exc:
+                                logger.exception("Incident worker failed for %s", eligible["id"])
+                                update_incident_status(eligible["id"], "FAILED")
+                                log_event(
+                                    run_id=None,
+                                    incident_id=eligible["id"],
+                                    stage="WORKER",
+                                    kind="error",
+                                    payload={"error": str(exc), "message": "Remediation worker failed"},
+                                )
+                await asyncio.sleep(3)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Incident worker loop error: %s", exc)
+                await asyncio.sleep(5)
+
+    asyncio.create_task(incident_remediation_worker_loop())
 
 # Shared in-memory staging manager or deploy adapter
 deploy_adapter = DeployAdapter(prod_port=int(os.environ.get("PROD_PORT", 8000)))
@@ -220,6 +280,7 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         "repro_test": None,
         "patch_diff": "",
         "test_evidence": None,
+        "github_pr": None,
     }
     for row in art_rows:
         kind = row.get("kind")
@@ -228,6 +289,11 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
             artifacts_map["repro_test"] = content or row.get("path")
         elif kind == "patch_diff":
             artifacts_map["patch_diff"] = content
+        elif kind == "github_pr":
+            try:
+                artifacts_map["github_pr"] = json.loads(content) if isinstance(content, str) else content
+            except Exception:
+                artifacts_map["github_pr"] = None
         elif kind == "test_log_before":
             if not artifacts_map["test_evidence"]:
                 artifacts_map["test_evidence"] = {}
@@ -237,10 +303,19 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
                 artifacts_map["test_evidence"] = {}
             artifacts_map["test_evidence"]["after"] = content
 
-    # Staging status
-    staging_info = inc.get("staging") or {
-        "fix_forward": {"port": 8001, "health": inc.get("status") in ("STAGED", "AWAITING_APPROVAL", "DEPLOYED", "RESOLVED")},
-        "rollback": {"port": 8002, "health": True},
+    # Staging status comes from the persisted approval event. Missing evidence stays unknown.
+    events_list = get_events(incident_id=incident_id)
+    approval_event = next((e for e in reversed(events_list) if e.get("kind") == "awaiting_approval"), None)
+    approval_payload = approval_event.get("payload") if approval_event else {}
+    if isinstance(approval_payload, str):
+        try:
+            approval_payload = json.loads(approval_payload)
+        except Exception:
+            approval_payload = {}
+    options = (approval_payload or {}).get("options", {}) if isinstance(approval_payload, dict) else {}
+    staging_info = {
+        "fix_forward": {"port": 8001, "health": (options.get("fix_forward") or {}).get("health_ok")},
+        "rollback": {"port": 8002, "health": (options.get("rollback") or {}).get("health_ok")},
     }
 
     # Fetch or compute decision
@@ -258,14 +333,12 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
             decision_info = {
                 "backend": d.get("backend", "rules"),
                 "recommendation": d.get("action", "fix_forward"),
-                "probabilities": ans.get("probabilities", {"fix_forward": 0.85, "rollback": 0.15}),
-                "reason": d.get("reason", "Clean patch with full test pass"),
+                "probabilities": ans.get("probabilities", {}),
+                "reason": d.get("reason", ""),
             }
 
     if not decision_info:
         decision_info = decide(inc, staging_info, patch_diff=artifacts_map.get("patch_diff"))
-
-    events_list = get_events(incident_id=incident_id)
 
     res_data = {
         "id": inc["id"],
@@ -423,7 +496,7 @@ async def stream_incident_events(request: Request, incident_id: str, after_id: i
 
 @app.post("/incidents/{incident_id}/approve")
 def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str, Any]:
-    """5. Approve Incident Action conforming to contracts/api.md."""
+    """Explicitly approve a local-process deployment when that adapter is enabled."""
     inc = get_incident(incident_id)
     if not inc:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
@@ -431,6 +504,55 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
     action = body.action
     if action not in ("fix_forward", "rollback"):
         raise HTTPException(status_code=400, detail="Action must be 'fix_forward' or 'rollback'")
+
+    if inc.get("status") != "AWAITING_APPROVAL":
+        raise HTTPException(status_code=409, detail="Incident is not awaiting operator approval")
+
+    approval_events = [e for e in get_events(incident_id=incident_id) if e.get("kind") == "awaiting_approval"]
+    if not approval_events:
+        raise HTTPException(status_code=409, detail="No persisted canary approval evidence is available")
+    approval_payload = approval_events[-1].get("payload") or {}
+    if isinstance(approval_payload, str):
+        try:
+            approval_payload = json.loads(approval_payload)
+        except Exception:
+            approval_payload = {}
+    selected_option = ((approval_payload.get("options") or {}).get(action) or {}) if isinstance(approval_payload, dict) else {}
+    if selected_option.get("health_ok") is not True:
+        raise HTTPException(status_code=409, detail=f"The {action} canary has no passing health evidence")
+
+    # This adapter mutates a local checkout and manages a local process. It is not a Render deployment.
+    if os.environ.get("PRODPILOT_DEPLOY_TARGET", "disabled").strip().lower() != "local_process":
+        raise HTTPException(
+            status_code=501,
+            detail="No production provider deployment adapter is configured. Local process deployment is disabled.",
+        )
+
+    repo_path = body.repo_path
+    if not repo_path or not Path(repo_path).exists():
+        try:
+            active = get_active_repo()
+            if active and active.get("local_path") and Path(active["local_path"]).exists():
+                repo_path = str(Path(active["local_path"]).resolve())
+        except Exception:
+            repo_path = None
+    if not repo_path or not (Path(repo_path) / ".git").exists():
+        raise HTTPException(status_code=409, detail="A valid connected local Git repository is required")
+
+    art_rows = get_artifacts(incident_id)
+    artifacts = {a.get("kind"): a.get("content") for a in art_rows}
+    patch_diff = artifacts.get("patch_diff") or ""
+    if action == "fix_forward" and not patch_diff.strip():
+        raise HTTPException(status_code=409, detail="No verified patch artifact is available for this incident")
+    suspect = inc.get("suspect_commit")
+    if isinstance(suspect, str):
+        try:
+            suspect = json.loads(suspect)
+        except Exception:
+            suspect = {}
+    suspect_commit_hash = (suspect or {}).get("hash") if isinstance(suspect, dict) else None
+    if action == "rollback" and not suspect_commit_hash:
+        raise HTTPException(status_code=409, detail="No suspect commit is available for rollback")
 
     # Record approval in DB
     approval_id = f"appr-{incident_id[:8]}-{os.urandom(3).hex()}"
@@ -451,40 +573,14 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         payload={"action": action, "source": body.source, "message": f"Deploying {action} to production port 8000..."},
     )
 
-    # Find repo path for the target service
-    repo_path = body.repo_path or os.environ.get("TARGET_REPO_PATH") or os.environ.get("DEMO_PROD_PATH")
-    if not repo_path or not Path(repo_path).exists():
-        try:
-            active = get_active_repo()
-            if active and active.get("local_path") and Path(active["local_path"]).exists():
-                repo_path = str(Path(active["local_path"]).resolve())
-        except Exception:
-            pass
-
-    suspect_commit_hash = None
-    suspect = inc.get("suspect_commit")
-    if isinstance(suspect, dict):
-        suspect_commit_hash = suspect.get("hash")
-
-    # Fetch patch diff artifact if fix_forward
-    patch_diff = ""
-    art_rows = get_artifacts(incident_id)
-    for a in art_rows:
-        if a.get("kind") == "patch_diff":
-            patch_diff = a.get("content", "")
-
-    # Execute Deploy Adapter: if no patch (for fix_forward) or no suspect commit (for rollback), use mock mode
-    mock_deploy = (
-        not (repo_path and Path(repo_path).exists())
-        or (action == "fix_forward" and not patch_diff)
-        or (action == "rollback" and not suspect_commit_hash)
-    )
     deploy_res = deploy_adapter.deploy(
         action=action,
-        repo_path=repo_path or ".",
+        repo_path=repo_path,
         patch_diff=patch_diff,
         suspect_commit=suspect_commit_hash,
-        mock_mode=mock_deploy,
+        mock_mode=False,
+        incident_id=incident_id,
+        source=body.source,
     )
 
     deploy_status = deploy_res.get("status")
@@ -493,7 +589,7 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
     elif deploy_status == "AUTO_REVERTED":
         new_status = "AUTO_REVERTED"
     else:
-        new_status = "ROLLED_BACK"
+        new_status = "FAILED"
 
     update_incident_status(incident_id, new_status)
 
@@ -519,30 +615,16 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         },
     )
 
-    # Execute Option A: Branch -> Pull Request -> Auto-Merge lifecycle
-    pr_result = {}
-    try:
-        from backend.prodpilot.pipeline.github_pr_workflow import execute_github_pr_lifecycle
-        pr_result = execute_github_pr_lifecycle(
-            incident_id=incident_id,
-            action=action,
-            repo_path=repo_path,
-            patch_diff=patch_diff,
-            suspect_commit_hash=suspect_commit_hash,
-            source=body.source,
-        )
-    except Exception as e:
-        logger.warning(f"GitHub PR workflow execution note: {e}")
-
     return {
         "status": new_status,
         "deployed_action": action,
-        "health_check": deploy_res.get("health_check", "ok"),
+        "deployment_target": "local_process",
+        "health_check": deploy_res.get("health_check"),
         "incident_id": incident_id,
-        "pr_url": pr_result.get("pr_url"),
-        "pr_number": pr_result.get("pr_number"),
-        "branch": pr_result.get("branch"),
-        "merged": pr_result.get("merged", True),
+        "pr_url": None,
+        "pr_number": None,
+        "branch": None,
+        "merged": False,
     }
 
 
@@ -847,5 +929,58 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
         "console_lines": console_lines,
         "plain_text": plain_text,
     }
+
+
+@app.get("/worktrees")
+def get_worktrees_endpoint(repo_path: Optional[str] = None) -> Dict[str, Any]:
+    """Lists all active and temporary git worktrees with status and age."""
+    active_repo = repo_path
+    if not active_repo:
+        try:
+            active = get_active_repo()
+            active_repo = (active or {}).get("local_path")
+        except Exception:
+            pass
+    active_repo = active_repo or os.getcwd()
+
+    worktrees = list_active_worktrees(active_repo)
+    return {
+        "ok": True,
+        "worktrees": worktrees,
+        "count": len(worktrees),
+        "temporary_count": sum(1 for w in worktrees if w.get("is_temporary")),
+        "repo_path": active_repo,
+    }
+
+
+@app.post("/worktrees/prune")
+def prune_worktrees_endpoint(
+    repo_path: Optional[str] = None,
+    force_all: bool = False,
+    max_age_seconds: float = 1800.0,
+) -> Dict[str, Any]:
+    """Prunes stale or orphaned temporary worktrees."""
+    active_repo = repo_path
+    if not active_repo:
+        try:
+            active = get_active_repo()
+            active_repo = (active or {}).get("local_path")
+        except Exception:
+            pass
+    active_repo = active_repo or os.getcwd()
+
+    cleaned = cleanup_stale_worktrees(
+        active_repo,
+        max_age_seconds=None if force_all else max_age_seconds,
+        force_all_temporary=force_all,
+    )
+    return {
+        "ok": True,
+        "status": "pruned",
+        "cleaned": cleaned,
+        "cleaned_count": len(cleaned),
+        "repo_path": active_repo,
+    }
+
 
 

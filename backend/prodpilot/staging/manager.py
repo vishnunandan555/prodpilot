@@ -40,6 +40,7 @@ class StagingManager:
         self.repo_path = str(Path(repo_path).resolve())
         self.instances: Dict[str, StagingInstance] = {}
         self.rollback_worktree: Optional[str] = None
+        self.fix_forward_worktree: Optional[str] = None
 
     def _find_python_executable(self) -> str:
         # Check if venv python is present
@@ -104,6 +105,7 @@ class StagingManager:
     ) -> StagingInstance:
         """Stages the fix-forward build on port 8001 and probes health."""
         health_url = f"http://127.0.0.1:{port}/health"
+        self.fix_forward_worktree = patched_worktree
         instance = StagingInstance(
             name="fix_forward",
             port=port,
@@ -231,8 +233,8 @@ class StagingManager:
             },
         }
 
-    def stop_all(self) -> None:
-        """Cleanly stops all running staging processes and cleans rollback worktree."""
+    def stop_all(self, clean_worktrees: bool = True) -> None:
+        """Cleanly stops all running staging processes and cleans staging worktrees."""
         for name, inst in self.instances.items():
             if inst.proc and inst.proc.poll() is None:
                 logger.info(f"Stopping staging process {name} (pid {inst.pid})")
@@ -245,7 +247,18 @@ class StagingManager:
                     except Exception:
                         pass
 
-        if self.rollback_worktree:
-            remove_worktree(self.rollback_worktree, repo_path=self.repo_path)
-            self.rollback_worktree = None
+        if clean_worktrees:
+            if self.rollback_worktree:
+                remove_worktree(self.rollback_worktree, repo_path=self.repo_path)
+                self.rollback_worktree = None
+            if self.fix_forward_worktree:
+                remove_worktree(self.fix_forward_worktree, repo_path=self.repo_path)
+                self.fix_forward_worktree = None
+
         self.instances.clear()
+
+    def __enter__(self) -> "StagingManager":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop_all(clean_worktrees=True)

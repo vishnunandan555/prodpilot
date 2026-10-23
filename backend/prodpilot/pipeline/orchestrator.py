@@ -28,6 +28,7 @@ from backend.prodpilot.db import (
 from backend.prodpilot.decide.jev import decide_jev as decide
 from backend.prodpilot.pipeline.brief import create_brief
 from backend.prodpilot.pipeline.repro_runner import run_repro_pipeline
+from backend.prodpilot.pipeline.worktree import cleanup_stale_worktrees, remove_worktree
 
 logger = logging.getLogger("prodpilot.orchestrator")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -50,8 +51,7 @@ def resolve_target_repo_path(custom_path: Optional[str] = None) -> str:
     except Exception as e:
         logger.warning(f"Failed to resolve active repo from DB: {e}")
 
-    # Fallback to current directory if git repo
-    return str(Path.cwd().resolve())
+    raise FileNotFoundError("No target Git repository is connected; set repo_path or configure an active project")
 
 # Backward compatibility alias
 resolve_demo_repo_path = resolve_target_repo_path
@@ -74,6 +74,8 @@ def process_incident(
     """
     incident_id = incident["id"]
     target_repo = resolve_demo_repo_path(repo_path)
+    if not (Path(target_repo) / ".git").exists():
+        raise FileNotFoundError(f"Target path is not a Git repository: {target_repo}")
     logger.info(f"Processing incident {incident_id} (service: {incident.get('service')}) in repo {target_repo}")
 
     # a. Transition status to INVESTIGATING
@@ -119,6 +121,8 @@ def process_incident(
 
     if not pipeline_res.ok:
         logger.error(f"Repro pipeline failed for {incident_id}: {pipeline_res.error}")
+        if pipeline_res.worktree_path:
+            remove_worktree(pipeline_res.worktree_path, repo_path=target_repo)
         update_incident_status(incident_id, "FAILED", db_path=db_path)
         log_event(
             run_id=pipeline_res.run_id,
@@ -163,6 +167,22 @@ def process_incident(
     staging_status = staging_mgr.get_status()
     logger.info(f"Canary status: fix_forward={staging_status['fix_forward']}, rollback={staging_status['rollback']}")
 
+    if not any(
+        staging_status.get(option, {}).get("health") is True
+        for option in ("fix_forward", "rollback")
+    ):
+        staging_mgr.stop_all()
+        update_incident_status(incident_id, "FAILED", db_path=db_path)
+        log_event(
+            run_id=pipeline_res.run_id,
+            incident_id=incident_id,
+            stage="STAGE",
+            kind="error",
+            payload={"error": "Both fix-forward and rollback canaries failed health checks; approval is blocked."},
+            db_path=db_path,
+        )
+        return {"status": "FAILED", "incident_id": incident_id, "error": "No healthy recovery canary"}
+
     # e. Run Decision Engine
     log_event(
         run_id=pipeline_res.run_id,
@@ -191,6 +211,31 @@ def process_incident(
     )
     logger.info(f"Decision: {decision['recommendation']} ({decision['probabilities']}) - {decision['reason']}")
 
+    # Open a review PR from the verified patch in an isolated worktree. The helper
+    # never merges; the PR remains a review artifact until a separate provider flow exists.
+    pr_result: Dict[str, Any] = {"ok": False, "error": "GitHub PR was not prepared"}
+    try:
+        from backend.prodpilot.pipeline.github_pr_workflow import execute_github_pr_lifecycle
+        pr_result = execute_github_pr_lifecycle(
+            incident_id=incident_id,
+            action="fix_forward",
+            repo_path=target_repo,
+            patch_diff=pipeline_res.patch_diff,
+            source="remediation_pipeline",
+            db_path=db_path,
+        )
+    except Exception as exc:
+        logger.exception("Could not prepare GitHub PR for incident %s", incident_id)
+        pr_result = {"ok": False, "error": str(exc)}
+    log_event(
+        run_id=pipeline_res.run_id,
+        incident_id=incident_id,
+        stage="FIX",
+        kind="pr_prepared" if pr_result.get("ok") else "pr_preparation_failed",
+        payload=pr_result,
+        db_path=db_path,
+    )
+
     # f. Transition status to AWAITING_APPROVAL
     update_incident_status(incident_id, "AWAITING_APPROVAL", db_path=db_path)
     log_event(
@@ -200,6 +245,14 @@ def process_incident(
         kind="awaiting_approval",
         payload={
             "recommendation": decision["recommendation"],
+            "github_pr": {
+                "ok": pr_result.get("ok", False),
+                "url": pr_result.get("pr_url"),
+                "number": pr_result.get("pr_number"),
+                "branch": pr_result.get("branch"),
+                "merged": False,
+                "error": pr_result.get("error"),
+            },
             "options": {
                 "fix_forward": {
                     "port": 8001,
@@ -255,6 +308,15 @@ def run_orchestrator(
     """Polls database for 'OPEN' incidents and processes them."""
     init_db(db_path=db_path)
     logger.info(f"ProdPilot Orchestrator started (poll_interval={poll_interval}s, once={once})")
+
+    # Clean any stale or dead-process worktrees on startup
+    target_clean_repo = repo_path or os.getcwd()
+    try:
+        pruned = cleanup_stale_worktrees(target_clean_repo)
+        if pruned:
+            logger.info(f"Orchestrator pruned {len(pruned)} stale worktree(s) on startup")
+    except Exception as e:
+        logger.debug(f"Startup worktree prune notice: {e}")
 
     processed = []
     try:

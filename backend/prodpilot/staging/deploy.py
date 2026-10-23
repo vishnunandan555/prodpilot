@@ -29,6 +29,7 @@ from backend.prodpilot.db import (
     save_artifact,
     update_incident_status,
 )
+from backend.prodpilot.pipeline.worktree import remove_worktree
 
 logger = logging.getLogger("prodpilot.deploy")
 
@@ -407,9 +408,10 @@ class DeployAdapter:
                     applied = True
 
                 if patch_diff and not applied:
+                    clean_diff = patch_diff if patch_diff.endswith("\n") else f"{patch_diff}\n"
                     apply_proc = subprocess.run(
                         ["git", "apply", "--ignore-whitespace", "--3way"],
-                        input=patch_diff,
+                        input=clean_diff,
                         cwd=str(repo),
                         capture_output=True,
                         text=True,
@@ -417,7 +419,7 @@ class DeployAdapter:
                     if apply_proc.returncode != 0:
                         apply_proc = subprocess.run(
                             ["git", "apply", "--ignore-whitespace"],
-                            input=patch_diff,
+                            input=clean_diff,
                             cwd=str(repo),
                             capture_output=True,
                             text=True,
@@ -426,13 +428,9 @@ class DeployAdapter:
                         applied = True
                     else:
                         logger.warning(f"git apply failed: {apply_proc.stderr}")
-                        app_file = repo / "app.py"
-                        if app_file.exists():
-                            content = app_file.read_text(encoding="utf-8")
-                            if 'discount = order["discount"]' in content:
-                                content = content.replace('discount = order["discount"]', 'discount = order.get("discount", 0)')
-                                app_file.write_text(content, encoding="utf-8")
-                                applied = True
+
+                if not applied:
+                    raise RuntimeError("No verified patch could be applied; refusing to start deployment")
 
                 subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
                 subprocess.run(
@@ -440,6 +438,12 @@ class DeployAdapter:
                     cwd=str(repo),
                     capture_output=True,
                 )
+                if patched_worktree and Path(patched_worktree).exists():
+                    try:
+                        logger.info(f"Deployed to production; cleaning candidate worktree: {patched_worktree}")
+                        remove_worktree(patched_worktree, repo_path=str(repo))
+                    except Exception as e:
+                        logger.debug(f"Notice cleaning worktree {patched_worktree}: {e}")
 
             elif action == "rollback":
                 if not suspect_commit:
@@ -452,6 +456,12 @@ class DeployAdapter:
                 )
                 if revert_proc.returncode != 0:
                     raise RuntimeError(f"git revert failed: {revert_proc.stderr}")
+                if patched_worktree and Path(patched_worktree).exists():
+                    try:
+                        logger.info(f"Rollback selected; cleaning unused worktree: {patched_worktree}")
+                        remove_worktree(patched_worktree, repo_path=str(repo))
+                    except Exception as e:
+                        logger.debug(f"Notice cleaning worktree {patched_worktree}: {e}")
             else:
                 raise ValueError(f"Unknown deploy action: {action}")
 
@@ -649,23 +659,6 @@ def approve_incident(
         source=source,
         simulate_watchdog_failure=simulate_watchdog_failure,
     )
-
-    if not mock_mode and deploy_res.get("status") in ("DEPLOYED", "RESOLVED"):
-        try:
-            from backend.prodpilot.pipeline.github_pr_workflow import execute_github_pr_lifecycle
-            pr_res = execute_github_pr_lifecycle(
-                incident_id=incident_id,
-                action=normalized_action,
-                repo_path=target_repo,
-                patch_diff=patch_diff,
-                suspect_commit_hash=suspect_commit,
-                source=source,
-                db_path=db_path,
-            )
-            deploy_res["pr_url"] = pr_res.get("pr_url")
-            deploy_res["pr_number"] = pr_res.get("pr_number")
-        except Exception as e:
-            logger.warning(f"Could not execute GitHub PR lifecycle: {e}")
 
     return deploy_res
 

@@ -138,12 +138,14 @@ def render_mobile_incident_page(
         remediation_stream_html = '<div class="text-zinc-500 italic py-4 text-center">Agent preparing sandbox worktree and deterministic reproduction test...</div>'
 
     # GitHub PR info if already deployed
-    github_pr = artifacts.get("github_pr", {})
+    github_pr = artifacts.get("github_pr") or {}
     if isinstance(github_pr, str):
         try:
             github_pr = json.loads(github_pr)
         except Exception:
             github_pr = {}
+    if not isinstance(github_pr, dict):
+        github_pr = {}
     pr_url = github_pr.get("pr_url") or "https://github.com/vishnunandan555/chunkstream/pulls"
 
     # Sticky Footer actions

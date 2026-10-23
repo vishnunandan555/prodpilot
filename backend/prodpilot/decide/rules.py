@@ -78,7 +78,7 @@ def decide(
             rec = "fix_forward"
             probs = {"fix_forward": 0.85, "rollback": 0.15}
             reason = (
-                f"Defensive {line_desc} in {suspect_file} passes 100% of regression tests; "
+                f"Small defensive {line_desc} in {suspect_file} passes 100% of regression tests; "
                 f"canary probing confirmed healthy."
             )
         elif patch_lines > 25 and minutes_ago <= 30:

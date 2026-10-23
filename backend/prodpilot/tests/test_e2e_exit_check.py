@@ -22,6 +22,7 @@ from backend.prodpilot.db import (
     get_incident,
     get_artifacts,
     get_events,
+    log_event,
     init_db,
 )
 from backend.prodpilot.decide.rules import decide
@@ -175,6 +176,21 @@ def test_full_pipeline_exit_check():
         print(f"      - Confidence: {decision['probabilities']['fix_forward'] * 100:.0f}%")
         print(f"      - Reason: {decision['reason']}")
 
+        # Persist awaiting_approval event with canary health options for REST approval verification
+        log_event(
+            run_id=pipeline_res.run_id,
+            incident_id=incident_id,
+            stage="AWAIT_APPROVAL",
+            kind="awaiting_approval",
+            payload={
+                "recommendation": decision["recommendation"],
+                "options": {
+                    "fix_forward": {"port": 8001, "health_ok": True},
+                    "rollback": {"port": 8002, "health_ok": True},
+                },
+            },
+        )
+
         # 6. Trigger Approval via FastAPI REST Server
         print("[5/5] Triggering approval via FastAPI REST endpoint...")
         client = TestClient(app)
@@ -210,6 +226,9 @@ def test_full_pipeline_exit_check():
         artifacts = get_artifacts(incident_id)
         assert any(a["kind"] == "repro_test" for a in artifacts)
         assert any(a["kind"] == "patch_diff" for a in artifacts)
+
+        # Clean staging worktrees and instances
+        staging_mgr.stop_all()
 
         print("\n" + "=" * 60)
         print("EXIT CHECK PASSED: COMPLETE STREAM A PIPELINE VERIFIED!")
