@@ -149,9 +149,28 @@ def classify_logs(
     # 1. CRASH OVERRIDE: any fatal exit is forced to HIGH
     if RE_CRASH_OVERRIDE.search(combined_text):
         fp = compute_fingerprint(extracted_trace or combined_text)
+
+        # Extract specific error name and line if available
+        specific_reason = None
+        if extracted_trace:
+            exc_line = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|IndexError|NameError|RuntimeError|Exception|Error):[^\n]+)", extracted_trace)
+            if exc_line:
+                specific_reason = exc_line.group(1).strip()
+            elif "FATAL APPLICATION CRASH:" in extracted_trace:
+                fc_m = re.search(r"FATAL APPLICATION CRASH:\s*([^\n]+)", extracted_trace)
+                if fc_m:
+                    specific_reason = fc_m.group(1).strip()
+
+        if not specific_reason and suspected_area and suspected_area != service:
+            specific_reason = f"Fatal unhandled exception in {suspected_area}"
+
+        final_reason = specific_reason or "Fatal application crash detected"
+        if suspected_area and suspected_area != service and specific_reason and suspected_area not in specific_reason:
+            final_reason = f"{specific_reason} ({suspected_area})"
+
         return TriageResult(
             severity=Severity.HIGH.value,
-            reason="Fatal exit / crash override detected",
+            reason=final_reason,
             trace=extracted_trace or full_tail,
             log_tail=full_tail,
             suspected_area=suspected_area,

@@ -53,24 +53,30 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
     }
   };
 
-  const fetchServices = async () => {
-    setLoading(true);
+  const servicesRef = React.useRef([]);
+
+  const fetchServices = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${apiUrl}/platform-services`);
       if (res.ok) {
         const data = await res.json();
-        setServices(data.services || []);
+        const nextServices = data.services || [];
+        if (JSON.stringify(nextServices) !== JSON.stringify(servicesRef.current)) {
+          servicesRef.current = nextServices;
+          setServices(nextServices);
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch platform services:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchServices();
-    const interval = setInterval(fetchServices, 6000);
+    fetchServices(false);
+    const interval = setInterval(() => fetchServices(true), 20000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 

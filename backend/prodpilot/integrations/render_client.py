@@ -141,8 +141,8 @@ class RenderClient:
         except Exception as e:
             return {"ok": False, "error": str(e), "deploys": []}
 
-    def get_logs(self, service_id: str, api_key: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
-        """Fetches live application stdout/stderr logs from Render API v1 with rate limit tracking."""
+    def get_logs(self, service_id: str, api_key: Optional[str] = None, limit: int = 100, force: bool = False) -> Dict[str, Any]:
+        """Fetches live application stdout/stderr logs from Render API v1 with intelligent rate limit quota conservation."""
         sid = service_id.strip()
         headers = self._headers(api_key)
 
@@ -155,6 +155,46 @@ class RenderClient:
             }
 
         now = time.time()
+
+        # In-memory shared cache to guarantee Render API 30 req/min limit is never violated
+        cached_entry = _LAST_LOGS_CACHE.get(sid)
+        if cached_entry:
+            cache_age = now - cached_entry.get("cached_at", 0)
+            last_rate = cached_entry.get("rate_limit", {})
+            remaining = last_rate.get("remaining", 30)
+
+            # If quota is dangerously low (remaining <= 3), never hit Render even if forced
+            if remaining <= 3:
+                reset_sec = max(0, int(last_rate.get("reset", 0) - cache_age))
+                return {
+                    "ok": True,
+                    "logs": cached_entry.get("logs", []),
+                    "count": len(cached_entry.get("logs", [])),
+                    "is_suspended": cached_entry.get("is_suspended", False),
+                    "service_name": cached_entry.get("service_name", "production-service"),
+                    "rate_limit": {**last_rate, "reset": reset_sec},
+                    "rate_limited": True,
+                    "cached": True,
+                    "rate_conserved": True,
+                }
+
+            # Adaptive TTL:
+            # - Normal: 5.0s (max 12 calls/min to Render across all clients & background watchdogs)
+            # - Low quota (remaining <= 10): 15.0s (max 4 calls/min)
+            ttl = 15.0 if remaining <= 10 else 5.0
+            if not force and cache_age < ttl:
+                reset_sec = max(0, int(last_rate.get("reset", 0) - cache_age))
+                return {
+                    "ok": True,
+                    "logs": cached_entry.get("logs", []),
+                    "count": len(cached_entry.get("logs", [])),
+                    "is_suspended": cached_entry.get("is_suspended", False),
+                    "service_name": cached_entry.get("service_name", "production-service"),
+                    "rate_limit": {**last_rate, "reset": reset_sec},
+                    "rate_limited": False,
+                    "cached": True,
+                    "cache_age": round(cache_age, 1),
+                }
 
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -333,7 +373,13 @@ class RenderClient:
                 logs.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
 
                 # Cache recent logs for rate limit fallbacks
-                _LAST_LOGS_CACHE[sid] = {"logs": logs, "cached_at": now}
+                _LAST_LOGS_CACHE[sid] = {
+                    "logs": logs,
+                    "cached_at": now,
+                    "is_suspended": is_suspended,
+                    "service_name": svc_name,
+                    "rate_limit": rate_limit,
+                }
 
                 # If suspended (Render free-tier inactivity spin-down), inject banner at top
                 if is_suspended:

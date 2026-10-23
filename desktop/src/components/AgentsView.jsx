@@ -36,26 +36,30 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
   const [fleetData, setFleetData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const fleetDataRef = React.useRef(null);
 
-  const fetchAgents = async () => {
-    setLoading(true);
+  const fetchAgents = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${apiUrl}/agents`);
       if (res.ok) {
         const data = await res.json();
-        setFleetData(data);
-        setLastRefreshed(new Date());
+        if (JSON.stringify(data) !== JSON.stringify(fleetDataRef.current)) {
+          fleetDataRef.current = data;
+          setFleetData(data);
+          setLastRefreshed(new Date());
+        }
       }
     } catch (err) {
       console.error('Failed to fetch agents telemetry:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAgents();
-    const interval = setInterval(fetchAgents, 5000);
+    fetchAgents(false);
+    const interval = setInterval(() => fetchAgents(true), 20000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 

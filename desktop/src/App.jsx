@@ -122,36 +122,59 @@ export default function App() {
     localStorage.setItem('prodpilot_api_url', newUrl);
   };
 
+  // Cache refs to prevent unnecessary re-renders when data has not changed
+  const incidentsRef = useRef([]);
+  const selectedIncidentRef = useRef(null);
+
+  useEffect(() => {
+    selectedIncidentRef.current = selectedIncident;
+  }, [selectedIncident]);
+
   // Initial and periodic fetch of incidents from active API
-  const fetchIncidents = async () => {
-    setIsRefreshing(true);
+  const fetchIncidents = async (manual = false) => {
+    if (manual) setIsRefreshing(true);
     try {
       const res = await fetch(`${apiUrl}/incidents`);
       if (res.ok) {
         const data = await res.json();
-        setIncidents(data);
         setApiConnected(true);
 
+        // Only update incidents state if payload actually changed
+        if (JSON.stringify(data) !== JSON.stringify(incidentsRef.current)) {
+          incidentsRef.current = data;
+          setIncidents(data);
+        }
+
+        const currentSelected = selectedIncidentRef.current;
+
         if (data.length === 0) {
-          setSelectedIncident(null);
+          if (currentSelected !== null) {
+            setSelectedIncident(null);
+          }
         } else {
           // Check if a specific incident is in URL
           const pathIncId = parsePathIncidentId();
           if (pathIncId) {
             const match = data.find((i) => i.id === pathIncId);
             if (match) {
-              setSelectedIncident(match);
-              fetchIncidentDetail(pathIncId);
-            } else {
+              const isActiveState = !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(match.status);
+              if (!currentSelected || currentSelected.id !== pathIncId) {
+                setSelectedIncident(match);
+                fetchIncidentDetail(pathIncId);
+              } else if (match.status !== currentSelected.status || isActiveState) {
+                fetchIncidentDetail(pathIncId);
+              }
+            } else if (currentSelected !== null) {
               setSelectedIncident(null);
             }
-          } else if (!selectedIncident || !data.some((i) => i.id === selectedIncident.id)) {
+          } else if (!currentSelected || !data.some((i) => i.id === currentSelected.id)) {
             const active = data.find((i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED') || data[0];
             setSelectedIncident(active);
             fetchIncidentDetail(active.id);
           } else {
-            const updated = data.find((i) => i.id === selectedIncident.id);
-            if (updated && updated.status !== selectedIncident.status) {
+            const updated = data.find((i) => i.id === currentSelected.id);
+            const isActiveState = updated && !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(updated.status);
+            if (updated && (updated.status !== currentSelected.status || isActiveState)) {
               fetchIncidentDetail(updated.id);
             }
           }
@@ -162,7 +185,7 @@ export default function App() {
     } catch (err) {
       setApiConnected(false);
     } finally {
-      setIsRefreshing(false);
+      if (manual) setIsRefreshing(false);
     }
   };
 
@@ -171,7 +194,22 @@ export default function App() {
       const res = await fetch(`${apiUrl}/incidents/${id}`);
       if (res.ok) {
         const data = await res.json();
-        setSelectedIncident(data);
+        const curr = selectedIncidentRef.current;
+        // Only trigger state update if fields actually changed to eliminate tab/view flicker
+        if (
+          !curr ||
+          curr.id !== data.id ||
+          curr.status !== data.status ||
+          curr.updated_at !== data.updated_at ||
+          JSON.stringify(curr.staging) !== JSON.stringify(data.staging) ||
+          JSON.stringify(curr.brief) !== JSON.stringify(data.brief) ||
+          (data.artifacts?.patch_diff && data.artifacts.patch_diff !== curr.artifacts?.patch_diff)
+        ) {
+          setSelectedIncident(data);
+        }
+        if (data.events && Array.isArray(data.events)) {
+          setEvents(data.events);
+        }
         if (data.status === 'DEPLOYED' || data.status === 'RESOLVED') {
           setDeploySuccess(true);
         }
@@ -181,10 +219,10 @@ export default function App() {
     }
   };
 
-  // Polling loop for active incident updates
+  // Polling loop for active incident updates (relaxed to 15s since SSE streams real-time updates)
   useEffect(() => {
-    fetchIncidents();
-    const interval = setInterval(fetchIncidents, 4000);
+    fetchIncidents(true);
+    const interval = setInterval(() => fetchIncidents(false), 15000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 

@@ -62,12 +62,12 @@ def test_incidents_crud_and_endpoints():
     assert res.json()["deployed_action"] == "fix_forward"
 
     # Clean up test incident to prevent DB pollution
-    from backend.prodpilot.db import get_connection
-    with get_connection() as conn:
-        conn.execute("DELETE FROM incidents WHERE id = ?", (inc_id,))
-        conn.execute("DELETE FROM runs WHERE incident_id = ?", (inc_id,))
-        conn.execute("DELETE FROM run_events WHERE incident_id = ?", (inc_id,))
-        conn.execute("DELETE FROM artifacts WHERE incident_id = ?", (inc_id,))
-        conn.execute("DELETE FROM decisions WHERE incident_id = ?", (inc_id,))
+    from backend.prodpilot.db import get_db
+    with get_db() as conn:
         conn.execute("DELETE FROM approvals WHERE incident_id = ?", (inc_id,))
+        conn.execute("DELETE FROM decisions WHERE incident_id = ?", (inc_id,))
+        conn.execute("DELETE FROM artifacts WHERE incident_id = ?", (inc_id,))
+        conn.execute("DELETE FROM run_events WHERE incident_id = ?", (inc_id,))
+        conn.execute("DELETE FROM runs WHERE incident_id = ?", (inc_id,))
+        conn.execute("DELETE FROM incidents WHERE id = ?", (inc_id,))
         conn.commit()

@@ -41,9 +41,9 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
   const [triageAlert, setTriageAlert] = useState(null);
   const [collapsedTracebacks, setCollapsedTracebacks] = useState({});
 
-  // Auto-refresh cadence: 10 seconds default, can be 5, 10, 30, or 0 (off)
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(10);
-  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(10);
+  // Auto-refresh cadence: 15s default (consumes 4 req/min of 30 quota, leaving 26 for manual refreshes)
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(15);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(15);
 
   // Use refs to avoid closure staleness in intervals
   const selectedServerIdRef = useRef(selectedServerId);
@@ -96,7 +96,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
   const currentServer = servers.find((s) => s.id === selectedServerId);
 
   // Fetch live logs from Render REST API or local ingest
-  const fetchLogs = async (silent = false, overrideServerId = null) => {
+  const fetchLogs = async (silent = false, overrideServerId = null, force = false) => {
     const targetServerId = overrideServerId || selectedServerIdRef.current;
     const targetServer = serversRef.current.find((s) => s.id === targetServerId) || currentServer;
 
@@ -126,7 +126,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
     }
 
     try {
-      const res = await fetch(`${apiUrl}/servers/${targetServerId}/logs?limit=150`);
+      const res = await fetch(`${apiUrl}/servers/${targetServerId}/logs?limit=150&force=${force ? 'true' : 'false'}`);
       if (res.ok) {
         const data = await res.json();
         if (data.ok === false) {
@@ -343,11 +343,11 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
                 onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
                 className="bg-transparent text-[11px] font-semibold text-[#f0f6fc] focus:outline-none cursor-pointer"
               >
-                <option value={3} className="bg-[#121824] text-[#f0f6fc]">Every 3s (High-Frequency)</option>
-                <option value={5} className="bg-[#121824] text-[#f0f6fc]">Every 5s (Optimal)</option>
-                <option value={10} className="bg-[#121824] text-[#f0f6fc]">Every 10s (Default)</option>
-                <option value={30} className="bg-[#121824] text-[#f0f6fc]">Every 30s</option>
-                <option value={0} className="bg-[#121824] text-[#8b949e]">Paused</option>
+                <option value={15} className="bg-[#121824] text-[#f0f6fc]">Every 15s (Optimal - 4 req/min)</option>
+                <option value={20} className="bg-[#121824] text-[#f0f6fc]">Every 20s (Conserve Quota - 3 req/min)</option>
+                <option value={30} className="bg-[#121824] text-[#f0f6fc]">Every 30s (Conservative - 2 req/min)</option>
+                <option value={60} className="bg-[#121824] text-[#f0f6fc]">Every 60s (Slow - 1 req/min)</option>
+                <option value={0} className="bg-[#121824] text-[#8b949e]">Paused (Manual Only)</option>
               </select>
               {autoRefreshInterval > 0 && (
                 <span className="text-[10px] font-mono text-[#58a6ff] ml-1">
@@ -356,21 +356,32 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
               )}
             </div>
 
-            {/* Render API Quota Status */}
+            {/* Render API Quota Status with dynamic reset countdown */}
             {rateLimitInfo && (
               <div
-                className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded bg-[#121824] border border-[#222f47] text-[10px] font-mono"
-                title={`Render API limit: ${rateLimitInfo.limit}/min. Resets in ${rateLimitInfo.reset}s`}
+                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-mono transition ${
+                  rateLimitInfo.remaining <= 5
+                    ? 'bg-[#261317] border-[#ff4444]/40 text-[#ff7b72]'
+                    : rateLimitInfo.remaining <= 10
+                    ? 'bg-[#221a0d] border-[#d29922]/40 text-[#e3b341]'
+                    : 'bg-[#121824] border-[#222f47]'
+                }`}
+                title={`Render API limit: ${rateLimitInfo.limit}/min on rolling 60s window. Window resets in ${rateLimitInfo.reset}s.`}
               >
                 <span className="text-[#8b949e]">Quota:</span>
                 <span
                   className={
-                    rateLimitInfo.remaining < 5
+                    rateLimitInfo.remaining <= 5
                       ? 'text-[#ff7b72] font-bold'
+                      : rateLimitInfo.remaining <= 10
+                      ? 'text-[#e3b341] font-bold'
                       : 'text-[#3fb950] font-bold'
                   }
                 >
                   {rateLimitInfo.remaining}/{rateLimitInfo.limit}
+                </span>
+                <span className="text-[#6e7681]">
+                  ({rateLimitInfo.reset || 0}s reset)
                 </span>
               </div>
             )}
@@ -396,10 +407,10 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
             </button>
 
             <button
-              onClick={() => fetchLogs(false, selectedServerId)}
+              onClick={() => fetchLogs(false, selectedServerId, true)}
               disabled={loading}
               className="px-2.5 py-1.5 rounded-md bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-medium text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1.5 transition"
-              title="Refresh log stream now"
+              title="Force refresh live log stream from Render"
             >
               <RefreshCw
                 size={13}
@@ -468,9 +479,86 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
       </div>
 
       {/* Log Feed */}
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1.5 bg-[#080b11]">
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-2.5 bg-[#080b11]">
+        {/* Triage Action Alert Notification */}
+        {triageAlert && (
+          <div
+            className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200 ${
+              triageAlert.type === 'success'
+                ? 'bg-[#0d1e17] border-[#3fb950]/40 text-[#3fb950]'
+                : triageAlert.type === 'error'
+                ? 'bg-[#241316] border-[#ff7b72]/40 text-[#ff7b72]'
+                : 'bg-[#121929] border-[#58a6ff]/40 text-[#58a6ff]'
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              <Sparkles size={16} className="shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-xs">{triageAlert.title}</div>
+                <div className="text-[11px] opacity-90 mt-0.5">{triageAlert.message}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {triageAlert.incident && onSelectIncident && (
+                <button
+                  onClick={() => onSelectIncident(triageAlert.incident)}
+                  className="px-3 py-1.5 rounded bg-[#3fb950] hover:bg-[#2ea043] text-[#0d1117] font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+                >
+                  <span>View Incident</span>
+                  <ArrowRight size={13} />
+                </button>
+              )}
+              <button
+                onClick={() => setTriageAlert(null)}
+                className="px-2 py-1 text-[11px] opacity-75 hover:opacity-100 transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Live Detected Anomaly / Crash Banner */}
+        {triageSummary && (triageSummary.is_crash || triageSummary.severity === 'HIGH') && (
+          <div className="p-3.5 rounded-lg bg-gradient-to-r from-[#2a1318] to-[#180d12] border border-[#ff4444]/40 text-xs shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#ff4444]/15 border border-[#ff4444]/30 flex items-center justify-center text-[#ff7b72] shrink-0">
+                <AlertTriangle size={18} className="animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-[#f0f6fc] text-xs tracking-wide">
+                    ANOMALY DETECTED IN RENDER LOG STREAM
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#ff4444]/20 text-[#ff7b72] border border-[#ff4444]/40">
+                    {triageSummary.severity || 'HIGH'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#ff7b72] mt-0.5 font-mono">
+                  {triageSummary.reason || 'Unhandled Python Traceback or Fatal Crash in Service'}
+                </p>
+                {triageSummary.suspected_area && (
+                  <span className="text-[10px] text-[#8b949e]">
+                    Suspected Area: <code className="text-[#a371f7]">{triageSummary.suspected_area}</code>
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleTriggerTriage}
+                disabled={triaging}
+                className="px-3.5 py-1.5 rounded-md bg-[#ff4444] hover:bg-[#ff5555] active:scale-95 text-[#0d1117] font-bold text-xs flex items-center gap-1.5 shadow-md transition disabled:opacity-50"
+              >
+                <Sparkles size={13} className={triaging ? 'animate-spin' : ''} />
+                <span>{triaging ? 'Jev Triaging...' : '⚡ Triage Incident with Jev'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {isSuspended && (
-          <div className="p-3 mb-3 rounded-lg bg-[#1c180e] border border-[#3b2e13] text-xs text-[#e3b341] flex items-center justify-between gap-3">
+          <div className="p-3 mb-2 rounded-lg bg-[#1c180e] border border-[#3b2e13] text-xs text-[#e3b341] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Clock size={15} className="text-[#e3b341]" />
               <span>
@@ -488,7 +576,7 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
         )}
 
         {errorMsg && (
-          <div className="p-3 mb-3 rounded-lg bg-[#241316] border border-[#481c25] text-xs text-[#ff7b72] flex items-center gap-2">
+          <div className="p-3 mb-2 rounded-lg bg-[#241316] border border-[#481c25] text-xs text-[#ff7b72] flex items-center gap-2">
             <ShieldAlert size={15} />
             <span>{errorMsg}</span>
           </div>
@@ -523,34 +611,111 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate,
             </div>
           </div>
         ) : (
-          filteredLogs.map((log, idx) => (
-            <div
-              key={log.id || idx}
-              className="group flex items-start gap-3 px-3 py-2 rounded bg-[#0d111a]/70 hover:bg-[#121824] border border-[#1b2234]/50 transition"
-            >
-              <span className="text-[#485263] select-none text-[11px] min-w-[70px] shrink-0 font-mono">
-                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
-              </span>
+          filteredLogs.map((log, idx) => {
+            const logKey = log.id || `log-${idx}`;
 
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase shrink-0 ${getLevelStyle(
-                  log.level
-                )}`}
+            // SPECIALIZED SENTRY-GRADE TRACEBACK CARD
+            if (log.is_traceback) {
+              const isCollapsed = !!collapsedTracebacks[logKey];
+              return (
+                <div
+                  key={logKey}
+                  className="rounded-lg bg-[#150a0e] border border-[#ff4444]/40 shadow-sm overflow-hidden transition-all duration-200"
+                >
+                  {/* Traceback Card Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-[#200e14] border-b border-[#ff4444]/25">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#ff4444]/20 text-[#ff7b72] border border-[#ff4444]/40 flex items-center gap-1">
+                        <Bug size={11} />
+                        TRACEBACK (CRITICAL)
+                      </span>
+                      <span className="text-[#f0f6fc] font-bold text-xs font-mono">
+                        {log.error_summary || 'Python Exception'}
+                      </span>
+                      {log.service && (
+                        <span className="text-[#a371f7] text-[10px] font-semibold">
+                          [{log.service}]
+                        </span>
+                      )}
+                      <span className="text-[#8b949e] text-[10px] font-mono">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={handleTriggerTriage}
+                        disabled={triaging}
+                        className="px-2.5 py-1 rounded bg-[#ff4444]/20 hover:bg-[#ff4444]/30 border border-[#ff4444]/50 text-[#ff7b72] hover:text-[#fff] text-[11px] font-semibold flex items-center gap-1 transition"
+                        title="Triage this traceback with TypeSafe Jev"
+                      >
+                        <Sparkles size={11} />
+                        <span>Triage with Jev</span>
+                      </button>
+
+                      <button
+                        onClick={() => toggleTraceback(logKey)}
+                        className="p-1 rounded bg-[#2d1218] hover:bg-[#3d1822] text-[#8b949e] hover:text-[#f0f6fc] border border-[#4a1c24] transition text-xs flex items-center gap-1"
+                        title={isCollapsed ? 'Expand stack trace' : 'Collapse stack trace'}
+                      >
+                        {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                        <span className="text-[10px] hidden sm:inline">
+                          {isCollapsed ? 'Expand' : 'Collapse'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Traceback Body */}
+                  {!isCollapsed ? (
+                    <div className="p-3 bg-[#070910] text-[#ffa198] text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap select-text">
+                      {log.message}
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => toggleTraceback(logKey)}
+                      className="px-3.5 py-2 bg-[#070910] text-[#6e7681] text-[11px] font-mono cursor-pointer hover:text-[#8b949e] transition flex items-center justify-between"
+                    >
+                      <span>{log.message.split('\n')[0]} ... (click to expand full traceback)</span>
+                      <span className="text-[10px] text-[#485263]">
+                        {log.message.split('\n').length} frames
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // STANDARD CONTAINER LOG ROW
+            return (
+              <div
+                key={logKey}
+                className="group flex items-start gap-3 px-3 py-2 rounded bg-[#0d111a]/70 hover:bg-[#121824] border border-[#1b2234]/50 transition"
               >
-                {log.level || 'INFO'}
-              </span>
-
-              {log.service && (
-                <span className="text-[#a371f7] text-[11px] font-semibold min-w-[85px] shrink-0">
-                  [{log.service}]
+                <span className="text-[#485263] select-none text-[11px] min-w-[70px] shrink-0 font-mono">
+                  {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
                 </span>
-              )}
 
-              <span className="text-[#c9d1d9] flex-1 break-all select-text font-mono leading-relaxed whitespace-pre-wrap">
-                {log.message}
-              </span>
-            </div>
-          ))
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase shrink-0 ${getLevelStyle(
+                    log.level
+                  )}`}
+                >
+                  {log.level || 'INFO'}
+                </span>
+
+                {log.service && (
+                  <span className="text-[#a371f7] text-[11px] font-semibold min-w-[85px] shrink-0">
+                    [{log.service}]
+                  </span>
+                )}
+
+                <span className="text-[#c9d1d9] flex-1 break-all select-text font-mono leading-relaxed whitespace-pre-wrap">
+                  {log.message}
+                </span>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

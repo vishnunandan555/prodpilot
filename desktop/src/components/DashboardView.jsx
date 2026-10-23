@@ -38,8 +38,12 @@ export default function DashboardView({
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [services, setServices] = useState([]);
 
-  const fetchTopology = async () => {
-    setLoading(true);
+  const serversRef = React.useRef([]);
+  const projectsRef = React.useRef([]);
+  const servicesRef = React.useRef([]);
+
+  const fetchTopology = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [srvRes, projRes, svcRes] = await Promise.all([
         fetch(`${apiUrl}/servers`),
@@ -48,28 +52,40 @@ export default function DashboardView({
       ]);
       if (srvRes.ok) {
         const srvData = await srvRes.json();
-        setServers(srvData.servers || []);
+        const nextServers = srvData.servers || [];
+        if (JSON.stringify(nextServers) !== JSON.stringify(serversRef.current)) {
+          serversRef.current = nextServers;
+          setServers(nextServers);
+        }
       }
       if (projRes.ok) {
         const projData = await projRes.json();
-        setProjects(projData.projects || []);
-        setActiveProject(projData.active_project || null);
+        const nextProjects = projData.projects || [];
+        if (JSON.stringify(nextProjects) !== JSON.stringify(projectsRef.current)) {
+          projectsRef.current = nextProjects;
+          setProjects(nextProjects);
+          setActiveProject(projData.active_project || null);
+        }
       }
       if (svcRes && svcRes.ok) {
         const svcData = await svcRes.json();
-        setServices(svcData.services || []);
+        const nextServices = svcData.services || [];
+        if (JSON.stringify(nextServices) !== JSON.stringify(servicesRef.current)) {
+          servicesRef.current = nextServices;
+          setServices(nextServices);
+        }
       }
     } catch (err) {
       console.warn('Dashboard topology fetch error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setInitialLoaded(true);
     }
   };
 
   useEffect(() => {
-    fetchTopology();
-    const interval = setInterval(fetchTopology, 5000);
+    fetchTopology(false);
+    const interval = setInterval(() => fetchTopology(true), 20000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 

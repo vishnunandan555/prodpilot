@@ -25,11 +25,13 @@ import {
   Copy,
   Info,
   Server,
-  X
+  X,
+  Bot
 } from 'lucide-react';
 import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
 import PostMortemReport from './PostMortemReport';
+import AgentExecutionConsole from './AgentExecutionConsole';
 
 export default function IncidentDetail({
   incident,
@@ -43,9 +45,20 @@ export default function IncidentDetail({
   isStandaloneMobile = false,
   onNavigate,
 }) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const getInitialTab = () => {
+    try {
+      const param = new URLSearchParams(window.location.search).get('tab');
+      if (param && ['overview', 'agent', 'logs', 'investigation', 'recovery', 'changes', 'timeline'].includes(param)) {
+        return param;
+      }
+    } catch {}
+    return 'overview';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab);
   const [copiedTrace, setCopiedTrace] = useState(false);
   const [dismissRestoredBanner, setDismissRestoredBanner] = useState(false);
+  const [showPatchDiffInGate, setShowPatchDiffInGate] = useState(false);
 
   React.useEffect(() => {
     setDismissRestoredBanner(false);
@@ -124,16 +137,24 @@ export default function IncidentDetail({
       case 'OPEN':
       case 'DETECTED':
         return 0;
+      case 'INVESTIGATING':
+      case 'UNDERSTAND':
       case 'TRIAGED':
         return 1;
+      case 'REPRODUCE':
       case 'REPRODUCED':
         return 2;
       case 'FIXING':
       case 'FIXED':
+      case 'VERIFY':
+      case 'VERIFIED':
         return 3;
+      case 'STAGE':
       case 'STAGED':
         return 4;
       case 'AWAITING_APPROVAL':
+      case 'DECIDE':
+      case 'GATE':
         return 5;
       case 'DEPLOYED':
       case 'RESOLVED':
@@ -142,7 +163,7 @@ export default function IncidentDetail({
       case 'MANUAL_TAKEOVER':
         return 5;
       default:
-        return 5;
+        return 1;
     }
   };
 
@@ -158,6 +179,7 @@ export default function IncidentDetail({
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
+    { id: 'agent', label: 'Agent Console', icon: Bot },
     { id: 'logs', label: 'Logs & Traces', icon: Terminal },
     { id: 'investigation', label: 'Investigation & RCA', icon: AlertTriangle },
     { id: 'recovery', label: 'Recovery & Canaries', icon: Server },
@@ -263,6 +285,92 @@ export default function IncidentDetail({
         {/* ===================== TAB 1: OVERVIEW ===================== */}
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-in fade-in">
+            {/* Operator Approval Required (Stage 6 Gate) */}
+            {isAwaiting && (
+              <div className="rounded-xl bg-[#141008] border-2 border-[#d29922] p-4 space-y-3.5 shadow-2xl animate-in fade-in">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#2a200c] border border-[#d29922]/50 flex items-center justify-center text-[#d29922] flex-shrink-0 mt-0.5 shadow-sm">
+                      <ShieldAlert size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-[#f0f6fc]">
+                          User Approval Required to Move Forward
+                        </h2>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#d29922]/20 text-[#d29922] border border-[#d29922]/50">
+                          Stage 6 Gate
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#c9d1d9] mt-1 leading-relaxed">
+                        The autonomous agent has reproduced the error, verified a fix-forward patch against tests, and staged dual canaries on ports 8001 & 8002.
+                      </p>
+                      <div className="flex items-center gap-3 text-xs text-[#8b949e] mt-1.5 flex-wrap">
+                        <span className="flex items-center gap-1 text-[#3fb950] font-mono">
+                          <CheckCircle2 size={13} /> Dual Canaries 200 OK
+                        </span>
+                        <span>•</span>
+                        <span className="font-mono text-[#d29922]">
+                          Recommended: Fix-Forward ({ffConfidence}% confidence)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Candidate Patch Diff Preview Toggle */}
+                {diffContent && (
+                  <div className="rounded-lg bg-[#07090f] border border-[#2b2210] overflow-hidden text-xs">
+                    <button
+                      onClick={() => setShowPatchDiffInGate(!showPatchDiffInGate)}
+                      className="w-full px-3 py-2 bg-[#0c0e14] flex items-center justify-between text-[#8b949e] hover:text-[#f0f6fc] transition"
+                    >
+                      <span className="flex items-center gap-2 font-mono text-[11px] font-semibold text-[#58a6ff]">
+                        <FileCode size={13} />
+                        <span>Inspect Candidate Patch Diff Before Promotion</span>
+                      </span>
+                      {showPatchDiffInGate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    {showPatchDiffInGate && (
+                      <div className="p-2 border-t border-[#1b2234]">
+                        <DiffViewer diff={diffContent} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                  <button
+                    onClick={() => onApprove && onApprove('fix_forward')}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                    <Zap size={14} />
+                    <span>{actionLoading ? 'Promoting...' : 'Approve & Promote Fix to Production (Port 8000)'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => onRollback && onRollback()}
+                    disabled={actionLoading}
+                    className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RotateCcw size={13} />
+                    <span>Rollback Codebase</span>
+                  </button>
+
+                  <button
+                    onClick={() => onTakeover && onTakeover()}
+                    disabled={actionLoading}
+                    className="px-3 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-lg border border-[#212a3d] transition disabled:opacity-50"
+                  >
+                    <UserX size={13} />
+                    <span>Manual Takeover</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Header summary card */}
             <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-3">
@@ -359,6 +467,16 @@ export default function IncidentDetail({
               </div>
             </div>
 
+            {/* Live Autonomous SRE Agent Cognitive Trajectory & Execution Console */}
+            <AgentExecutionConsole
+              incident={incident}
+              events={events}
+              onApprove={onApprove}
+              onRollback={onRollback}
+              onTakeover={onTakeover}
+              actionLoading={actionLoading}
+            />
+
             {/* Decision Engine Recommendation Card (Only active when awaiting approval or decision exists) */}
             {decision && !isResolved && (
               <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
@@ -403,9 +521,39 @@ export default function IncidentDetail({
           </div>
         )}
 
+        {/* ===================== TAB 2: AGENT CONSOLE ===================== */}
+        {activeTab === 'agent' && (
+          <div className="space-y-4">
+            <AgentExecutionConsole
+              incident={incident}
+              events={events}
+              onApprove={onApprove}
+              onRollback={onRollback}
+              onTakeover={onTakeover}
+              actionLoading={actionLoading}
+            />
+
+            {diffContent && (
+              <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <FileCode size={14} className="text-[#58a6ff]" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#c9d1d9] font-mono">
+                      Candidate Code Patch Synthesized by Agent
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded border border-[#1b2234] overflow-hidden">
+                  <DiffViewer diff={diffContent} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ===================== TAB 2: LOGS & TRACES ===================== */}
         {activeTab === 'logs' && (
-          <div className="space-y-3 animate-in fade-in">
+          <div className="space-y-3">
             {/* Extracted Traceback */}
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2">
               <div className="flex items-center justify-between">
@@ -448,7 +596,7 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 3: INVESTIGATION & RCA ===================== */}
         {activeTab === 'investigation' && (
-          <div className="space-y-3 animate-in fade-in">
+          <div className="space-y-3">
             {/* RCA Card */}
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
               <div className="flex items-center gap-1.5 border-b border-[#1b2234] pb-2">
@@ -528,7 +676,7 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 4: RECOVERY & CANARIES ===================== */}
         {activeTab === 'recovery' && (
-          <div className="space-y-3 animate-in fade-in">
+          <div className="space-y-3">
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
               <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
                 <div className="flex items-center gap-1.5">
@@ -600,7 +748,7 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 5: CHANGES & DIFFS ===================== */}
         {activeTab === 'changes' && (
-          <div className="space-y-3 animate-in fade-in">
+          <div className="space-y-3">
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
               <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
                 <div className="flex items-center gap-1.5">
@@ -673,7 +821,7 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 6: TIMELINE & AUDIT ===================== */}
         {activeTab === 'timeline' && (
-          <div className="space-y-3 animate-in fade-in">
+          <div className="space-y-3">
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
               <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
                 <div className="flex items-center gap-1.5">

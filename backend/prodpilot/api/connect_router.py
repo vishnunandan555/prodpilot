@@ -494,7 +494,7 @@ def get_server_render_details_endpoint(server_id: str) -> Dict[str, Any]:
 
 
 @router.get("/servers/{server_id}/logs")
-def get_server_render_logs_endpoint(server_id: str, limit: int = 100) -> Dict[str, Any]:
+def get_server_render_logs_endpoint(server_id: str, limit: int = 100, force: bool = False) -> Dict[str, Any]:
     server = get_server(server_id)
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
@@ -509,7 +509,7 @@ def get_server_render_logs_endpoint(server_id: str, limit: int = 100) -> Dict[st
 
     key = get_effective_render_key(server.get("render_api_key"))
     client = RenderClient(api_key=key)
-    logs_res = client.get_logs(service_id, limit=limit)
+    logs_res = client.get_logs(service_id, limit=limit, force=force)
 
     # Attach triage summary to logs response
     try:
@@ -603,17 +603,27 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
         if tg_token and tg_chat:
             tunnel = get_setting("CLOUDFLARE_TUNNEL_URL") or "http://127.0.0.1:5173"
             rec = decision.get("recommendation", "fix_forward")
-            conf = int(decision.get("confidence", 0.95) * 100)
+            probs = decision.get("probabilities", {})
+            prob_pct = int(probs.get(rec, decision.get("confidence", 0.95)) * 100)
+
+            # Format clean error headline and location
+            err_headline = triage.reason or "Unhandled application crash detected"
+            location_info = suspect_area or server.get("name")
+            action_label = "FIX_FORWARD" if rec == "fix_forward" else "ROLLBACK"
+
             msg_text = (
                 f"🚨 *PRODPILOT INCIDENT ALERT*\n\n"
-                f"*Incident:* `{incident_id}`\n"
-                f"*Service:* `{server.get('name')}`\n"
-                f"*Severity:* `{triage.severity}`\n"
-                f"*Error:* {triage.reason}\n\n"
-                f"🧠 *TypeSafe Jev Recommendation:*\n"
-                f"Action: `{rec}` ({conf}% confidence)\n"
-                f"Reason: {decision.get('reason')}\n\n"
-                f"👉 [Open Mobile Incident Dashboard]({tunnel}/incidents/{incident_id})"
+                f"🔥 *Incident:* `{incident_id}`\n"
+                f"🏢 *Service:* `{server.get('name')}` (Production)\n"
+                f"⚠️ *Severity:* `SEV-1 {triage.severity}`\n\n"
+                f"💥 *Root Cause:* `{err_headline}`\n"
+                f"📍 *Location:* `{location_info}`\n\n"
+                f"🧠 *TypeSafe Jev Decision Engine:*\n"
+                f"🎯 *Recommendation:* `{action_label}` ({prob_pct}% probability)\n"
+                f"💡 *Rationale:* {decision.get('reason')}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🛡️ *Canary Environments:* Port 8001 (Fix) | Port 8002 (Rollback)\n"
+                f"👉 [Open Incident Dashboard]({tunnel}/incidents/{incident_id})"
             )
             httpx.post(
                 f"https://api.telegram.org/bot{tg_token}/sendMessage",
@@ -623,7 +633,13 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
                     "parse_mode": "Markdown",
                     "reply_markup": {
                         "inline_keyboard": [
-                            [{"text": f"🚀 Approve {rec.upper()}", "url": f"{tunnel}/incidents/{incident_id}"}]
+                            [
+                                {"text": f"🚀 Approve {action_label}", "url": f"{tunnel}/incidents/{incident_id}"}
+                            ],
+                            [
+                                {"text": "🤖 Agent Console", "url": f"{tunnel}/incidents/{incident_id}?tab=agent"},
+                                {"text": "📜 Stack Trace", "url": f"{tunnel}/incidents/{incident_id}?tab=logs"}
+                            ]
                         ]
                     }
                 },

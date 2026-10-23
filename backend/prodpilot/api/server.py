@@ -72,8 +72,8 @@ app.include_router(ingest_router)
 @app.on_event("startup")
 async def startup_watchdog_event():
     async def autonomous_render_watchdog_loop():
-        logger.info("🔭 Starting Autonomous Render Log Watcher & Triage loop (every 12s)...")
-        await asyncio.sleep(4)
+        logger.info("🔭 Starting Autonomous Render Log Watcher & Triage loop (every 20s)...")
+        await asyncio.sleep(6)
         while True:
             try:
                 from backend.prodpilot.db import get_active_server
@@ -85,7 +85,7 @@ async def startup_watchdog_event():
                         logger.info(f"🚨 Autonomous Watchdog created incident: {res.get('incident', {}).get('id')}")
             except Exception as e:
                 logger.debug(f"Watchdog tick note: {e}")
-            await asyncio.sleep(12)
+            await asyncio.sleep(20)
 
     asyncio.create_task(autonomous_render_watchdog_loop())
 
@@ -260,6 +260,8 @@ def get_incident_detail(incident_id: str) -> Dict[str, Any]:
     if not decision_info:
         decision_info = decide(inc, staging_info, patch_diff=artifacts_map.get("patch_diff"))
 
+    events_list = get_events(incident_id=incident_id)
+
     return {
         "id": inc["id"],
         "service": inc["service"],
@@ -273,6 +275,7 @@ def get_incident_detail(incident_id: str) -> Dict[str, Any]:
         "artifacts": artifacts_map,
         "staging": staging_info,
         "decision": decision_info,
+        "events": events_list,
     }
 
 
