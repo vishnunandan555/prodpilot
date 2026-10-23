@@ -738,14 +738,15 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
             (limit,)
         ).fetchall()
 
-        # Also fetch any service_logs
+        # Also fetch any service_logs up to limit
         svc_rows = conn.execute(
-            "SELECT id, timestamp as ts, service, level, message FROM service_logs ORDER BY id ASC LIMIT 50"
+            "SELECT id, timestamp as ts, service, level, message FROM service_logs ORDER BY id ASC LIMIT ?",
+            (limit,)
         ).fetchall()
 
     console_lines = []
     
-    # Add service_logs if any
+    # Add service_logs
     for sr in svc_rows:
         ts_clean = (sr["ts"] or "").replace("T", " ").split(".")[0]
         lvl = (sr["level"] or "INFO").upper()
@@ -784,6 +785,15 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
         if kind in ("ERROR", "EXCEPTION", "FAILED"):
             lvl = "ERROR"
             msg = payload.get("error") or msg or "Failure encountered"
+        elif kind in ("LLM_CALL", "LLM", "MODEL_CALL"):
+            lvl = "LLM"
+            model_name = (payload.get("model") or "GEMINI").replace("typesafe/", "").replace("google-", "").replace("google.", "")
+            tag = model_name[:12].upper()
+            msg = payload.get("message") or payload.get("response") or payload.get("prompt") or "LLM invocation completed"
+        elif kind in ("TELEGRAM_ALERT", "TELEGRAM", "MESSAGE_SENT", "NOTIFICATION"):
+            lvl = "MSG"
+            tag = "TELEGRAM"
+            msg = payload.get("message") or "External notification dispatched"
         elif kind == "TOOL_CALL":
             lvl = "TOOL"
             tag = "AGENT_TOOL"
@@ -809,9 +819,9 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
         elif not msg:
             msg = json.dumps(payload)
 
-        # Truncate very long stack traces to keep terminal console readable
-        if len(msg) > 300:
-            msg = msg[:300] + "..."
+        # Preserve full text, only cap extreme anomalies at 2000 chars
+        if len(msg) > 2000:
+            msg = msg[:2000] + "..."
 
         inc_label = f"[{inc_id[:16]}] " if inc_id else ""
         raw = f"[{ts_clean}] [{lvl:<5}] [{tag:<12}] {inc_label}{msg}"

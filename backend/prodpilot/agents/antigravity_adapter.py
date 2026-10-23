@@ -61,6 +61,15 @@ class AntigravityAdapter:
                     "kind": "stage_started",
                     "payload": {"message": f"Antigravity Python SDK initializing agent in {workdir}..."},
                 })
+                on_event({
+                    "stage": stage,
+                    "kind": "llm_call",
+                    "payload": {
+                        "model": "google-antigravity/gemini-2.5",
+                        "prompt": task,
+                        "message": f"Calling LLM Antigravity agent: {task[:120]}...",
+                    },
+                })
 
             async def _execute():
                 config = LocalAgentConfig(
@@ -95,6 +104,16 @@ class AntigravityAdapter:
                 return None
 
             diff = self._extract_git_diff(workdir)
+            if on_event:
+                on_event({
+                    "stage": stage,
+                    "kind": "llm_call",
+                    "payload": {
+                        "model": "google-antigravity/gemini-2.5",
+                        "response": summary or "Patch generated via Antigravity Python SDK",
+                        "message": f"LLM Antigravity agent output: {summary or 'Generated patch in worktree'}",
+                    },
+                })
             return {
                 "diff": diff,
                 "summary": summary or "Patch generated via Antigravity Python SDK",
