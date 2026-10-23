@@ -328,8 +328,8 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         if a.get("kind") == "patch_diff":
             patch_diff = a.get("content", "")
 
-    # Execute Deploy Adapter
-    mock_deploy = not (repo_path and Path(repo_path).exists())
+    # Execute Deploy Adapter: if no patch/suspect commit exists (e.g. pure API test), use mock mode
+    mock_deploy = not bool(patch_diff or suspect_commit_hash) or not (repo_path and Path(repo_path).exists())
     deploy_res = deploy_adapter.deploy(
         action=action,
         repo_path=repo_path or ".",

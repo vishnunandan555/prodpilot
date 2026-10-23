@@ -43,7 +43,11 @@ class StagingManager:
         self.rollback_worktree: Optional[str] = None
 
     def _find_python_executable(self) -> str:
-        # Check if venv python is present
+        import sys
+        if sys.executable and Path(sys.executable).exists():
+            return sys.executable
+        if Path("/home/vishnunandan555/Projects/prodpilot/.venv/bin/python").exists():
+            return "/home/vishnunandan555/Projects/prodpilot/.venv/bin/python"
         repo_venv = Path(self.repo_path).parent / ".venv" / "bin" / "python"
         if repo_venv.exists():
             return str(repo_venv)
