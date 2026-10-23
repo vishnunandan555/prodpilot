@@ -125,13 +125,114 @@
 - [ ] **8. Team**: SRE on-call rotation roster, escalation tiers, Slack/Telegram notification status, and access control.
 - [ ] **9. Settings**: Infrastructure connection panel (Render API Key, Render Service ID, Cloudflare Tunnel URL, GitHub PAT, Telegram Bot token).
 
-### B. Implementation Checklist
-- [ ] Update `Sidebar.jsx` with the 8 primary navigation tabs and status badges.
-- [ ] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and Epok-style activity stream.
-- [ ] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive 1-tap mobile action bar (`[🚀 Deploy Fix]`, `[⏪ Rollback]`, `[🛑 Take Over]`).
-- [ ] Implement `LogsView.jsx` (interactive log explorer).
-- [ ] Implement `ServicesView.jsx`, `RepositoriesView.jsx`, `AgentsView.jsx`, and `TeamView.jsx`.
-- [ ] Verify both Desktop Electron and Render Web views render with 0 console errors and pass `npm run build`.
+### B. Implementation Checklist (Operations UI Overhaul)
+- [x] Update `Sidebar.jsx` with the 8 primary navigation tabs and status badges.
+- [x] Implement `DashboardView.jsx` with telemetry summary cards, service health indicators, and Epok-style activity stream.
+- [x] Upgrade `IncidentDetail.jsx` with the 6-tab hero structure and responsive 1-tap mobile action bar (`[🚀 Deploy Fix]`, `[⏪ Rollback]`, `[🛑 Take Over]`).
+- [x] Implement `LogsView.jsx` (interactive log explorer).
+- [x] Implement `ServicesView.jsx`, `RepositoriesView.jsx`, `AgentsView.jsx`, and `TeamView.jsx`.
+- [x] Verify both Desktop Electron and Render Web views render with 0 console errors and pass `npm run build`.
+
+---
+
+## 5. Professional Platform Gap Analysis & Production Checklists
+
+This section provides a rigorous, transparent technical audit of ProdPilot: what is genuinely implemented and operational vs. what is currently synthetic/mocked for demo purposes, followed by concrete engineering checklists to make ProdPilot a full-scale, professional SRE platform.
+
+### A. What is PROPERLY Implemented & Verified (The Operational Core)
+1. **SQLite Database & Audit Store (`backend/prodpilot/db.py`)**:
+   - Complete relational schema: `incidents`, `runs`, `events`, `artifacts`, `decisions`, `approvals`, `fingerprints`.
+   - Real SHA-256 stack trace fingerprint computation & recurrence counters (proven anti-loop crash protection).
+   - Real structured event logging (`log_event`) powering live SSE streams.
+2. **Deterministic Sandboxed Verification (`backend/prodpilot/pipeline/`)**:
+   - `worktree.py`: Real `git worktree add` and `git worktree remove` for strict filesystem isolation per incident.
+   - `repro_runner.py`: Deterministic test runner invoking `pytest`. Verifies repro test fails on baseline code (RED), applies patch, verifies full suite passes (GREEN).
+3. **Dual Agent Fixing Loop (`backend/prodpilot/agents/`)**:
+   - `antigravity_adapter.py`: Calls local Google Antigravity CLI binary (`/home/vishnunandan555/.local/bin/agy` v1.4.6).
+   - `gemini_adapter.py`: Gated AST / regex inspector and patch synthesizer with strictly sandboxed tools (`read_file`, `write_file`, `list_dir`, `grep_search`).
+4. **Side-Port Canary Staging & Watchdog (`backend/prodpilot/staging/`)**:
+   - `manager.py`: Launches real FastAPI canary instances on port 8001 (Fix-Forward) and port 8002 (Rollback Canary).
+   - `deploy.py`: 10-second real `/health` watchdog polling loop with automatic port-swap and auto-revert to rollback canary on failure.
+   - `pr_opener.py`: Creates real git branch `prodpilot-fix-<id>` and executes git commits.
+5. **Log Ingest & Triage Engine (`backend/prodpilot/ingest/` & `triage/`)**:
+   - `/ingest` REST endpoint receiving batch logs from local forwarder or Render API.
+   - Rule & regex classifier detecting 5xx, unhandled tracebacks, and health probe failures.
+6. **Backend REST API & Live SSE Streaming (`backend/prodpilot/api/server.py`)**:
+   - Port 8765 FastAPI server with CORS, SSE streaming events, and approval webhooks.
+7. **Telegram Bot Dispatcher (`telegram/bot.py`)**:
+   - Live Telegram bot with interactive inline buttons (`[🚀 Deploy Fix]`, `[⏪ Rollback]`), `/status`, `/logs`, `/report`.
+8. **Cloudflare Tunnel Bridge (`scripts/start-tunnel.sh`)**:
+   - Exposes laptop backend to the public internet securely without port forwarding.
+
+---
+
+### B. What is Currently SYNTHETIC / MOCKED / HARDCODED
+1. **Frontend Hardcoded Datasets**:
+   - `DashboardView.jsx`: Time-series anomaly pulse bar chart uses static numbers (`timelinePoints`); MTTR ("42s") and uptime ("98.2%") are mock values.
+   - `ServicesView.jsx`: Hardcoded list of 4 static microservices; does not query dynamic service registries.
+   - `RepositoriesView.jsx`: Hardcoded list of commits and PR metadata; does not dynamically pull from GitHub REST API in the frontend.
+   - `AgentsView.jsx`: Static latency and execution run numbers.
+   - `TeamView.jsx`: Hardcoded on-call engineer contacts.
+   - `App.jsx`: Hardcoded fallback incident (`FALLBACK_INCIDENT`) when backend is disconnected.
+2. **Fixed Service Target**:
+   - Hardcoded to local `demo-prod` microservice repository. No dynamic repository selector or multi-repo switching in the UI.
+3. **No Authentication or Multi-Tenancy**:
+   - Open access on both Desktop and Render web; anyone with the URL can view and approve deployments.
+4. **No Remote Interactive Agent Coding IDE / Chat**:
+   - While autonomous fix runs in the background, developers cannot currently converse directly with the agent, ask questions, or tweak code collaboratively before deploying.
+
+---
+
+### C. Engineering Checklists to Turn ProdPilot into a Full Professional Platform
+
+#### Checklist 1: Authentication & Role-Based Access Control (RBAC)
+- [ ] **GitHub / Google OAuth Integration**: Implement user login via GitHub OAuth or Clerk/Supabase.
+- [ ] **JWT Bearer Auth on Backend**: Protect FastAPI endpoints (`/incidents`, `/approve`, `/ingest`) with signed JWT tokens.
+- [ ] **Role Permissions**:
+  - `Viewer`: Can view dashboard, telemetry, and incident timelines.
+  - `Incident Commander / Lead SRE`: Authorized to approve production deploys and instant rollbacks.
+- [ ] **Audit Trail Attribution**: Store user ID and email on all approval records in SQLite and Telegram notifications.
+
+#### Checklist 2: Dynamic Repository & Cloud Infrastructure Connectors
+- [ ] **Connect Repository Flow**:
+  - OAuth or GitHub PAT integration allowing developers to select any repo from their GitHub account.
+  - Clone/fetch repository dynamically into isolated workspaces on the backend.
+  - Live commit history and blame extraction directly via GitHub REST/GraphQL API.
+- [ ] **Connect Render Platform**:
+  - Render API Key & Workspace picker in Settings.
+  - Fetch real services list (`GET https://api.render.com/v1/services`).
+  - Auto-configure log forwarding streams and Render deploy hooks (`POST https://api.render.com/deploy/...`).
+- [ ] **Multi-Service Registry**:
+  - Dynamically register microservices, their ports, health endpoints, and Docker/k8s targets.
+
+#### Checklist 3: Remote Interactive Agent Coding IDE & Chat Workspace
+- [ ] **Interactive SRE Agent Chat Tab**:
+  - Add dedicated chat/IDE tab in the platform to converse with the Antigravity agent.
+  - Support natural language queries: *"Why didn't you use a try/except instead?"*, *"Can you add input validation for price?"*, *"Show me the full stack trace context."*
+- [ ] **Collaborative Split-View Code Editor**:
+  - Lightweight Monaco or CodeMirror editor embedded in the Incident Details screen.
+  - Allow developers to directly review, edit, and modify the agent's synthesized patch before approving.
+- [ ] **Sandboxed Diagnostic Terminal**:
+  - Web-based read-only terminal executing safe diagnostic commands (`pytest`, `git status`, `git log`) in the incident worktree.
+
+#### Checklist 4: UI De-AI-ification (Professional Matte SRE Aesthetic)
+- [ ] **Strip AI-Generated Cliches**:
+  - Remove neon purple/blue glowing gradients (`shadow-indigo-500/30`, saturated gradient cards).
+  - Eliminate generic floating circular pulse badges.
+- [ ] **Adopt High-Density Matte SRE Design System (Grafana / Linear / Datadog style)**:
+  - Deep matte obsidian palette (`#090d16` canvas, `#0e131f` surface, `#1b2234` subtle border).
+  - High-density monospace typography for all metrics, timestamps, and commit hashes.
+  - Dense operational data tables with sorting, sticky headers, and live search.
+  - Authentic Linux terminal styling with syntax-highlighted ANSI logs.
+
+#### Checklist 5: Live Telemetry & Dynamic Metric Pipelines
+- [ ] **Real Time-Series Aggregations**:
+  - Replace static `timelinePoints` with dynamic SQLite queries grouping ingested logs by minute (`SELECT strftime('%H:%M', timestamp), count(*) ...`).
+  - Compute real MTTR dynamically: average elapsed time between `detected_at` and `resolved_at` across past incidents.
+- [ ] **Live Health Probe Engine**:
+  - Active background thread probing configured service health endpoints every 5 seconds, calculating real p99 latencies and uptime percentages.
+
+---
 
 ---
 
