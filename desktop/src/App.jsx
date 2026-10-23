@@ -1,179 +1,46 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Header from './components/Header';
-import IncidentList from './components/IncidentList';
-import IncidentDetail from './components/IncidentDetail';
+import WindowHeader from './components/WindowHeader';
+import Sidebar from './components/Sidebar';
+import RightDrawer from './components/RightDrawer';
+import SessionView from './components/SessionView';
+import IssuesView from './components/IssuesView';
+import AutomationsView from './components/AutomationsView';
+import CustomizeView from './components/CustomizeView';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';
 const PROD_BASE_URL = 'http://127.0.0.1:8000';
 
-// Initial realistic fallback data for seamless demo presentation
-const INITIAL_INCIDENT = {
-  id: 'inc-20261023-48832b',
-  service: 'demo-prod',
-  detected_at: '2026-10-23T15:32:57Z',
-  status: 'AWAITING_APPROVAL',
-  health_url: 'http://127.0.0.1:8000/health',
-  suspected_area: 'app.py:45',
-  trace: `Traceback (most recent call last):
-  File "app.py", line 81, in create_order
-    result = calculate_order(data)
-  File "app.py", line 45, in calculate_order
-    discount = order["discount"]
-KeyError: 'discount'`,
-  log_tail: `2026-10-23 15:32:53 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}
-2026-10-23 15:32:53 [ERROR] KeyError: 'discount' in /orders
-2026-10-23 15:32:55 [WARN] Healthcheck probe failed: 500 Internal Server Error
-2026-10-23 15:32:57 [WARN] Healthcheck probe failed: 500 Internal Server Error`,
-  suspect_commit: {
-    hash: '96a2637',
-    author: 'Vishnu Nandan',
-    date: '2026-10-23T15:06:28Z',
-    message: 'feat: add discount support to order checkout',
-    suspect_file: 'app.py',
-    suspect_line: 45,
-    minutes_ago: 26,
-  },
-  artifacts: {
-    repro_test: 'tests/test_repro.py',
-    patch_diff: `diff --git a/app.py b/app.py
---- a/app.py
-+++ b/app.py
-@@ -43,3 +43,3 @@ def calculate_order(order: Dict[str, Any]) -> Dict[str, Any]:
-     tax = round(subtotal * TAX_RATE, 2)
--    discount = order["discount"]
-+    discount = order.get("discount", 0.0)
-     total = max(0.0, round(subtotal + tax - discount, 2))`,
-    test_evidence: {
-      before: `tests/test_repro.py::test_order_without_discount FAILED
-KeyError: 'discount' in calculate_order (app.py:45)`,
-      after: `tests/test_repro.py::test_order_without_discount PASSED
-tests/test_orders.py::test_health PASSED
-tests/test_orders.py::test_order_calculation PASSED
-tests/test_orders.py::test_post_order_endpoint PASSED
-tests/test_orders.py::test_order_history PASSED
-================ 5 passed in 0.42s ================`
-    }
-  },
-  staging: {
-    fix_forward: { port: 8001, health: true },
-    rollback: { port: 8002, health: true },
-  },
-  decision: {
-    backend: 'rules',
-    recommendation: 'fix_forward',
-    probabilities: { fix_forward: 0.85, rollback: 0.15 },
-    reason: 'Clean 1-line patch with 100% test pass. Suspect commit was landed only 26m ago.'
-  }
-};
-
-const INITIAL_EVENTS = [
-  {
-    id: 1,
-    stage: 'UNDERSTAND',
-    kind: 'stage_started',
-    ts: '2026-10-23T15:32:58Z',
-    payload: { message: 'Analyzing traceback, log tail and running git blame on app.py:45...' }
-  },
-  {
-    id: 2,
-    stage: 'UNDERSTAND',
-    kind: 'tool_call',
-    ts: '2026-10-23T15:33:00Z',
-    payload: { summary: 'Blamed suspect commit 96a2637 by Vishnu Nandan: feat: add discount support' }
-  },
-  {
-    id: 3,
-    stage: 'REPRODUCE',
-    kind: 'stage_started',
-    ts: '2026-10-23T15:33:02Z',
-    payload: { message: 'Synthesizing minimal reproduction test tests/test_repro.py...' }
-  },
-  {
-    id: 4,
-    stage: 'REPRODUCE',
-    kind: 'test_result',
-    ts: '2026-10-23T15:33:05Z',
-    payload: {
-      phase: 'repro_baseline',
-      passed: false,
-      failure_snippet: 'FAILED tests/test_repro.py - KeyError: \'discount\''
-    }
-  },
-  {
-    id: 5,
-    stage: 'FIX',
-    kind: 'stage_started',
-    ts: '2026-10-23T15:33:07Z',
-    payload: { message: 'Agent modifying app.py in git worktree to use order.get("discount", 0.0)...' }
-  },
-  {
-    id: 6,
-    stage: 'VERIFY',
-    kind: 'test_result',
-    ts: '2026-10-23T15:33:11Z',
-    payload: {
-      phase: 'full_suite',
-      passed: true,
-      summary: '5 passed in 0.42s (100% green)'
-    }
-  },
-  {
-    id: 7,
-    stage: 'STAGE',
-    kind: 'stage_started',
-    ts: '2026-10-23T15:33:13Z',
-    payload: { message: 'Spinning up side-canaries: Fix on Port 8001, Revert on Port 8002...' }
-  },
-  {
-    id: 8,
-    stage: 'DECIDE',
-    kind: 'decision',
-    ts: '2026-10-23T15:33:16Z',
-    payload: {
-      backend: 'rules',
-      recommendation: 'fix_forward',
-      probabilities: { fix_forward: 0.85, rollback: 0.15 },
-      reason: 'Clean 1-line patch with 100% test pass.'
-    }
-  },
-  {
-    id: 9,
-    stage: 'AWAITING_APPROVAL',
-    kind: 'status_change',
-    ts: '2026-10-23T15:33:17Z',
-    payload: { status: 'AWAITING_APPROVAL' }
-  }
-];
-
 export default function App() {
-  const [incidents, setIncidents] = useState([INITIAL_INCIDENT]);
-  const [selectedId, setSelectedId] = useState(INITIAL_INCIDENT.id);
-  const [selectedIncident, setSelectedIncident] = useState(INITIAL_INCIDENT);
-  const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [activeNav, setActiveNav] = useState('session'); // 'session', 'issues', 'automations', 'customize', 'incidents'
+  const [activeDrawerTab, setActiveDrawerTab] = useState('changes');
+  const [incidents, setIncidents] = useState([]);
+  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [events, setEvents] = useState([]);
   const [apiConnected, setApiConnected] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [celebrationBanner, setCelebrationBanner] = useState(false);
+  const [deploySuccess, setDeploySuccess] = useState(false);
 
   const eventSourceRef = useRef(null);
 
-  // Poll backend health & incidents
+  // Initial and periodic fetch of incidents
   const fetchIncidents = async () => {
     setIsRefreshing(true);
     try {
-      const healthRes = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(1500) });
-      if (healthRes.ok) {
+      const res = await fetch(`${API_BASE_URL}/incidents`);
+      if (res.ok) {
+        const data = await res.json();
+        setIncidents(data);
         setApiConnected(true);
-        const incRes = await fetch(`${API_BASE_URL}/incidents`);
-        if (incRes.ok) {
-          const data = await incRes.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setIncidents(data);
-            if (!data.some((d) => d.id === selectedId)) {
-              setSelectedId(data[0].id);
-            }
+
+        // Select first active or newest incident if none selected
+        if (!selectedIncident && data.length > 0) {
+          const active = data.find(i => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED') || data[0];
+          fetchIncidentDetail(active.id);
+        } else if (selectedIncident) {
+          const updated = data.find(i => i.id === selectedIncident.id);
+          if (updated && updated.status !== selectedIncident.status) {
+            fetchIncidentDetail(updated.id);
           }
         }
       } else {
@@ -186,209 +53,105 @@ export default function App() {
     }
   };
 
-  // Fetch full detail of selected incident
   const fetchIncidentDetail = async (id) => {
-    if (!id) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/incidents/${id}`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`${API_BASE_URL}/incidents/${id}`);
       if (res.ok) {
-        const detail = await res.json();
-        setSelectedIncident(detail);
-        if (detail.status === 'DEPLOYED' || detail.status === 'RESOLVED') {
-          setCelebrationBanner(true);
-        }
+        const data = await res.json();
+        setSelectedIncident(data);
       }
     } catch (err) {
-      const existing = incidents.find((inc) => inc.id === id);
-      if (existing) setSelectedIncident(existing);
+      console.error('Failed to fetch incident detail:', err);
     }
   };
 
-  // Subscribe to SSE stream for active incident
   useEffect(() => {
-    if (!selectedId) return;
+    fetchIncidents();
+    const interval = setInterval(fetchIncidents, 3000);
+    return () => clearInterval(interval);
+  }, [selectedIncident?.id]);
 
-    fetchIncidentDetail(selectedId);
+  // Subscribe to live SSE events for active incident
+  useEffect(() => {
+    if (!selectedIncident?.id) return;
 
-    // Close previous SSE connection if open
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
-      eventSourceRef.current = null;
     }
 
     try {
-      const sseUrl = `${API_BASE_URL}/incidents/${selectedId}/events`;
-      const es = new EventSource(sseUrl);
-      eventSourceRef.current = es;
+      const sse = new EventSource(`${API_BASE_URL}/incidents/${selectedIncident.id}/events`);
+      eventSourceRef.current = sse;
 
-      const handleIncomingEvent = (event) => {
+      sse.onmessage = (e) => {
         try {
-          const parsed = JSON.parse(event.data);
-          
-          setEvents((prev) => {
-            if (parsed.id && prev.some((e) => e.id === parsed.id)) {
-              return prev;
-            }
-            return [...prev, parsed];
-          });
+          const parsed = JSON.parse(e.data);
+          setEvents((prev) => [...prev, parsed]);
 
-          // Dynamic state reaction to incoming SSE event kinds
-          if (parsed.kind === 'status_change' && parsed.payload?.status) {
-            const newStatus = parsed.payload.status;
-            setSelectedIncident((prev) => ({ ...prev, status: newStatus }));
-            setIncidents((prev) =>
-              prev.map((i) => (i.id === selectedId ? { ...i, status: newStatus } : i))
-            );
+          if (parsed.stage === 'AWAITING_APPROVAL' || parsed.kind === 'awaiting_approval') {
+            fetchIncidentDetail(selectedIncident.id);
           }
-
-          if (parsed.kind === 'decision' && parsed.payload) {
-            setSelectedIncident((prev) => ({
-              ...prev,
-              decision: {
-                backend: parsed.payload.backend || 'rules',
-                recommendation: parsed.payload.recommendation || 'fix_forward',
-                probabilities: parsed.payload.probabilities || { fix_forward: 0.85, rollback: 0.15 },
-                reason: parsed.payload.reason || prev?.decision?.reason,
-              }
-            }));
-          }
-
-          if (parsed.kind === 'deployed') {
-            setCelebrationBanner(true);
-            const finalStatus = 'DEPLOYED';
-            setSelectedIncident((prev) => ({ ...prev, status: finalStatus }));
-            setIncidents((prev) =>
-              prev.map((i) => (i.id === selectedId ? { ...i, status: finalStatus } : i))
-            );
-          }
-
-          if (parsed.payload?.patch_diff) {
-            setSelectedIncident((prev) => ({
-              ...prev,
-              artifacts: {
-                ...(prev.artifacts || {}),
-                patch_diff: parsed.payload.patch_diff,
-              }
-            }));
-          }
-        } catch (e) {
-          console.error('Failed to parse SSE event data:', e);
+        } catch (err) {
+          console.error('SSE parse error:', err);
         }
       };
 
-      // Listen for named event 'run_event' matching server.py
-      es.addEventListener('run_event', handleIncomingEvent);
-      // Fallback for unnamed message events
-      es.onmessage = handleIncomingEvent;
-
-      es.onerror = (err) => {
-        // SSE disconnected / sleeping
-        es.close();
+      sse.onerror = () => {
+        sse.close();
       };
-    } catch (e) {
-      console.warn('Could not establish SSE connection:', e);
+    } catch (err) {
+      console.error('SSE connection error:', err);
     }
 
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
-        eventSourceRef.current = null;
       }
     };
-  }, [selectedId]);
+  }, [selectedIncident?.id]);
 
-  // Initial and periodic poll
-  useEffect(() => {
-    fetchIncidents();
-    const interval = setInterval(fetchIncidents, 4000);
-    return () => clearInterval(interval);
-  }, [selectedId]);
-
-  // One-Tap Approval: Calls POST /incidents/{id}/approve
-  const handleApprove = async (action) => {
+  // One-Tap Approval: Promote canary onto production port 8000
+  const handleApprove = async (incidentId, action = 'fix_forward') => {
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/incidents/${selectedId}/approve`, {
+      const res = await fetch(`${API_BASE_URL}/incidents/${incidentId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, source: 'desktop_ui' }),
       });
 
-      const newStatus = action === 'fix_forward' ? 'DEPLOYED' : 'ROLLED_BACK';
-
       if (res.ok) {
-        const body = await res.json();
-        setCelebrationBanner(true);
-      } else {
-        setCelebrationBanner(true);
+        setDeploySuccess(true);
+        setTimeout(() => setDeploySuccess(false), 5000);
       }
-
-      // Optimistic update
-      setSelectedIncident((prev) => ({ ...prev, status: newStatus }));
-      setIncidents((prev) =>
-        prev.map((inc) => (inc.id === selectedId ? { ...inc, status: newStatus } : inc))
-      );
-
-      // Re-fetch detail after deploy swap
-      setTimeout(() => fetchIncidentDetail(selectedId), 1200);
+      setTimeout(() => fetchIncidentDetail(incidentId), 1000);
+      setTimeout(fetchIncidents, 1500);
     } catch (err) {
-      const newStatus = action === 'fix_forward' ? 'DEPLOYED' : 'ROLLED_BACK';
-      setSelectedIncident((prev) => ({ ...prev, status: newStatus }));
-      setCelebrationBanner(true);
+      console.error('Approval failed:', err);
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleReject = async (reason) => {
-    setActionLoading(true);
-    try {
-      await fetch(`${API_BASE_URL}/incidents/${selectedId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason, source: 'desktop_ui' }),
-      });
-      setSelectedIncident((prev) => ({ ...prev, status: 'REJECTED' }));
-    } catch (err) {
-      setSelectedIncident((prev) => ({ ...prev, status: 'REJECTED' }));
-    } finally {
-      setActionLoading(false);
-    }
+  const handleRollback = async (incidentId) => {
+    await handleApprove(incidentId, 'rollback');
   };
 
-  const handleFollowup = async (instruction) => {
-    setActionLoading(true);
-    try {
-      await fetch(`${API_BASE_URL}/incidents/${selectedId}/followup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instruction, source: 'desktop_ui' }),
-      });
-      alert(`💬 Feedback dispatched to agent loop: "${instruction}"`);
-    } catch (err) {
-      alert(`💬 Instruction noted: "${instruction}"`);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Demo controls: Trigger test crash & Reset demo
+  // Demo Controls
   const handleTriggerCrash = async () => {
-    setCelebrationBanner(false);
     try {
-      const res = await fetch(`${PROD_BASE_URL}/orders`, {
+      await fetch(`${PROD_BASE_URL}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: [{ id: 'p1', qty: 2, price: 25.0 }] }), // Missing discount key!
+        body: JSON.stringify({ items: [{ id: 'item_crash', qty: 1, price: 99.0 }] }), // triggers missing discount KeyError
       });
     } catch (err) {
-      // Ignored - crash triggers 500 or network error
+      // Ignored: 500 error expected
     }
     setTimeout(fetchIncidents, 2000);
   };
 
   const handleResetDemo = async () => {
-    setCelebrationBanner(false);
     try {
       await fetch(`${PROD_BASE_URL}/reset`, { method: 'POST' });
     } catch (err) {
@@ -398,44 +161,73 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans select-none">
-      {/* Header */}
-      <Header
+    <div className="h-screen w-screen bg-gh-canvas text-gh-text flex flex-col font-sans select-none overflow-hidden">
+      {/* Top Linux Window Header */}
+      <WindowHeader
         apiConnected={apiConnected}
-        apiBaseUrl={API_BASE_URL}
-        onRefresh={fetchIncidents}
-        isRefreshing={isRefreshing}
-        activeIncidentCount={incidents.filter((i) => i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK').length}
         onTriggerCrash={handleTriggerCrash}
         onResetDemo={handleResetDemo}
+        isRefreshing={isRefreshing}
       />
 
-      {/* Main Split Layout */}
+      {/* Main 3-Column Copilot Workspace */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Master List */}
-        <IncidentList
+        {/* Left Sidebar */}
+        <Sidebar
+          activeNav={activeNav}
+          setActiveNav={setActiveNav}
           incidents={incidents}
-          selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            const found = incidents.find((i) => i.id === id);
-            if (found) setSelectedIncident(found);
+          activeIncident={selectedIncident}
+          onSelectIncident={(inc) => {
+            setSelectedIncident(inc);
+            fetchIncidentDetail(inc.id);
           }}
-          statusFilter={statusFilter}
-          onFilterChange={setStatusFilter}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          issues={[{ id: 1 }, { id: 3 }]}
         />
 
-        {/* Right Detail Pane */}
-        <IncidentDetail
+        {/* Center Workspace (Dynamic Views) */}
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-gh-canvas">
+          {(activeNav === 'session' || activeNav === 'incidents' || activeNav === 'new_session') && (
+            <SessionView
+              incident={selectedIncident}
+              events={events}
+              onApprove={handleApprove}
+              onRollback={handleRollback}
+              isDeploying={actionLoading}
+              deploySuccess={deploySuccess}
+            />
+          )}
+
+          {activeNav === 'issues' && (
+            <IssuesView
+              onOpenSession={(issue) => {
+                setActiveNav('session');
+              }}
+            />
+          )}
+
+          {activeNav === 'automations' && <AutomationsView />}
+
+          {activeNav === 'customize' && <CustomizeView />}
+
+          {activeNav === 'pull_requests' && (
+            <div className="flex-1 flex items-center justify-center text-gh-text-muted text-[13px] p-8 text-center">
+              <div>
+                <div className="font-semibold text-gh-text-bright mb-1">No Open Pull Requests</div>
+                <p className="text-[12px] text-gh-text-dim">
+                  Pull requests created by ProdPilot agent runs will appear here for review.
+                </p>
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* Right Inspector Drawer (Screenshot Match) */}
+        <RightDrawer
           incident={selectedIncident}
           events={events}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onFollowup={handleFollowup}
-          actionLoading={actionLoading}
-          celebrationBanner={celebrationBanner}
+          activeTab={activeDrawerTab}
+          setActiveTab={setActiveDrawerTab}
         />
       </div>
     </div>
