@@ -9,7 +9,9 @@ import {
   Sparkles,
   ArrowRight,
   Send,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 
 export default function DecisionCard({
@@ -24,10 +26,11 @@ export default function DecisionCard({
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [followupText, setFollowupText] = useState('');
+  const [pendingAction, setPendingAction] = useState(null);
 
   const recommendation = decision?.recommendation || 'fix_forward';
   const probabilities = decision?.probabilities || { fix_forward: 0.85, rollback: 0.15 };
-  const reason = decision?.reason || 'Clean 3-line patch in app.py passing full test suite. Suspect commit was landed recently.';
+  const reason = decision?.reason || 'Clean 1-line patch in app.py passing full test suite. Suspect commit landed recently.';
 
   const fixProbPercent = Math.round((probabilities.fix_forward || 0.85) * 100);
   const rollbackProbPercent = Math.round((probabilities.rollback || 0.15) * 100);
@@ -35,7 +38,16 @@ export default function DecisionCard({
   const fixCanaryHealth = staging?.fix_forward?.health ?? true;
   const rollbackCanaryHealth = staging?.rollback?.health ?? true;
 
-  const isApprovedOrResolved = incidentStatus === 'DEPLOYED' || incidentStatus === 'ROLLED_BACK' || incidentStatus === 'REJECTED';
+  const isApprovedOrResolved = incidentStatus === 'DEPLOYED' || incidentStatus === 'ROLLED_BACK' || incidentStatus === 'RESOLVED';
+
+  const handleAction = async (action) => {
+    setPendingAction(action);
+    try {
+      await onApprove(action);
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   return (
     <div className="glass-panel-glow p-6 space-y-6 bg-gradient-to-br from-[#0c1222]/90 via-[#10172c]/90 to-[#0e1628]/90">
@@ -44,7 +56,7 @@ export default function DecisionCard({
         <div>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-base font-bold text-white">Decision Engine & Approval Gate</h3>
+            <h3 className="text-base font-bold text-white">Decision Engine & Operator Approval Gate</h3>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
               BACKEND: {decision?.backend?.toUpperCase() || 'RULES'}
             </span>
@@ -99,7 +111,7 @@ export default function DecisionCard({
           />
         </div>
 
-        <div className="p-3 rounded-lg bg-black/30 border border-white/5 text-xs text-slate-300 flex items-start gap-2.5">
+        <div className="p-3.5 rounded-lg bg-black/30 border border-white/5 text-xs text-slate-300 flex items-start gap-2.5">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold text-white">Recommended Strategy: </span>
@@ -112,29 +124,39 @@ export default function DecisionCard({
       {/* Action Approval Buttons */}
       <div className="pt-2 flex flex-wrap items-center gap-4">
         {isApprovedOrResolved ? (
-          <div className="w-full p-4 rounded-xl bg-white/[0.03] border border-white/10 text-center font-medium text-slate-300 text-sm">
-            Incident resolution state: <span className="font-mono text-emerald-400 font-bold">{incidentStatus}</span>
+          <div className="w-full p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-center font-medium text-slate-200 text-sm flex items-center justify-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <span>Incident resolution status:</span>
+            <span className="font-mono text-emerald-400 font-bold">{incidentStatus}</span>
           </div>
         ) : (
           <>
             {/* Deploy Fix Button */}
             <button
-              onClick={() => onApprove('fix_forward')}
+              onClick={() => handleAction('fix_forward')}
               disabled={actionLoading}
-              className="btn-success flex-1 py-3 px-5 text-sm font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+              className="btn-success flex-1 py-3 px-5 text-sm font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              <Rocket className="w-4 h-4" />
-              <span>Deploy Fix to Port 8000</span>
+              {pendingAction === 'fix_forward' ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Rocket className="w-4 h-4" />
+              )}
+              <span>{pendingAction === 'fix_forward' ? 'Deploying Fix to Port 8000...' : '🚀 Deploy Fix to Port 8000'}</span>
             </button>
 
             {/* Rollback Button */}
             <button
-              onClick={() => onApprove('rollback')}
+              onClick={() => handleAction('rollback')}
               disabled={actionLoading}
-              className="btn-warning flex-1 py-3 px-5 text-sm font-bold shadow-lg shadow-amber-500/20 disabled:opacity-50"
+              className="btn-warning flex-1 py-3 px-5 text-sm font-bold shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              <RotateCcw className="w-4 h-4" />
-              <span>Rollback Suspect Commit</span>
+              {pendingAction === 'rollback' ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <RotateCcw className="w-4 h-4" />
+              )}
+              <span>{pendingAction === 'rollback' ? 'Reverting Commit...' : '⏪ Rollback Suspect Commit'}</span>
             </button>
 
             {/* Reject Button */}
@@ -196,7 +218,7 @@ export default function DecisionCard({
           >
             <input
               type="text"
-              placeholder="Guide agent (e.g. Use dict.get('discount', 0))..."
+              placeholder="Guide agent (e.g. Use dict.get('discount', 0) instead of try/except)..."
               value={followupText}
               onChange={(e) => setFollowupText(e.target.value)}
               className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-indigo-500"
