@@ -152,32 +152,42 @@ export default function App() {
           if (currentSelected !== null) {
             setSelectedIncident(null);
           }
+          if (window.history.replaceState && parsePathIncidentId()) {
+            window.history.replaceState({}, '', '/');
+          }
         } else {
           // Check if a specific incident is in URL
           const pathIncId = parsePathIncidentId();
+          let target = null;
           if (pathIncId) {
-            const match = data.find((i) => i.id === pathIncId);
-            if (match) {
-              const isActiveState = !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(match.status);
-              if (!currentSelected || currentSelected.id !== pathIncId) {
-                setSelectedIncident(match);
-                fetchIncidentDetail(pathIncId);
-              } else if (match.status !== currentSelected.status || isActiveState) {
-                fetchIncidentDetail(pathIncId);
-              }
-            } else if (currentSelected !== null) {
-              setSelectedIncident(null);
+            target = data.find((i) => i.id === pathIncId);
+          }
+
+          // If URL had an incident ID that no longer exists in data (e.g. deleted),
+          // clean URL and fallback to currentSelected or first active incident
+          if (!target) {
+            if (currentSelected && data.some((i) => i.id === currentSelected.id)) {
+              target = data.find((i) => i.id === currentSelected.id);
+            } else {
+              target = data.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || data[0];
             }
-          } else if (!currentSelected || !data.some((i) => i.id === currentSelected.id)) {
-            const active = data.find((i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED') || data[0];
-            setSelectedIncident(active);
-            fetchIncidentDetail(active.id);
+            if (target && window.history.replaceState) {
+              window.history.replaceState({}, '', `/incidents/${encodeURIComponent(target.id)}`);
+            } else if (!target && window.history.replaceState) {
+              window.history.replaceState({}, '', '/');
+            }
+          }
+
+          if (target) {
+            const isActiveState = !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(target.status);
+            if (!currentSelected || currentSelected.id !== target.id) {
+              setSelectedIncident(target);
+              fetchIncidentDetail(target.id);
+            } else if (target.status !== currentSelected.status || isActiveState) {
+              fetchIncidentDetail(target.id);
+            }
           } else {
-            const updated = data.find((i) => i.id === currentSelected.id);
-            const isActiveState = updated && !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(updated.status);
-            if (updated && (updated.status !== currentSelected.status || isActiveState)) {
-              fetchIncidentDetail(updated.id);
-            }
+            setSelectedIncident(null);
           }
         }
       } else {
@@ -341,11 +351,24 @@ export default function App() {
     try {
       const res = await fetch(`${apiUrl}/incidents/${incidentId}`, { method: 'DELETE' });
       if (res.ok) {
-        setIncidents((prev) => prev.filter((i) => i.id !== incidentId));
-        if (selectedIncident?.id === incidentId) {
-          const remaining = incidents.filter((i) => i.id !== incidentId);
-          setSelectedIncident(remaining.length > 0 ? remaining[0] : null);
-        }
+        setIncidents((prev) => {
+          const remaining = prev.filter((i) => i.id !== incidentId);
+          if (selectedIncident?.id === incidentId) {
+            const nextSelected = remaining.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || (remaining.length > 0 ? remaining[0] : null);
+            setSelectedIncident(nextSelected);
+            if (nextSelected) {
+              fetchIncidentDetail(nextSelected.id);
+              if (window.history.replaceState) {
+                window.history.replaceState({}, '', `/incidents/${encodeURIComponent(nextSelected.id)}`);
+              }
+            } else {
+              if (window.history.replaceState) {
+                window.history.replaceState({}, '', '/');
+              }
+            }
+          }
+          return remaining;
+        });
       }
     } catch (err) {
       console.error('Failed to delete incident:', err);
@@ -395,6 +418,12 @@ export default function App() {
             activeNav={activeNav}
             setActiveNav={(nav) => {
               setActiveNav(nav);
+              if (nav === 'incidents' && !selectedIncident && incidents.length > 0) {
+                const target = incidents.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || incidents[0];
+                if (target) {
+                  handleSelectIncident(target);
+                }
+              }
               if (isMobileScreen) setShowMobileList(false);
             }}
             incidents={incidents}
