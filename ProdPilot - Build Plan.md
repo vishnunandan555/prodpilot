@@ -16,10 +16,10 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
 |---|---|---|---|---|
 | **Phase 0: Setup & Spikes**<br>*(Passed)* | Completed | SDK works, Telegram talks, demo service ready, contracts frozen | **Gate 0** | ✅ **PASSED & MERGED** |
 | **Phase 1: Core Pipeline**<br>*(Passed)* | Completed | Crash becomes incident, verified repro-test + fix from CLI | **Gate 1** | ✅ **PASSED (Tag: `gate-1-passed`)** |
-| **Phase 2: Staging, Decisions, Telegram**<br>*(4:00 PM – 7:30 PM)* | **3.5 hours** | **Autonomous Orchestrator**: Phone approval restores service with post-mortem report | **Gate 2**<br>*(Demo Floor)* | 🟡 **IN PROGRESS (ACTIVE)** |
-| **Phase 3: Desktop Live Dashboard**<br>*(7:30 PM – 11:30 PM)* | **4.0 hours** | Live SSE timeline, diff viewer, before/after evidence UI | **Gate 3** | ⚪ Prepared (Ready to wire) |
-| **Phase 4: Harden & Sponsor Integrations**<br>*(11:30 PM – 4:00 AM)* | **4.5 hours** | 3 clean runs in a row; Browser Use canary check; Adaption AI eval | **Gate 4** | ⚪ Queued |
-| **Sleep / Buffer Window**<br>*(4:00 AM – 7:00 AM)* | **3.0 hours** | Team rest & buffer time | — | ⚪ Scheduled |
+| **Phase 2: Staging, Orchestrator, Telegram**<br>*(Passed)* | Completed | Orchestrator daemon, canaries 8001/8002, live SSE stream, Telegram bot | **Gate 2**<br>*(Demo Floor)* | ✅ **PASSED & MERGED** |
+| **Phase 3: Copilot Desktop & Issue Readiness**<br>*(4:35 PM – 8:30 PM)* | **4.0 hours** | Pixel-accurate GitHub Copilot Linux UI, Issue-to-PR readiness gate, live agent stream | **Gate 3** | 🟡 **IN PROGRESS (ACTIVE)** |
+| **Phase 4: Harden & Sponsor Integrations**<br>*(8:30 PM – 1:00 AM)* | **4.5 hours** | 3 clean runs in a row; Browser Use canary check; Adaption AI eval | **Gate 4** | ⚪ Queued |
+| **Sleep / Buffer Window**<br>*(1:00 AM – 7:00 AM)* | **6.0 hours** | Team rest & buffer time | — | ⚪ Scheduled |
 | **Phase 5: Freeze, Backup Video & Pitch**<br>*(7:00 AM – 9:30 AM)* | **2.5 hours** | Record 3-min backup video, polish pitch slides, rehearse demo | **Done** | ⚪ Queued |
 | **Final Submission Freeze**<br>*(9:30 AM – 11:00 AM)* | **1.5 hours** | Final clean demo run, Devfolio submission, project freeze | **Ship** | ⚪ Queued |
 
@@ -29,15 +29,15 @@ Build in six phases across three decoupled parallel streams. Each phase ends at 
 
 ```
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│     Stream A (The Brain)        │   │     Stream B (The Body & UI)    │   │     Stream C (The Comms)        │
+│     Stream A (The Brain)        │   │     Stream B (The Copilot Body) │   │     Stream C (The Comms)        │
 ├─────────────────────────────────┤   ├─────────────────────────────────┤   ├─────────────────────────────────┤
 │ • Worktree: prodpilot-a         │   │ • Worktree: prodpilot-b         │   │ • Directory: prodpilot/telegram │
 │ • Branch: stream-a              │   │ • Branch: stream-b              │   │ • Branch: telegram (root-level) │
 │ • Pipeline & Antigravity SDK    │   │ • demo-prod (buggy service)     │   │ • Hosted on Visihot cloud server│
 │ • Repro-test & Verifier         │   │ • Watcher + Git Blame           │   │ • python-telegram-bot v22.8     │
 │ • Orchestrator Daemon           │   │ • Reset & trigger scripts       │   │ • Inline Action Buttons         │
-│ • Staging Canaries (8001/8002)  │   │ • Desktop Dashboard (React+Vite)│   │ • Public Cloudflare Tunnel link │
-│ • FastAPI & SSE API (port 8765) │   │ • Live SSE Event Subscriber     │   │ • 1-Tap Deploy / Rollback       │
+│ • Staging Canaries (8001/8002)  │   │ • GitHub Copilot App Clone UI   │   │ • Public Cloudflare Tunnel link │
+│ • FastAPI & SSE API (port 8765) │   │ • Strict GitHub Dark aesthetic  │   │ • 1-Tap Deploy / Rollback       │
 └─────────────────────────────────┘   └─────────────────────────────────┘   └─────────────────────────────────┘
 ```
 

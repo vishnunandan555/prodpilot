@@ -6,9 +6,11 @@ Realm Hack 2026 | Agentic AI track | Vishnu Nandan, Christ College of Engineerin
 
 ProdPilot is a native desktop workspace that pulls a repo's issues, discussions and CI failures into one local place, turns each messy thread into a clear task, hands ready tasks to a coding agent working in an isolated checkout, proves the result with tests, and lets the developer approve or reject.
 
-Pitch line: from messy issue thread to verified, reviewable change, with the human holding the final decision.
+Pitch line: GitHub Copilot App recharged with autonomous incident recovery, readiness gates, and deterministic proof.
 
-Positioning (honest version): coding agents already write patches. The unsolved part is everything around the patch: deciding if a task is ready, reproducing the bug, proving the fix, deciding what to do when it fails. ProdPilot is that loop, in one place. Update: the hero scenario is production incident remediation (sections 21 to 24); issue-to-PR is the secondary mode and shares the same pipeline.
+Positioning: ProdPilot starts by cloning the exact experience of the GitHub Copilot Desktop App on Linux (clean GitHub Dark aesthetic, session trees, live thought/tool streams, issues split-view, automations, and right inspector drawer). Powered by the local Google Antigravity SDK (`agy`), it supercharges Copilot with two mission-critical capabilities:
+1. Daily Developer Mode: Issue-to-Draft-PR with a strict Readiness Gate (`ready: yes/no`) to block vague threads and a reproduction-first test loop.
+2. Production Incident Mode (Hero Demo): Automatic 500 error detection on production, traceback extraction, git blame commit isolation, dual side-port canary staging (8001 fix-forward, 8002 rollback), and 1-tap phone deployment with post-mortem generation.
 
 ## 2. Problem focus
 
@@ -199,14 +201,52 @@ Agent panel: a panel scoped to the current incident or issue that streams the ag
 - decisions(id, run\_id, backend, questions\_json, answers\_json, action)
 - approvals(id, run\_id, decision, reason, ts)
 
-## 12. UI screens
+## 12. UI Screens & Visual Design System (GitHub Copilot Linux Clone)
 
-1. Inbox: issues with readiness badge and run status.
-2. Issue view: full thread, brief card, comment box (post to GitHub).
-3. Run view: live timeline, diff viewer, before/after test evidence, decision reasoning, Approve / Reject.
-4. Settings: PAT, Gemini key, Jev key, Telegram token and chat ID.
+The UI strictly adheres to the official GitHub Copilot Desktop App on Linux aesthetic. No AI SaaS gimmicks, glowing purple neon borders, or glassmorphic blur. Clean, matte, professional developer ergonomics.
 
-Electron runs in dev mode, spawns the backend, renderer talks to FastAPI over localhost. No packaging for the demo.
+### Design System Tokens
+- **Canvas Base**: `#0d1117` (GitHub main dark)
+- **Deep Background**: `#010409` (Titlebars, dark recesses)
+- **Surfaces / Sidebars / Cards**: `#161b22`
+- **Borders & Dividers**: `1px solid #30363d` (subtle separators `#21262d`)
+- **Typography**: `-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif`
+- **Monospace**: `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace`
+- **Text Hierarchy**: Primary `#c9d1d9` / `#f0f6fc`, Secondary `#8b949e`, Muted `#484f58`
+- **Action / Primary Button**: GitHub Green `#238636` (hover `#2ea043`), text `#ffffff`, border `1px solid rgba(240, 246, 252, 0.1)`
+- **Selected Navigation State**: Subtle border highlight `#388bfd` / `#1f6feb` or `#21262d` surface
+- **Branch / PR Accent**: Subtle purple `#a371f7`
+
+### Layout Architecture
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Window Header: [ 🗖 ]  ProdPilot (GitHub Copilot Clone)                                     │
+├──────────────┬──────────────────────────────────────────────────────────────┬───────────────┤
+│ Left Sidebar │ Center Active Workspace                                      │ Right Drawer  │
+│              │                                                              │               │
+│ • [+ New]    │ Header: [FEATURE] Fix discount KeyError  [>_] [VS] [CreatePR]│ [+] [⛶]       │
+│ • PRs        ├──────────────────────────────────────────────────────────────┤ • Changes     │
+│ • Issues     │ Stream:                                                      │ • Terminal    │
+│ • Automations│  $ pytest tests/test_orders.py                               │ • Browser     │
+│ • Customize  │  >_ Read shell output (collapsible)                          │ • Files       │
+│ • Incidents  │  "The latest changes pass all tests..."                      │ • Side chat   │
+│              │  💭 Thought for 1s (collapsible)                             │ • Insights    │
+│ Sessions     │  > Run complete test suite and 2 other tool calls            │ • Canvas      │
+│  📁 demo-prod│  ─────────────────────────────────────────────────────────── ├───────────────┤
+│   • discount │  [Changes +3 -1]  [🟢 Issue #1]  [🟢 Canary 8001/8002]       │ Auto-cleanup  │
+│              │  ─────────────────────────────────────────────────────────── │ helper card   │
+│              │  Action Card:                                                │               │
+│ Profile bar  │  Deploy Fix to Production?                                   │               │
+│  [Avatar]    │  A. Deploy Fix (Port 8001) [Enter]   B. Deploy Rollback      │               │
+└──────────────┴──────────────────────────────────────────────────────────────┴───────────────┘
+```
+
+### Core Views
+1. **Chat / Session View (Copilot Core)**: Interactive coding stream with real-time thought bubbles (`💭 Thought for Xs`), collapsible tool execution accordions (`> Run test suite`), shell logs, git patch summaries, and repository trust/approval dialogs.
+2. **Issues Split-View**: Left list of issues filtered by tabs (`Assigned to me`, `Created by me`, `Mentioning me`, `Done`), right panel with issue conversation thread, assignees, labels, and bottom markdown editor with formatting toolbar and `[Open session]` launcher.
+3. **Automations View**: Automation hero card (`Set up automations`), grid of trigger cards (`Issue triage [Daily]`, `Changelog draft [Weekly]`, `Repo audit [Manual]`), and agent skills selector.
+4. **Customize View**: MCP servers, plugins, and skills marketplace with search, category pills (`Plan`, `Build`, `Review`, `Test`, `Ship`), and editor's picks.
+5. **Incidents View (ProdPilot Superpower)**: Live telemetry watcher, error traceback, git blame commit attribution, dual canary controls (`8001 Fix-Forward`, `8002 Rollback`), and markdown post-mortem reports.
 
 ## 13. Final tech stack
 
