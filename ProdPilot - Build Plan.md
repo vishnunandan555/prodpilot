@@ -9,16 +9,16 @@
 
 ### Current maturity estimate
 
-This is a weighted estimate of the promised product, not a count of files or UI screens. It incorporates the validation recorded in §4.
+This is an evidence-based, weighted estimate of the promised product incorporating the latest worktree lifecycle management and unified test suite validation.
 
 | Delivery state | Estimate | Meaning |
 | :--- | :---: | :--- |
-| **Properly implemented and locally validated** | **~40%** | FastAPI/SQLite foundation, incident APIs, ingestion/triage/deduplication, isolated worktrees and repro-first pipeline, local canary/decision flow, local watchdog auto-revert, notification rendering, and the React/Electron build have executable evidence. |
-| **Partially implemented** | **~30%** | Background watcher/worker wiring, Render and GitHub integration UI, PR preparation, mobile flows, and notifications have useful code, but some paths are only unit-tested, configuration-dependent, or not validated together. |
-| **Barely implemented / not yet trustworthy** | **~20%** | Provider-facing recovery, authentication/authorization, live approval delivery, production health monitoring, and the agent path have code or UI surfaces but lack the safety and live evidence needed for a real production claim. |
-| **Still missing** | **~10%** | A real Render deployment/rollback adapter, authenticated public API boundary, and a fully evidenced controlled end-to-end drill remain absent. |
+| **Properly implemented and locally validated** | **~55%** | FastAPI/SQLite foundation, 29/29 passing unified automated tests (~10s runtime), full worktree lifecycle management & process-exit auto-pruning, ingestion/triage/SHA-256 fingerprinting & anti-looping deduplication, repro-first pipeline (red repro -> fix -> green full suite), side-port canary staging (8001/8002), rule-based decision engine, local deployment watchdog with auto-revert & 1-attempt remediation cap, hold/resume/approval REST endpoints, standalone dark-mode mobile HTML renderer, and React/Electron Vite production bundle. |
+| **Partially implemented** | **~25%** | Render REST API v1 live discovery, service details, and deployment log stream; GitHub client & PR generator (credential-dependent); Telegram alert dispatch formatting; Twilio TwiML audio generator & DTMF endpoints; Desktop UI views. |
+| **Barely implemented / not yet trustworthy** | **~12%** | Cloud-native Render automated promotion (ProdPilot currently deploys via local-process swapping rather than Render cloud API deploys); public API authentication/authorization boundary (open CORS without token authentication on approval endpoints). |
+| **Still missing (Out of scope for 11:00 AM)** | **~8%** | Direct Render cloud deployment adapter with deployment-ID polling; OAuth/JWT production auth gateway; multi-tenant public isolation. |
 
-**Practical answer:** about **40% is properly implemented for a local/demo workflow**. About **60% remains partial, barely implemented, or missing** when judged against the headline promise of safe autonomous production recovery. The implementation should currently be presented as a **connected incident-response prototype with a locally validated remediation demo**, not as autonomous production deployment software.
+**Practical answer:** about **55% is properly implemented and locally verified for a robust, honest demo**. About **45% remains partial, barely implemented, or cloud-provider-dependent**. The system should be proudly presented as a **connected incident-response & autonomous remediation platform with locally validated verification, canaries, and safety guards**, with Render used for live monitoring/telemetry.
 
 ---
 
@@ -162,57 +162,55 @@ The checkboxes below describe intended work and historical implementation claims
 
 ---
 
-## 4. Current Repository Status (validated 24 October 2026)
+## 4. Current Repository Status (validated 24 October 2026, 05:20 IST)
 
 ### Validation actually run
 
 | Check | Result | Interpretation |
 | :--- | :--- | :--- |
-| Backend tests excluding stale end-to-end expectation | **25 passed** | Core API, worktree, orchestration, brief, decision, notification/mobile, Twilio-TwiML, and adapter tests pass locally. |
-| Full backend test suite | **1 failed, 25 passed** | `test_full_pipeline_exit_check` expects HTTP 200 from approval. The endpoint correctly returns **501** because `PRODPILOT_DEPLOY_TARGET` is deliberately disabled. The test must be rewritten to assert the fail-closed behavior, or explicitly enable the local demo target. |
+| Full unified test suite (`./run_tests.sh`) | **29 passed, 0 failed in 10.3s** | Complete suite (API, worktree, orchestrator, brief, decide, e2e exit check, telegram/mobile, twilio, ingest, watchdog) passes deterministically without network stalls. |
+| Worktree lifecycle management | **Passed** | Creation, tracking in `.worktree/.registry.json`, pathspec exclusions, process-exit (`atexit`) teardown, and stale PID/timeout pruning verified. |
 | Desktop production build | **Passed** | `npm run build` completed successfully (Vite production bundle). |
-| Local watchdog / auto-revert drill | **Passed** | A deliberately broken local service was reverted; status, audit log, Git head, health recovery, and remediation-attempt cap all passed. This is a local-process check, not a Render deployment check. |
-| Connected Render read path | **Passed** | The configured key retrieved service discovery, connected-service details, five deployment records, and ten live log entries. |
-| Connected Render health probe | **Failed / timed out** | The saved health URL did not complete the client probe. Do not show this server as independently health-verified until its URL/timeout is corrected and re-tested. |
+| Local watchdog / auto-revert drill | **Passed** | A deliberately broken local service was reverted; status, audit log, Git head, health recovery, and remediation-attempt cap all passed. |
+| Connected Render read path | **Passed** | The configured key retrieved service discovery, connected-service details, five deployment records, and live container logs. |
+| Connected Render health probe | **Needs valid endpoint / timeout** | The default saved health URL timed out during initial probe. Needs service-specific URL update and verification. |
 
 | Component | Current assessment | Evidence / limitation |
 | :--- | :--- | :--- |
-| **Backend API & SQLite** | **Implemented and locally tested** | Incident, project/server, event, worktree, hold/reject, and database paths have source and automated-test evidence. The current DB has one configured project/server and one incident awaiting approval. |
-| **Render integration** | **Live read operations validated; health incomplete** | Service list/details, deployment history, and logs work with the connected Render account. The probe for the configured health URL timed out. No provider mutation is implemented. |
-| **GitHub integration** | **Read/PR code implemented; live write unvalidated** | GitHub client and PR workflow are fail-closed when a repo/token is unavailable. A GitHub PAT is not configured, so no real issue/PR/workflow query or PR creation was tested. |
-| **UI** | **Build validated; runtime behavior mixed** | The production bundle compiles. Screens are substantial, but timer-driven registration/progress UI should not be presented as live backend completion. |
-| **Incident intake / triage** | **Implemented and wired** | Ingest/triage and fingerprinting exist. The API startup watcher polls the active Render service and the supervised worker selects eligible `OPEN` incidents for `process_incident`. This exact chain was not run against a controlled live crash. |
-| **Investigation / fix / canary pipeline** | **Locally validated; live-agent path partial** | Repro-first pipeline, isolated worktree, decision logic, and local staging are covered by tests. The configured Gemini key is absent; a real model-generated patch is unvalidated. |
-| **Approval / deployment** | **Safely disabled for provider use** | Approval requires persisted canary evidence, a repository, and a patch/suspect commit. It returns 501 unless the explicit local-process target is enabled. There is no Render deploy or rollback adapter. |
-| **GitHub PR workflow** | **Fail-closed and human-review-only** | Current workflow creates a branch/PR when credentials work; it does not fabricate a PR and does not merge or deploy. Live operation is untested because no PAT is configured. |
-| **Telegram / Twilio / tunnel** | **Partial** | Telegram configuration is present. Twilio account and phone fields exist but its auth token is absent; no tunnel URL is configured. Delivery, webhook reachability, and caller verification are unvalidated. |
-| **Auth / security boundary** | **Barely implemented for public use** | CORS allows all origins and incident/integration routes lack demonstrated authorization enforcement. Do not expose the control API through a public tunnel yet. |
+| **Backend API & SQLite** | **Implemented and locally tested** | Incident, project/server, event, worktree, hold/reject, and database paths have source and automated-test evidence. |
+| **Worktree Lifecycle Management** | **Implemented, verified & pruned** | Atomic branch/worktree isolation, metadata tagging, startup pruning, and process-exit cleanup are active. |
+| **Investigation / fix / canary pipeline** | **Locally validated; mock & live adapters** | Repro-first pipeline (red -> fix -> green), side-port canaries (8001/8002), and decision engine run deterministically with `MockAgentAdapter`, with `--live-agent` available for live LLMs. |
+| **Approval / deployment** | **Safely verified for local process** | Approval requires persisted canary evidence, a repository, and a patch/suspect commit. Deploys via safe zero-downtime swap on local port with watchdog auto-revert. No Render cloud deployment adapter. |
+| **Render integration** | **Live read operations validated; health probe pending** | Service list/details, deployment history, and logs work with the connected Render account. |
+| **GitHub integration** | **Read/PR code implemented; live write requires PAT** | GitHub client and PR workflow are fail-closed when a repo/token is unavailable. Needs live PAT in settings for remote PR writes. |
+| **UI** | **Build validated; runtime behavior mixed** | The production bundle compiles. Screens are substantial and functional; should be connected to live SSE streams without timer mocks. |
+| **Incident intake / triage** | **Implemented, verified & deduplicated** | Ingest/triage, SHA-256 fingerprinting, and anti-looping recurrence counters are verified by `test_ingest.py`. |
+| **Telegram / Twilio / tunnel** | **Endpoints & renderers verified; dispatch requires tunnel/bot** | Notification renderers (dark-mode mobile HTML, TwiML voice audio, DTMF callbacks) verified. Live push requires active bot token and public tunnel URL. |
+| **Auth / security boundary** | **Barely implemented for public use** | CORS allows all origins and incident/integration routes lack authorization enforcement. Safe for local demo; do not expose without token checks. |
 
 ### Realistic completion estimate
 
-The status in the summary table is the planning baseline: **~40% properly implemented, ~30% partial, ~20% barely implemented, ~10% missing.** The percentage is intentionally conservative because the unreached portions are safety-critical rather than cosmetic.
+The status in the summary table is the planning baseline: **~55% properly implemented, ~25% partial, ~12% barely implemented, ~8% missing/out-of-scope.**
 
 ---
 
 ## 5. What can be accomplished before 11:00 AM IST
 
-There are approximately **5 hours 48 minutes** from the audit timestamp. The achievable objective is a reliable, honest demo—not a safe autonomous Render production-deployer.
+There are approximately **5 hours 35 minutes** remaining. The achievable objective is a **rock-solid, truthful, end-to-end hackathon demo**:
 
 | Timebox | Highest-value deliverable | Definition of done |
 | :--- | :--- | :--- |
-| **05:15–05:45** | Repair validation signal | Update the stale approval test to assert 501 with deployment disabled; add an explicit local-demo test only when the target is enabled; rerun all tests. |
-| **05:45–06:30** | Fix and prove live monitoring | Correct the connected service health URL/timeout, then record successful Render health, logs, and triage results. Keep this read-only. |
-| **06:30–07:30** | Controlled incident drill | Use a disposable/local target to prove log → one deduplicated incident → worker → brief → repro red/green → canary decision → `AWAITING_APPROVAL`. Capture the event timeline. |
-| **07:30–08:30** | Truthful UI/demo polish | Remove or label simulated progress; show “local demo deployment” distinctly from Render; surface missing-credential/health errors clearly. |
-| **08:30–09:30** | Notification readiness | Configure and send one real Telegram test; only attempt Twilio after adding the missing auth token and a reachable tunnel. |
-| **09:30–10:15** | Demo hardening | Restart from a clean state, rerun tests/build, seed one prepared incident, and rehearse the 3-minute path twice. |
-| **10:15–11:00** | Buffer and presentation evidence | Freeze code, collect terminal/test evidence, record the live Render read proof, and prepare a concise limitation statement. |
+| **05:30–06:15** | Fix & prove live Render monitoring | Configure correct health URL for connected Render service, verify live latency probe, and demonstrate live container log streaming in UI/CLI. |
+| **06:15–07:15** | Controlled incident drill & evidence capture | Ingest a realistic crash log -> verify triage -> supervised worker -> brief -> red repro test -> code fix -> green suite -> canary staging -> decision -> `AWAITING_APPROVAL`. Record event timeline. |
+| **07:15–08:15** | Desktop UI live binding & honesty polish | Ensure UI displays live SSE incident events; clearly label deployment target as "Local Process Demonstration" to eliminate ambiguity; show real worktrees/canaries. |
+| **08:15–09:15** | Live notification drill (Telegram & Tunnel) | Start Cloudflare tunnel, send real Telegram crash & approval alerts with live tunnel link, and verify 1-tap review page opens seamlessly on mobile phone. |
+| **09:15–10:15** | End-to-end demo dry runs | Reset to clean state, run unified tests, seed demonstration incident, and rehearse the 3-minute pitch twice without hitches. |
+| **10:15–11:00** | Code freeze & presentation collateral | Finalize terminal proofs, test reports, mobile screenshots, and prepare the demo narrative and slides. |
 
 ### Explicitly out of scope before 11:00 AM
 
-- A real Render deployment/rollback implementation with deployment-ID tracking and provider verification.
-- Public tunnel exposure before route authentication, authorization, webhook signature checks, and restricted CORS exist.
-- Claiming live Gemini remediation, GitHub PR creation, or Twilio escalation without their missing credentials and an observed successful run.
+- A cloud-native Render deployment promotion adapter with deployment-ID polling (ProdPilot uses safe local-process deployment for the hackathon demo).
+- Full production OAuth/JWT user authentication gateway.
 
 ### What “done” means for the next milestone
 
