@@ -3,320 +3,248 @@
 
 **Realm Hack 2026 | Agentic AI Track**  
 **Author**: Vishnu Nandan, Christ College of Engineering  
-**Version**: 2.1 (Authoritative Blueprint)
+**Version**: 2.2 (Model 1 Hybrid Architecture)
 
 ---
 
 ### 1. Product Vision
 
-ProdPilot is a production monitoring and incident response platform that connects a production server and source code repository to continuously monitor application health, detect incidents, investigate root causes, and coordinate recovery.
+ProdPilot is an autonomous production monitoring and incident response platform that connects a production server and source code repository to continuously monitor application health, detect incidents, investigate root causes, and coordinate recovery.
 
-The platform automates the incident lifecycle while maintaining developer control over production changes.
+The platform automates the incident lifecycle while maintaining strict developer control over production changes.
 
-**Core objective:** Detect production failures, understand their causes, prepare recovery actions, and enable developers to resolve incidents without needing to immediately open their laptops.
+**Core objective:** Detect production failures, understand their causes, prepare recovery actions, and enable developers to resolve incidents remotely from their phones without needing to immediately open their laptops.
 
 ---
 
 ### 2. Problem Statement
 
 Production failures require developers to manually:
-- Monitor logs and identify errors.
-- Determine incident severity.
-- Collect relevant production evidence.
-- Investigate recent code changes.
-- Identify the root cause.
+- Monitor logs and identify errors across disconnected tools.
+- Determine incident severity and impact.
+- Collect relevant production evidence and stack traces.
+- Investigate recent code changes with `git blame`.
+- Identify the root cause and research documentation.
 - Decide whether rollback or a code fix is appropriate.
 - Implement, test, and deploy fixes.
-- Verify production health.
+- Verify production health post-deployment.
 
-This process is time-consuming and requires developers to switch between infrastructure dashboards, repositories, terminals, communication tools, and monitoring systems.
+This process is stressful, time-consuming, and error-prone, especially during off-hours outages at 3:00 AM.
 
-ProdPilot aims to automate these repetitive operations and prepare actionable incident reports and recovery options.
+ProdPilot automates these operational tasks, prepares evidence-based incident reports, stages recovery options, and provides a 1-tap mobile decision workflow.
 
 ---
 
 ### 3. Product Principles
 
-1. **Autonomous investigation:** Agents collect evidence and identify potential root causes without requiring developers to initiate every step.
-2. **Human-controlled production changes:** Developers retain control over code approval and production remediation.
-3. **Evidence-based decisions:** Reports distinguish confirmed evidence from hypotheses.
-4. **Safe recovery:** Rollback and remediation require appropriate safety checks.
-5. **Persistent incident history:** Previous incidents and failed recovery attempts inform future investigations.
-6. **Lightweight monitoring:** Continuous monitoring should not require expensive LLM execution for every log entry.
-7. **Mobile accessibility:** Developers can understand incidents and monitor progress from their phones.
-8. **Modular integrations:** Infrastructure providers and communication services should be replaceable without redesigning the incident pipeline.
+1. **Autonomous investigation:** Agents collect evidence, correlate commits, and identify root causes without requiring developers to initiate every step.
+2. **Human-controlled production changes:** Developers retain final approval over code merges and production remediation. Agents never autonomously merge to production.
+3. **Evidence-based decisions:** Reports strictly distinguish confirmed evidence from hypotheses.
+4. **Safe recovery:** Rollback and remediation require deterministic verification and post-deploy health checks.
+5. **Persistent incident history:** Previous incidents and failed recovery attempts inform future investigations to prevent loops.
+6. **Lightweight monitoring:** Continuous monitoring avoids expensive LLM calls on every log line; uses fast rule filters.
+7. **Mobile accessibility:** Developers can inspect incidents, view diffs, and approve recovery from their phones.
+8. **Modular integrations:** Infrastructure providers (Render) and communication channels (Telegram, Slack) are cleanly decoupled.
 
 ---
 
-### 4. Product Architecture & Core Components
+### 4. Deployment Architecture: Model 1
+
+For the hackathon, ProdPilot uses **Model 1: Laptop-Hosted Backend + Render-Hosted Website + Cloudflare Tunnel Remote Access**.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 Production Infrastructure                              │
-│         (Render REST API v1 / Local Service Forwarder on Port 8000)                    │
+│                                   REMOTE DEVELOPER                                     │
+│                     (Mobile Phone Browser / Any Web Browser)                           │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ Log Stream & Health Checks
+                                            │
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              A. Production Monitoring Service                          │
-│     • Continuous log receiver & buffer                                                 │
-│     • Rule filter: 5xx, unhandled tracebacks, failed /health                           │
-│     • Severity classifier: High (Severe) vs Low (Issue)                                │
-│     • Fingerprinting & de-duplication (anti-crash loop)                                │
+│                              RENDER: PRODPILOT WEBSITE                                 │
+│     • Public Frontend (React + Vite build hosted on Render Static Sites)               │
+│     • Incident Dashboard & Live Incident Webpage (/incidents/{id})                     │
+│     • Real-time SSE Investigation Timeline & Evidence Inspector                        │
+│     • 1-Tap Developer Controls: [Deploy Fix], [Rollback], [Take Over]                  │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ Dispatches Incident Signal
+                                            │ Outbound HTTPS API Calls
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              B. Incident Orchestrator                                  │
-│     • Authoritative owner of incident state machine                                    │
-│     • Manages lifecycle: DETECTED -> INVESTIGATING -> REPORT_READY ->                  │
-│       RECOVERY_DECISION -> ROLLBACK / FIXING -> PR_READY -> AWAITING_APPROVAL ->       │
-│       DEPLOYING -> VERIFYING -> RESOLVED                                               │
-│     • Records transitions, dispatches agents, handles human gates                      │
-└───────┬───────────────────┬───────────────────┬───────────────────┬────────────────────┘
-        │                   │                   │                   │
-        ▼                   ▼                   ▼                   ▼
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│C.Investigation│   │ D. Recovery  │    │   E. Fix     │    │F.Verification│
-│    Agent     │    │    Agent     │    │    Agent     │    │    Agent     │
-├──────────────┤    ├──────────────┤    ├──────────────┤    ├──────────────┤
-│• Collect logs│    │• Rollback    │    │• Antigravity │    │• 10s health  │
-│• Git blame   │    │  eligibility │    │  SDK loop    │    │  watchdog    │
-│• PR reviews  │    │• Stage 8002  │    │• Repro test  │    │• Auto-revert │
-│• Root Cause  │    │  canary      │    │  (Red->Green)│    │  if broken   │
-│  Report (RCA)│    │• Mitigate vs │    │• Stage 8001  │    │• Confirm     │
-│• Telegram ping│   │  fix decision│    │• Open PR     │    │  resolution  │
-└──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
-        │                   │                   │                   │
-        └───────────────────┴─────────┬─────────┴───────────────────┘
-                                      ▼
+│                                  CLOUDFLARE TUNNEL                                     │
+│     • Secure, zero-config tunnel from laptop to public internet                        │
+│     • No public IP, no port forwarding required on laptop                              │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Forwards requests to http://127.0.0.1:8765
+                                            ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                         G. Incident History & SQLite Store                             │
-│     • schema.sql: incidents, incident_events, reports, artifacts, decisions            │
-│     • Anti-looping: stores fingerprints, failure reasons, prevents repeated bad fixes  │
+│                               LAPTOP: PRODPILOT BACKEND                                │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Backend API (FastAPI on Port 8765)                                            │  │
+│  │ 2. Monitoring Engine (Render Log API + Local Forwarder)                          │  │
+│  │ 3. Incident Orchestrator (State machine authority)                              │  │
+│  │ 4. Investigation Agent (Git blame, PR reviews, RCA report generator)             │  │
+│  │ 5. Recovery Agent (Evaluates rollback eligibility, stages 8002 canary)          │  │
+│  │ 6. Fix Agent (Google Antigravity SDK: repro test Red->Green, isolated worktree)  │  │
+│  │ 7. Verification Watchdog (10-second post-deploy health monitor & auto-revert)    │  │
+│  │ 8. Integrations: GitHub API (PRs, issues) & Telegram Bot API (@prodpilotbot)     │  │
+│  │ 9. Local Database: SQLite (incidents, events, reports, fingerprints)              │  │
+│  └──────────────────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Core Design Principle:
+> *"Render makes ProdPilot accessible. Your laptop makes ProdPilot operational."*
 
-### 5. Incident Severity Classification
+### Division of Responsibility:
 
-ProdPilot initially uses two severity categories.
+| Component | Host Environment | Responsibility |
+|---|---|---|
+| **Public Website / Webpage** | **Render** | Remotely accessible UI. Displays dashboard, incident timeline, evidence, diff preview, and approval controls. Accessible by phone or laptop. |
+| **Backend API** | **Laptop** | FastAPI REST & SSE server (port 8765). Serves incident state, handles approvals, and receives log webhooks. |
+| **Monitoring Engine** | **Laptop** | Pulls production logs via Render REST API (`/services/{serviceId}/logs`) or local forwarder. Runs rule filters and severity triage. |
+| **Incident Orchestrator** | **Laptop** | Authoritative state machine manager. Tracks state transitions from `DETECTED` to `RESOLVED`. |
+| **AI Agents (Investigation, Fix)** | **Laptop** | Runs Google Antigravity SDK and LLM inference locally. Uses git worktrees for isolated code execution and test verification. |
+| **Canary Staging & Watchdog** | **Laptop** | Boots side-port canaries (8001 Fix-Forward, 8002 Rollback). Executes 10s post-deploy health watchdog. |
+| **Database** | **Laptop** | Local SQLite database (`prodpilot.db`) storing incidents, audit events, fingerprints, and reports. |
+| **Remote Connectivity** | **Cloudflare Tunnel** | Bridges Render frontend and mobile phones to the laptop backend securely. |
 
-#### Low — Issue
-Low-severity incidents do not require immediate autonomous remediation.
-- **Examples**: Non-critical application errors, occasional failed requests, recoverable warnings, minor performance degradation, non-critical background task failures.
-- **Workflow**:
-  1. Detect issue.
-  2. Create incident record in state `DETECTED`.
-  3. Collect relevant logs.
-  4. Generate diagnostic report $\rightarrow$ `REPORT_READY`.
-  5. Create GitHub issue with labels `severity:low` $\rightarrow$ `ISSUE_CREATED`.
-  6. Notify or record the issue $\rightarrow$ `WAITING_FOR_DEVELOPER`.
-  7. No autonomous production rollback or code deployment.
-
-#### High — Severe
-High-severity incidents require immediate investigation and recovery coordination.
-- **Examples**: Application crash, critical service unavailable, persistent database connection failures, severe error spikes, production deployment regression.
-- **Workflow**:
-  1. Detect incident $\rightarrow$ `DETECTED`. Immediate Telegram alert with incident web link!
-  2. Collect production evidence $\rightarrow$ `INVESTIGATING`.
-  3. Investigate root cause & generate report $\rightarrow$ `REPORT_READY`.
-  4. Evaluate rollback vs fix $\rightarrow$ `RECOVERY_DECISION`.
-  5. Execute permitted recovery (stage rollback 8002) or prepare fix PR (stage fix 8001) $\rightarrow$ `ROLLBACK` or `FIXING` $\rightarrow$ `PR_READY`.
-  6. Notify developer $\rightarrow$ `AWAITING_APPROVAL`.
-  7. On approval, merge and deploy $\rightarrow$ `DEPLOYING`.
-  8. Monitor production health $\rightarrow$ `VERIFYING`.
-  9. Resolve or escalate $\rightarrow$ `RESOLVED` / `ESCALATED`.
+### Limitations & Security:
+- **Laptop Online Requirement**: The laptop must be awake and connected to the internet during the demo. Render hosts the UI, but operational actions require the laptop backend.
+- **Credential Isolation**: Production tokens and GitHub PAT stay on the laptop. AI agents run in isolated git worktrees without access to root system credentials.
+- **Human-in-the-Loop**: Agents cannot merge pull requests or deploy to production without explicit developer approval via the Render website or Telegram.
 
 ---
 
-### 6. High-Severity Incident 10-Stage Lifecycle
+### 5. High-Severity Incident 10-Stage Lifecycle
+
+```
+DETECTED ──> INVESTIGATING ──> REPORT_READY ──> RECOVERY_DECISION ──> [ROLLBACK or FIXING]
+                                                                              │
+RESOLVED <── VERIFYING <── DEPLOYING <── AWAITING_APPROVAL <── PR_READY <─────┘
+```
 
 #### Stage 1 — Detection
-- The monitoring agent detects a severe issue.
-- Orchestrator creates incident containing: Incident ID, Service, Severity, Detection timestamp, Error description, Occurrence count, Initial logs, Incident status.
-- Incident is immediately visible in the dashboard and accessible via mobile URL (`/incidents/{id}`).
-- **Telegram notification is sent immediately without waiting for the investigation report.**
+- Monitoring engine detects crash or 5xx anomaly via Render API or local log forwarder.
+- Orchestrator creates incident in state `DETECTED`.
+- **Immediate Telegram alert sent to developer with direct link to the Render-hosted incident webpage (`https://prodpilot.onrender.com/incidents/{id}`).**
 
 #### Stage 2 — Evidence Collection
-The investigation pipeline collects:
-- Relevant production logs & stack traces.
-- Error frequency & incident timeline.
-- Current and previous deployments.
-- Recent commits (`git log -n 5`) & git blame suspect commit.
-- Relevant source files.
-- Previous incidents from SQLite.
-- Related PR discussion and error documentation (via Firecrawl).
+- Collects raw production logs and stack traces.
+- Computes SHA-256 fingerprint of the cleaned stack trace (prevents crash-loop duplication).
+- Fetches recent commits (`git log -n 5`) and runs `git blame` to isolate the suspect commit.
+- Pulls linked PR discussions and reviewer comments from GitHub.
 
 #### Stage 3 — Root Cause Investigation
-The investigation agent analyzes prepared evidence:
-1. Identifies affected service & start time.
-2. Correlates errors with deployments and commits.
-3. Analyzes affected code files.
-4. Distinguishes: Confirmed findings, Suspected causes, Missing evidence, Confidence level, and Recommended actions.
+- Investigation agent correlates stack trace with the suspect commit.
+- Distinguishes confirmed findings from hypotheses.
+- Formulates a structured Root-Cause Analysis (RCA) report.
 
 #### Stage 4 — Root Cause Report
-Structured RCA report includes:
-- **Incident summary**: What broke and affected service.
-- **Severity**: High.
-- **Timeline**: Detection, deployment, investigation events.
-- **Evidence**: Stack traces, blamed commit SHA and author.
-- **Root cause**: Most likely explanation supported by code evidence.
-- **Suspected commit**: Linked PR discussion and rationale.
-- **Recovery recommendation**: Rollback vs Code Fix.
-- **Confidence**: High / Medium / Low.
-- Saved in SQLite and immediately rendered on the incident webpage.
+- Report structured with: Summary, Affected Service, Severity, Timeline, Evidence, Root Cause, Suspected Commit, and Recommendation.
+- Saved in SQLite and immediately visible on the Render incident webpage.
 
 #### Stage 5 — Recovery Decision
-The recovery agent evaluates whether rollback is appropriate based on:
-- Root cause report & deployment history.
-- Rollback availability & potential data loss / DB migration compatibility.
-- Outgoing options: Safe rollback, Fix required, Developer approval required, or Manual intervention required.
+- Recovery agent evaluates rollback eligibility:
+  - Is previous deployment available?
+  - Does rollback risk data loss or break DB migrations?
+- Decides whether immediate Rollback is recommended or a code fix is required.
 
-#### Stage 6 — Rollback
-When rollback is selected:
-1. Identify previous deployment.
-2. Validate rollback eligibility.
-3. Stage rollback canary on port 8002.
-4. Verify original failure is resolved on canary.
+#### Stage 6 — Rollback Staging
+- Reverts suspect commit in a clean worktree.
+- Boots Rollback canary on Port 8002.
+- Verifies health check on Canary 8002.
 
-#### Stage 7 — Code Remediation
-If rollback is insufficient, or to produce the permanent fix:
-1. Load prepared context bundle (report, logs, source code, suspect commits, PR reviews).
-2. Create isolated branch (`prodpilot-fix-<id>`) in a dedicated git worktree.
-3. Write reproduction test verifying failure on unmodified code (Red).
-4. Implement fix in code.
-5. Verify reproduction test passes (Green) and full regression suite passes.
-6. Stage fix-forward canary on port 8001.
-7. Create a GitHub Pull Request with test evidence and link.
+#### Stage 7 — Code Remediation (Fix Agent)
+- Fixing agent (Google Antigravity SDK) operates in an isolated git worktree.
+- Crafts a reproduction test verifying the failure on unmodified code (Red).
+- Applies patch to resolve the defect.
+- Verifies reproduction test passes (Green) and full regression suite passes.
+- Boots Fix-Forward canary on Port 8001.
+- Pushes branch `prodpilot-fix-<id>` and opens a GitHub Pull Request with test evidence.
 
 #### Stage 8 — Developer Approval
-The developer receives:
-- Mobile alert with direct link to `/incidents/{id}`.
-- Incident summary, RCA report, recovery recommendation.
-- Rollback result (Port 8002) and Proposed PR diff + test evidence (Port 8001).
-- Actions: **`[Approve & Deploy Fix]`**, **`[Approve Rollback]`**, **`[Reject]`**, or **`[Take Over]`**.
+- Developer inspects incident from their phone via the Render website:
+  - Incident Summary & RCA Report.
+  - Rollback Canary status (Port 8002).
+  - Fix-Forward Canary status (Port 8001) & GitHub PR diff.
+- Developer taps: **`[🚀 Approve & Deploy Fix]`**, **`[⏪ Instant Rollback]`**, or **`[🛑 Take Over]`**.
 
-#### Stage 9 — Deployment
-After approval:
-1. Promote chosen canary to production (port 8000 or Render service).
-2. Merge PR if fix-forward was approved.
-3. Track deployment status and monitor production logs.
-4. Verification agent engages 10-second post-deploy watchdog.
-5. If health check fails: auto-revert to previous known-good release and escalate.
+#### Stage 9 — Deployment & Verification Watchdog
+- Approved build is deployed to production (Port 8000 or Render service).
+- If fix was approved, PR is merged.
+- **Verification Watchdog** monitors production `/health` for 10 seconds.
+- If health check fails: **automatic emergency rollback** is triggered, and incident is marked `AUTO_REVERTED`.
 
 #### Stage 10 — Incident Resolution
-Once production health is verified:
-- Mark incident `RESOLVED`.
-- Record final root cause, recovery action, commit SHA, and post-mortem report in SQLite.
-- Update incident history for future loop prevention.
-- Notify developer on Telegram and Dashboard.
+- If production remains healthy: incident is marked `RESOLVED`.
+- Post-mortem report is finalized and saved in SQLite.
+- Incident history is updated to prevent future regressions.
 
 ---
 
-### 7. Mobile Incident Management (`/incidents/{id}`)
+### 6. Low-Severity Incident Lifecycle
 
-Every incident has its own webpage accessible over the active Cloudflare Tunnel.
+For non-critical issues (handled exceptions, recoverable warnings, single 404 spikes):
+1. Monitoring detects event $\rightarrow$ classified as `Low`.
+2. Diagnostic brief synthesized $\rightarrow$ `REPORT_READY`.
+3. Non-urgent GitHub issue created with label `severity:low` $\rightarrow$ `ISSUE_CREATED`.
+4. Stored in ProdPilot DB for normal daytime triage $\rightarrow$ `WAITING_FOR_DEVELOPER`.
+5. **No midnight Telegram alarms or autonomous production changes.**
 
-1. **Incident Overview**: Incident ID, Severity, Service, Status badge, Detection time, Root cause summary, Recovery recommendation.
-2. **Live Timeline**: Real-time SSE updates (`DETECTED` $\rightarrow$ `INVESTIGATING` $\rightarrow$ `REPORT_READY` $\rightarrow$ `AWAITING_APPROVAL` $\rightarrow$ `RESOLVED`).
-3. **Evidence Drawer**: Stack traces, blamed commits, PR reviews, and Firecrawl doc insights.
-4. **Recovery Status**: Live canary health (Canary 8001 fix vs Canary 8002 rollback), PR link, and test results.
-5. **Developer Controls**: 1-tap mobile action buttons:
-   - `[🚀 Approve & Deploy Fix (8001)]`
-   - `[⏪ Instant Rollback (8002)]`
+---
+
+### 7. Mobile-First Incident Webpage (`/incidents/{id}`)
+
+Render hosts the mobile-responsive interface that connects to the laptop backend via Cloudflare Tunnel:
+1. **Header**: Incident ID, Status Badge (`AWAITING_APPROVAL`), Severity (`HIGH`), Service Name.
+2. **Live SSE Timeline**: Real-time progress through the 10 stages.
+3. **RCA Summary**: Clear root-cause explanation and blamed commit attribution.
+4. **Evidence & Diff**: Collapsible stack trace, PR discussion context, and git patch diff.
+5. **Canary Inspector**: Side-by-side status of Canary 8001 (Fix) and Canary 8002 (Rollback).
+6. **Action Controls**:
+   - `[🚀 Approve & Deploy Fix]`
+   - `[⏪ Instant Rollback]`
    - `[🛑 Take Over]`
 
 ---
 
-### 8. GitHub Integration
+### 8. Integrations & Technology Stack
 
-- **Repository Connection**: Configured with repo owner/name, local checkout path, and fine-grained PAT.
-- **Incident-to-Code Correlation**: Correlates stack traces via `git blame` against recent commits and PR discussions.
-- **Low-Severity Issues**: Automatically files a GitHub issue with diagnostic brief and logs.
-- **High-Severity Fixes**: Fix agent pushes branch `prodpilot-fix-<id>` and opens a PR with evidence.
-
----
-
-### 9. Incident History & Loop Prevention
-
-ProdPilot maintains an incident knowledge base in SQLite:
-- **Stack Trace Fingerprinting**: Normalizes traces and stores SHA-256 hash. Repeat crashes increment `recurrence_count` rather than spawning duplicate runs.
-- **Past Recovery Outcomes**: Stores what was attempted, what succeeded, and what failed.
-- **Capped Loop**: Automatic code fix is capped at 1 attempt before falling back to rollback/escalation.
-
----
-
-### 10. Integrations & Modularity
-
-- **Core Integrations (Must Have)**:
-  - **Render**: Production service hosting, real-time log ingestion via Render API (`/services/{serviceId}/logs`), and deploy triggers.
-  - **GitHub**: Repository access, commit history, blame, issues, branches, and PR creation.
-  - **Telegram**: Instant developer alert upon detection, RCA report delivery, and direct incident webpage link.
-- **Optional Extensions**:
-  - **n8n**: Workflow automation for dispatching external notifications and project tracking.
-  - **Firecrawl**: Scraping official documentation for external library error codes.
-  - **Slack**: Incident channel creation and responder discussion logging.
-  - **Adaption AI Labs**: Deferred for future dataset/fine-tuning experiments.
+| Layer | Component | Host | Purpose |
+|---|---|---|---|
+| **Frontend** | React 18, Vite, Tailwind CSS | **Render Static Sites** | Public web dashboard and mobile incident pages. |
+| **Backend API** | FastAPI, Python 3.11, SSE | **Laptop** (Port 8765) | Authoritative incident orchestrator and agent controller. |
+| **Connectivity** | Cloudflare Tunnel (`cloudflared`) | **Laptop $\rightarrow$ Web** | Outbound HTTPS tunnel to expose laptop API securely. |
+| **Monitoring** | Render REST API v1 / Forwarder | **Laptop** | Ingests production logs and monitors service health. |
+| **Agent Engine** | Google Antigravity SDK (`agy`) | **Laptop** | Multi-agent repro test runner, code fixer, and verifier. |
+| **Code Sandboxing**| Git Worktrees (`git worktree`) | **Laptop** | Isolated file execution for reproduction tests and builds. |
+| **Database** | SQLite3 (`prodpilot.db`) | **Laptop** | Local ACID store for incidents, events, and reports. |
+| **Notifications** | Telegram Bot API (`@prodpilotbot`)| **Visihot / Laptop** | Immediate mobile incident alerts with Render web links. |
+| **Code Repository**| GitHub REST API | **GitHub** | Commits, blame, issues, branches, and PR creation. |
+| **Workflow (Opt)** | n8n Webhooks | **Cloud / Local** | Multi-channel notification routing. |
+| **Docs (Opt)** | Firecrawl API | **Cloud** | External library error documentation scraping. |
 
 ---
 
-### 11. Incident State Machine
+### 9. 3-Minute Hackathon Demo Script (Model 1 in Action)
 
-```
-DETECTED
-  │
-  ▼
-INVESTIGATING
-  │
-  ▼
-REPORT_READY
-  │
-  ▼
-RECOVERY_DECISION
-  │
-  ├──────────────────────────────┐
-  ▼                              ▼
-ROLLBACK                       FIXING
-  │                              │
-  └──────────────┬───────────────┘
-                 ▼
-              PR_READY
-                 │
-                 ▼
-         AWAITING_APPROVAL
-                 │
-                 ▼
-             DEPLOYING
-                 │
-                 ▼
-             VERIFYING
-                 │
-                 ▼
-             RESOLVED
-
-* Auxiliary States: ESCALATED, FAILED, CANCELLED, MANUAL_TAKEOVER
-* Low-Severity Flow: DETECTED -> REPORT_READY -> ISSUE_CREATED -> WAITING_FOR_DEVELOPER
-```
-
----
-
-### 12. 3-Minute Hackathon Demo Script
-
-1. **0:00 – 0:30 (Monitoring & Low Severity)**:
-   - Show Production Mission Control connected to Render / local service.
-   - Send low-severity warning: ProdPilot classifies as `Low`, files a GitHub issue, and leaves the phone quiet.
-2. **0:30 – 1:15 (Outage Detection & Immediate Page)**:
-   - Run `./scripts/trigger-crash.sh`.
-   - Production returns 500 error. Detection triggers immediately $\rightarrow$ phone buzzes on Telegram with the live incident link.
-3. **1:15 – 2:00 (Autonomous Investigation & Dual Staging)**:
-   - Investigation agent collects logs, blames commit, extracts PR context, and generates RCA report.
-   - Recovery agent stages Rollback canary on 8002.
-   - Fix agent writes `test_repro.py`, verifies Red $\rightarrow$ Green, stages Fix canary on 8001, and opens GitHub PR.
-4. **2:00 – 2:40 (Mobile Review & 1-Tap Resolution)**:
-   - Open incident link on mobile. Review the RCA report, diff, and test evidence.
+1. **Minute 0:00 – 0:30 (The Setup & Live Architecture)**:
+   - Show Render-hosted website on a browser: `https://prodpilot.onrender.com`.
+   - Explain Model 1: Render hosts the interface for global access; laptop runs the operational backend connected via Cloudflare Tunnel.
+   - Show healthy production service.
+2. **Minute 0:30 – 1:15 (The Outage & Immediate Mobile Page)**:
+   - Trigger production crash (`./scripts/trigger-crash.sh`).
+   - Laptop monitoring detects crash within seconds.
+   - Phone buzzes on Telegram: **"🚨 SEV-1 Outage: `KeyError: 'discount'` in `order_service`"** with a direct link to the Render website.
+3. **Minute 1:15 – 2:00 (Autonomous Investigation on Laptop)**:
+   - Laptop orchestrator investigates: runs `git blame`, correlates recent commit, and writes RCA report.
+   - Antigravity agent in isolated worktree creates `test_repro.py`, confirms failure (Red), fixes code, confirms pass (Green).
+   - Staging manager brings up Rollback canary (8002) and Fix canary (8001).
+   - Pull request opened on GitHub.
+4. **Minute 2:00 – 2:40 (Remote Mobile Decision)**:
+   - Tap the link on phone. Show the live Render webpage: RCA report, diff, and green canaries.
    - Tap **`[🚀 Approve & Deploy Fix]`** directly from mobile.
-5. **2:40 – 3:00 (Watchdog Verification & Resolution)**:
-   - Production port 8000 restores to 200 OK.
-   - 10s watchdog confirms health. Incident transitions to `RESOLVED` and post-mortem report is saved.
+5. **Minute 2:40 – 3:00 (Watchdog Verification & Resolution)**:
+   - Request reaches laptop via Cloudflare Tunnel.
+   - Laptop promotes Fix canary to production port 8000.
+   - 10-second watchdog confirms production is healthy.
+   - Mobile and Render dashboard update to `RESOLVED` with the auto-generated post-mortem.

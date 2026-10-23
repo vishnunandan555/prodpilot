@@ -1,7 +1,6 @@
-# ProdPilot Multi-Agent Execution Plan & Runbook (Phase 4: Platform Hardening & Ingest Tier)
+# ProdPilot Multi-Agent Execution Plan & Runbook (Phase 4: Model 1 Hybrid Architecture)
 
-This document defines the Phase 4 multi-agent operating procedure for ProdPilot.
-Each agent operates in its own isolated worktree or branch with strict folder ownership.
+This document defines the Phase 4 multi-agent operating procedure for ProdPilot under **Model 1: Laptop-Hosted Backend + Render-Hosted Frontend + Cloudflare Tunnel**.
 
 ---
 
@@ -25,11 +24,11 @@ Each agent operates in its own isolated worktree or branch with strict folder ow
 
 ---
 
-## 2. Phase 4 Workstreams (Zero Conflicts)
+## 2. Phase 4 Workstreams (Model 1 Division)
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  STREAM A: Ingest, Triage Tier & Anti-Looping          │
+│  STREAM A: Laptop Ingest, Triage & Anti-Looping        │
 │  • Worktree: /home/vishnunandan555/Projects/prodpilot-a│
 │  • Branch: stream-triage                               │
 │  • Directory ownership:                                │
@@ -40,7 +39,7 @@ Each agent operates in its own isolated worktree or branch with strict folder ow
 │  • Deliverables:                                       │
 │    1. /ingest endpoint for log batches                 │
 │    2. Render Log API puller & local forwarder          │
-│    3. Adaption AI triage classifier (High vs Low)      │
+│    3. Fast rule-based triage classifier (High vs Low)  │
 │    4. Low-severity GitHub issue creator                │
 │    5. Stack trace fingerprinting & anti-looping        │
 └────────────────────────────────────────────────────────┘
@@ -48,17 +47,18 @@ Each agent operates in its own isolated worktree or branch with strict folder ow
           ┌───────────────┴───────────────┐
           ▼                               ▼
 ┌───────────────────────────────────┐    ┌───────────────────────────────────┐
-│  STREAM B: Fixing & Safety Guard  │    │  STREAM C: Mobile Web & Comms     │
+│  STREAM B: Laptop Fixing & Guard  │    │  STREAM C: Render Web & Tunnel    │
 │  • Worktree: prodpilot-b          │    │  • Directory: desktop/, telegram/ │
 │  • Branch: stream-agent           │    │  • Branch: stream-ui              │
 │  • Directory ownership:           │    │  • Deliverables:                  │
-│    - backend/prodpilot/pipeline/  │    │    1. /incidents/{id}/mobile web  │
-│    - backend/prodpilot/staging/   │    │       view with Cloudflare tunnel │
-│  • Deliverables:                  │    │    2. Mobile 1-tap action buttons │
-│    1. Firecrawl doc scraper       │    │       ([Deploy Fix], [Rollback])  │
-│    2. GitHub branch & PR opener   │    │    3. Telegram alert card with    │
-│    3. 10s post-deploy watchdog    │    │       direct mobile web link      │
-│    4. Auto-revert guard on fail   │    │    4. n8n webhook dispatcher      │
+│    - backend/prodpilot/pipeline/  │    │    1. Vite build & Render Static  │
+│    - backend/prodpilot/staging/   │    │       Site deploy config          │
+│  • Deliverables:                  │    │    2. /incidents/{id} mobile-first│
+│    1. Investigation RCA report    │    │       webpage with live SSE       │
+│    2. Antigravity fix-in-worktree │    │    3. Mobile 1-tap action buttons │
+│    3. GitHub branch & PR opener   │    │       ([Deploy Fix], [Rollback])  │
+│    4. 10s post-deploy watchdog    │    │    4. Immediate Telegram alert    │
+│    5. Auto-revert guard on fail   │    │       with direct Render web link │
 └───────────────────────────────────┘    └───────────────────────────────────┘
 ```
 
@@ -69,7 +69,7 @@ Each agent operates in its own isolated worktree or branch with strict folder ow
 - **Stream A Done Check**:
   ```bash
   python3 scripts/test_ingest_triage.py
-  # Asserts that fake 500 error triggers High classification & fingerprint stored;
+  # Asserts that 500 error triggers High classification & fingerprint stored;
   # Asserts that warning log triggers Low classification & issue brief.
   ```
 
@@ -81,6 +81,7 @@ Each agent operates in its own isolated worktree or branch with strict folder ow
 
 - **Stream C Done Check**:
   ```bash
-  curl -s http://127.0.0.1:8765/incidents/1/mobile | grep -q "Deploy Fix"
-  # Asserts mobile incident web page renders properly with action buttons.
+  cd desktop && npm run build
+  # Asserts Vite builds successfully to dist/ for Render Static Sites.
+  # Asserts /incidents/{id} renders with mobile action buttons over Cloudflare Tunnel.
   ```
