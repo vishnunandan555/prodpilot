@@ -132,11 +132,16 @@ case "${1:-all}" in
         start_ui
         exit 0
         ;;
+    --test|test)
+        "$REPO_ROOT/run_tests.sh" "$@"
+        exit 0
+        ;;
     --help|help|-h)
         echo -e "${BOLD}ProdPilot Launcher${NC}"
         echo "  ./run.sh           Start backend daemon and launch Desktop UI"
         echo "  ./run.sh --backend Start only the backend API server (:8765)"
         echo "  ./run.sh --ui      Launch only the Desktop UI"
+        echo "  ./run.sh --test    Run unified fast test suite"
         echo "  ./run.sh --status  Check system health and status"
         echo "  ./run.sh --stop    Stop all running ProdPilot background tasks"
         exit 0

@@ -479,15 +479,17 @@ class DeployAdapter:
         prod_proc = self._start_service_proc(repo, self.prod_port)
         self.active_prod_proc = prod_proc
 
-        # 4. Continuous 10-Second Watchdog
+        # 4. Continuous Watchdog (configurable duration for fast tests)
+        watchdog_duration = int(os.environ.get("PRODPILOT_WATCHDOG_DURATION", "10"))
+        watchdog_interval = float(os.environ.get("PRODPILOT_WATCHDOG_INTERVAL", "1.0"))
         watchdog_res = self.run_10s_watchdog(
             incident_id=incident_id,
             repo_path=str(repo),
             previous_head=previous_head,
             action=action,
             source=source,
-            duration_sec=10,
-            interval_sec=1.0,
+            duration_sec=watchdog_duration,
+            interval_sec=watchdog_interval,
             db_path=db_path,
             mock_mode=False,
             simulate_failure=simulate_watchdog_failure,

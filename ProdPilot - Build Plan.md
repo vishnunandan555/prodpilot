@@ -1,22 +1,24 @@
 # ProdPilot - Master Execution & Architecture Plan
 ## Autonomous Production Incident Response Platform (Render + GitHub Integration)
 
-**Realm Hack 2026 | Deadline stated in original plan: 24 Oct 2026, 11:00 AM (past; confirm if still relevant) | Vishnu Nandan**  
-**Version**: 3.6 (Implementation Reality Audit)
+**Realm Hack 2026 | Working deadline: 24 Oct 2026, 11:00 AM IST | Vishnu Nandan**
+
+**Version**: 3.7 (Validated implementation audit, 24 Oct 2026 05:12 IST)
 
 > **Reality check — 24 Oct 2026:** This plan previously described several integrations and end-to-end behaviors as verified. A source review of the current repository does not support those claims. The implementation has useful real API clients, UI screens, ingestion/triage, and a separately runnable remediation pipeline, but the core production incident lifecycle is not yet reliably connected end to end. Treat old “ONLINE”, “LIVE”, “verified”, and “ready” statements below as historical notes until the checks in §4 are completed against the current code and target accounts.
 
 ### Current maturity estimate
 
-These are product-scope estimates based on code inspection, not measured test coverage or a claim that every screen was exercised:
+This is a weighted estimate of the promised product, not a count of files or UI screens. It incorporates the validation recorded in §4.
 
-| Project slice | Estimate | What that means |
+| Delivery state | Estimate | Meaning |
 | :--- | :---: | :--- |
-| Solid working foundation | **~35%** | API/database foundations, React/Electron shell, GitHub and Render read clients, project/server CRUD, log triage, incident storage, and some isolated pipeline stages exist. |
-| Partially implemented or fragile | **~40%** | Integration views, background Render polling, notification setup, incident actions, and agent/remediation pieces exist but depend on manual setup, separate processes, fallbacks, or have not been shown to work together against a real target. |
-| Missing or not demonstrated for the intended product | **~25%** | A reliable, safe, real-target flow from detected production error through verified fix, explicit approval, provider deployment, and post-deploy verification is not established. |
+| **Properly implemented and locally validated** | **~40%** | FastAPI/SQLite foundation, incident APIs, ingestion/triage/deduplication, isolated worktrees and repro-first pipeline, local canary/decision flow, local watchdog auto-revert, notification rendering, and the React/Electron build have executable evidence. |
+| **Partially implemented** | **~30%** | Background watcher/worker wiring, Render and GitHub integration UI, PR preparation, mobile flows, and notifications have useful code, but some paths are only unit-tested, configuration-dependent, or not validated together. |
+| **Barely implemented / not yet trustworthy** | **~20%** | Provider-facing recovery, authentication/authorization, live approval delivery, production health monitoring, and the agent path have code or UI surfaces but lack the safety and live evidence needed for a real production claim. |
+| **Still missing** | **~10%** | A real Render deployment/rollback adapter, authenticated public API boundary, and a fully evidenced controlled end-to-end drill remain absent. |
 
-**Practical answer:** roughly **one third works as a foundation**, while about **two thirds is partial, fragile, missing, or unverified** for the full product promise. “Poorly implemented” is not a measured code-quality score; the highest-risk parts are the wiring and safety boundaries. The UI also contains simulated progress timers, so visual progress is not proof of backend work. No tests or live-account checks were run for this audit.
+**Practical answer:** about **40% is properly implemented for a local/demo workflow**. About **60% remains partial, barely implemented, or missing** when judged against the headline promise of safe autonomous production recovery. The implementation should currently be presented as a **connected incident-response prototype with a locally validated remediation demo**, not as autonomous production deployment software.
 
 ---
 
@@ -160,36 +162,58 @@ The checkboxes below describe intended work and historical implementation claims
 
 ---
 
-## 4. Current Repository Status (source review, October 24, 2026)
+## 4. Current Repository Status (validated 24 October 2026)
+
+### Validation actually run
+
+| Check | Result | Interpretation |
+| :--- | :--- | :--- |
+| Backend tests excluding stale end-to-end expectation | **25 passed** | Core API, worktree, orchestration, brief, decision, notification/mobile, Twilio-TwiML, and adapter tests pass locally. |
+| Full backend test suite | **1 failed, 25 passed** | `test_full_pipeline_exit_check` expects HTTP 200 from approval. The endpoint correctly returns **501** because `PRODPILOT_DEPLOY_TARGET` is deliberately disabled. The test must be rewritten to assert the fail-closed behavior, or explicitly enable the local demo target. |
+| Desktop production build | **Passed** | `npm run build` completed successfully (Vite production bundle). |
+| Local watchdog / auto-revert drill | **Passed** | A deliberately broken local service was reverted; status, audit log, Git head, health recovery, and remediation-attempt cap all passed. This is a local-process check, not a Render deployment check. |
+| Connected Render read path | **Passed** | The configured key retrieved service discovery, connected-service details, five deployment records, and ten live log entries. |
+| Connected Render health probe | **Failed / timed out** | The saved health URL did not complete the client probe. Do not show this server as independently health-verified until its URL/timeout is corrected and re-tested. |
 
 | Component | Current assessment | Evidence / limitation |
 | :--- | :--- | :--- |
-| **Backend API & SQLite** | **Implemented; runtime unverified** | FastAPI routes and DB operations exist in source. This review did not confirm a running daemon or current database contents. |
-| **GitHub integration** | **Read operations implemented; live access unverified** | Client and project endpoints fetch repository issues, PRs, workflow runs, and local commits. Account permissions and actual UI flows were not exercised. |
-| **Render integration** | **Read/probe operations implemented; live access unverified** | Client and endpoints discover services, fetch deploy/log data, and probe health. Render API access is subject to credentials and API behavior. |
-| **UI** | **Substantial screens implemented; behavior mixed** | React views call backend endpoints, but project/server registration includes timer-driven simulated progress. That display must not be treated as completed backend work. |
-| **Incident intake / triage** | **Implemented as a partial flow** | `/ingest` classifies log batches and stores incidents; an API startup task polls the active Render service for logs and invokes triage. Polling is not evidence of the remediation pipeline running. |
-| **Investigation / fix / canary pipeline** | **Separate pieces exist; automatic wiring unproven** | `process_incident` runs repro, staging, and decision logic, but the API startup watcher shown in source only calls `run_server_log_triage`; it does not dispatch new incidents to the orchestrator. Treat orchestrator as a separately launched process until wired and supervised. |
-| **Production approval / deploy** | **Unsafe and not provider deployment** | The API approval path may use mock mode when repository/patch evidence is missing. The deploy adapter manages a local process on port 8000; that does not deploy a Render service. Do not present this as safe Render promotion. |
-| **GitHub PR workflow** | **Unsafe automatic merge and mock fallback present** | After the API approval action, workflow code attempts to merge the PR automatically. If PR creation fails, it fabricates a PR URL and reports `merged=true`. This conflicts with the blueprint's human-controlled production change principle and must be removed before any real repository is connected. |
-| **Telegram / Twilio / tunnel** | **Code present; end-to-end delivery unverified** | Webhook/client code exists. Phone verification, public reachability, signatures/access control, and real delivery were not checked here. |
-| **Auth / security boundary** | **Needs review before public exposure** | Source has signup/login/token routes, but incident and integration routes are not shown as consistently requiring authentication; CORS allows all origins. Do not expose the API publicly until authorization and secret handling are reviewed. |
+| **Backend API & SQLite** | **Implemented and locally tested** | Incident, project/server, event, worktree, hold/reject, and database paths have source and automated-test evidence. The current DB has one configured project/server and one incident awaiting approval. |
+| **Render integration** | **Live read operations validated; health incomplete** | Service list/details, deployment history, and logs work with the connected Render account. The probe for the configured health URL timed out. No provider mutation is implemented. |
+| **GitHub integration** | **Read/PR code implemented; live write unvalidated** | GitHub client and PR workflow are fail-closed when a repo/token is unavailable. A GitHub PAT is not configured, so no real issue/PR/workflow query or PR creation was tested. |
+| **UI** | **Build validated; runtime behavior mixed** | The production bundle compiles. Screens are substantial, but timer-driven registration/progress UI should not be presented as live backend completion. |
+| **Incident intake / triage** | **Implemented and wired** | Ingest/triage and fingerprinting exist. The API startup watcher polls the active Render service and the supervised worker selects eligible `OPEN` incidents for `process_incident`. This exact chain was not run against a controlled live crash. |
+| **Investigation / fix / canary pipeline** | **Locally validated; live-agent path partial** | Repro-first pipeline, isolated worktree, decision logic, and local staging are covered by tests. The configured Gemini key is absent; a real model-generated patch is unvalidated. |
+| **Approval / deployment** | **Safely disabled for provider use** | Approval requires persisted canary evidence, a repository, and a patch/suspect commit. It returns 501 unless the explicit local-process target is enabled. There is no Render deploy or rollback adapter. |
+| **GitHub PR workflow** | **Fail-closed and human-review-only** | Current workflow creates a branch/PR when credentials work; it does not fabricate a PR and does not merge or deploy. Live operation is untested because no PAT is configured. |
+| **Telegram / Twilio / tunnel** | **Partial** | Telegram configuration is present. Twilio account and phone fields exist but its auth token is absent; no tunnel URL is configured. Delivery, webhook reachability, and caller verification are unvalidated. |
+| **Auth / security boundary** | **Barely implemented for public use** | CORS allows all origins and incident/integration routes lack demonstrated authorization enforcement. Do not expose the control API through a public tunnel yet. |
 
 ### Realistic completion estimate
 
-Use the estimate in the summary table as the current planning baseline: **~35% solid foundation, ~40% partial/fragile, ~25% missing or not demonstrated**. The overall score is weighted by the core product promise (safe incident-to-recovery workflow), not by number of files, routes, or screens. The “properly works” share could change materially after running current tests and a controlled real-target drill.
+The status in the summary table is the planning baseline: **~40% properly implemented, ~30% partial, ~20% barely implemented, ~10% missing.** The percentage is intentionally conservative because the unreached portions are safety-critical rather than cosmetic.
 
 ---
 
-## 5. Next Actions (ordered by risk and product value)
+## 5. What can be accomplished before 11:00 AM IST
 
-1. **Make one controlled, non-production target the source of truth.** Register its repo and service, confirm real GitHub/Render reads, and ensure incident records retain the correct project/service identity. Do not use production promotion for this first drill.
-2. **Wire and supervise the remediation worker.** Dispatch newly created eligible incidents to `process_incident` exactly once, persist progress/errors, prevent duplicate runs, and recover cleanly after API/worker restart. Make the active project’s local path explicit; remove reliance on demo/current-directory fallback for real incidents.
-3. **Remove misleading success paths.** Make mock/fallback mode explicit in API responses and UI. An absent patch, repository, or credential must fail closed and never return a success-shaped deployment result.
-4. **Separate local canary validation from provider deployment.** Keep the current local port deploy adapter labeled as a demo/local adapter. Implement a Render deployment/rollback adapter with deployment ID tracking, explicit approval, and health verification before describing it as production recovery.
-5. **Enforce the human approval boundary.** Ensure no PR auto-merge or production mutation occurs before an authenticated explicit approval. Add route authentication/authorization, restrict CORS, and protect stored credentials before any public tunnel exposure.
-6. **Then run an end-to-end rehearsal.** In a disposable service/repository, verify: real log detected → one incident created → repro fails before fix and passes after → canary health confirmed → PR prepared → operator explicitly approves → provider deployment succeeds or rolls back → incident state and audit trail match reality. Capture evidence and update each status row.
+There are approximately **5 hours 48 minutes** from the audit timestamp. The achievable objective is a reliable, honest demo—not a safe autonomous Render production-deployer.
+
+| Timebox | Highest-value deliverable | Definition of done |
+| :--- | :--- | :--- |
+| **05:15–05:45** | Repair validation signal | Update the stale approval test to assert 501 with deployment disabled; add an explicit local-demo test only when the target is enabled; rerun all tests. |
+| **05:45–06:30** | Fix and prove live monitoring | Correct the connected service health URL/timeout, then record successful Render health, logs, and triage results. Keep this read-only. |
+| **06:30–07:30** | Controlled incident drill | Use a disposable/local target to prove log → one deduplicated incident → worker → brief → repro red/green → canary decision → `AWAITING_APPROVAL`. Capture the event timeline. |
+| **07:30–08:30** | Truthful UI/demo polish | Remove or label simulated progress; show “local demo deployment” distinctly from Render; surface missing-credential/health errors clearly. |
+| **08:30–09:30** | Notification readiness | Configure and send one real Telegram test; only attempt Twilio after adding the missing auth token and a reachable tunnel. |
+| **09:30–10:15** | Demo hardening | Restart from a clean state, rerun tests/build, seed one prepared incident, and rehearse the 3-minute path twice. |
+| **10:15–11:00** | Buffer and presentation evidence | Freeze code, collect terminal/test evidence, record the live Render read proof, and prepare a concise limitation statement. |
+
+### Explicitly out of scope before 11:00 AM
+
+- A real Render deployment/rollback implementation with deployment-ID tracking and provider verification.
+- Public tunnel exposure before route authentication, authorization, webhook signature checks, and restricted CORS exist.
+- Claiming live Gemini remediation, GitHub PR creation, or Twilio escalation without their missing credentials and an observed successful run.
 
 ### What “done” means for the next milestone
 
-The next milestone is **one safe, repeatable incident drill through approval**, not more dashboard surface area. It is accepted only when the drill uses real connected APIs, does not use mock fallbacks, cannot deploy without explicit operator approval, and produces a truthful incident/audit timeline. Until then, describe ProdPilot as an integration dashboard plus a prototype incident/remediation pipeline, not an autonomous production recovery system.
+The next milestone is **one repeatable, evidence-backed incident drill through approval**. It is accepted when the drill shows real Render monitoring where available, contains no misleading success state, cannot deploy without explicit operator approval, and produces a truthful timeline. Until a provider adapter and public API security are complete, describe ProdPilot as an integration dashboard plus a locally validated incident/remediation prototype—not an autonomous production recovery system.

@@ -5,6 +5,8 @@
 **Author**: Vishnu Nandan, Christ College of Engineering  
 **Version**: 2.2 (Model 1 Hybrid Architecture)
 
+> **Implementation status — 24 Oct 2026, 05:12 IST:** This is the target blueprint, not a claim that every stage runs against production today. The current repository is approximately **40% properly implemented and locally validated, 30% partial, 20% barely implemented, and 10% missing** when weighted by the safe autonomous-recovery promise. Render read operations (service details, deploy history, and logs) are live-validated; the local watchdog auto-revert and desktop build are validated. Render deployment/rollback, authenticated public access, and a complete live provider drill are not implemented or verified. See the Build Plan for test evidence and the timeboxed delivery plan.
+
 ---
 
 ### 1. Product Vision
@@ -243,6 +245,8 @@ On mobile devices (accessed via the Telegram notification link), the Incident De
 ---
 
 ### 9. 3-Minute Hackathon Demo Script (Model 1 in Action)
+
+**Demo boundary for this build:** Present the recovery action as a **local/disposable-target demonstration** unless a provider deployment adapter and authenticated approval boundary have been implemented and verified. Do not state that a Render service was promoted, rolled back, or health-verified when only a local process was exercised.
 
 1. **Minute 0:00 – 0:30 (The Setup & Live Architecture)**:
    - Show Render-hosted website on a browser: `https://prodpilot.onrender.com`.

@@ -5,6 +5,7 @@ from typing import Optional
 from contracts.agent_interface import AgentAdapter
 from backend.prodpilot.agents.antigravity_adapter import AntigravityAdapter
 from backend.prodpilot.agents.gemini_adapter import GeminiAdapter
+from backend.prodpilot.agents.mock_adapter import MockAgentAdapter
 
 
 def get_agent_adapter(adapter_name: Optional[str] = None) -> AgentAdapter:
@@ -12,13 +13,15 @@ def get_agent_adapter(adapter_name: Optional[str] = None) -> AgentAdapter:
     
     Order of selection:
     1. Explicit adapter_name argument
-    2. PRODPILOT_AGENT_ADAPTER environment variable ("antigravity", "gemini")
+    2. PRODPILOT_AGENT_ADAPTER environment variable ("mock", "antigravity", "gemini")
     3. If agy CLI is available on system, defaults to AntigravityAdapter
     4. Fallback to GeminiAdapter
     """
     choice = (adapter_name or os.environ.get("PRODPILOT_AGENT_ADAPTER", "auto")).lower()
     
-    if choice == "antigravity":
+    if choice in ("mock", "test", "deterministic"):
+        return MockAgentAdapter()
+    elif choice == "antigravity":
         return AntigravityAdapter()
     elif choice == "gemini":
         return GeminiAdapter()
