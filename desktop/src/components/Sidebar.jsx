@@ -191,7 +191,13 @@ export default function Sidebar({
                   {/* Sub-branch item */}
                   <div className="pl-3 flex items-center gap-1.5 py-0.5 text-[11px] text-gh-text-dim">
                     <GitBranch size={11} className="text-gh-purple-text flex-shrink-0" />
-                    <span className="truncate">fix: {incident.suspect_commit ? incident.suspect_commit.substring(0, 7) : 'hotfix'}</span>
+                    <span className="truncate">
+                      fix: {
+                        typeof incident.suspect_commit === 'string'
+                          ? incident.suspect_commit.substring(0, 7)
+                          : (incident.suspect_commit?.hash ? String(incident.suspect_commit.hash).slice(0, 7) : 'hotfix')
+                      }
+                    </span>
                   </div>
                 </div>
               );

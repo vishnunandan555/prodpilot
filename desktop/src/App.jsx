@@ -10,13 +10,47 @@ import CustomizeView from './components/CustomizeView';
 const API_BASE_URL = 'http://127.0.0.1:8765';
 const PROD_BASE_URL = 'http://127.0.0.1:8000';
 
+const FALLBACK_INCIDENT = {
+  id: 'inc-orch-c009ba',
+  service: 'demo-prod',
+  status: 'AWAITING_APPROVAL',
+  suspected_area: 'KeyError discount on /orders',
+  title: '[INCIDENT] Fix discount KeyError on /orders',
+  log_tail: `2026-10-23 15:32:53 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}
+2026-10-23 15:32:53 [ERROR] KeyError: 'discount' in /orders
+2026-10-23 15:32:55 [WARN] Healthcheck probe failed: 500 Internal Server Error`,
+  suspect_commit: {
+    hash: '96a2637',
+    author: 'Vishnu Nandan',
+    message: 'feat: add discount support to order checkout',
+    suspect_file: 'app.py',
+    suspect_line: 45
+  },
+  artifacts: {
+    repro_test: 'tests/test_repro.py',
+    patch_diff: `--- a/app.py
++++ b/app.py
+@@ -43,3 +43,3 @@
+     tax = round(subtotal * TAX_RATE, 2)
+-    discount = order["discount"]
++    discount = order.get("discount", 0.0)
+     total = max(0.0, round(subtotal + tax - discount, 2))`
+  },
+  staged_ports: { fix_forward: 8001, rollback: 8002 },
+  decision: {
+    action: 'fix_forward',
+    confidence: 0.95,
+    reason: 'Clean 1-line patch with 100% test pass. Suspect commit landed recently.'
+  }
+};
+
 export default function App() {
   const [activeNav, setActiveNav] = useState('session'); // 'session', 'issues', 'automations', 'customize', 'incidents'
   const [activeDrawerTab, setActiveDrawerTab] = useState('changes');
-  const [incidents, setIncidents] = useState([]);
-  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [incidents, setIncidents] = useState([FALLBACK_INCIDENT]);
+  const [selectedIncident, setSelectedIncident] = useState(FALLBACK_INCIDENT);
   const [events, setEvents] = useState([]);
-  const [apiConnected, setApiConnected] = useState(false);
+  const [apiConnected, setApiConnected] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState(false);

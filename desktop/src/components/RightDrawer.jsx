@@ -173,7 +173,7 @@ export default function RightDrawer({
               {events.length > 0 ? (
                 events.map((ev, idx) => (
                   <div key={idx} className="leading-relaxed">
-                    <span className="text-gh-text-dim">[{new Date(ev.timestamp || Date.now()).toLocaleTimeString()}]</span>{' '}
+                    <span className="text-gh-text-dim">[{new Date(ev.timestamp || ev.ts || Date.now()).toLocaleTimeString()}]</span>{' '}
                     <span className="text-emerald-400 font-semibold">{ev.stage}</span>{' '}
                     <span className="text-gh-text-muted">{ev.kind}:</span>{' '}
                     <span>{typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)}</span>
