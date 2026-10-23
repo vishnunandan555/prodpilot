@@ -60,6 +60,60 @@ def render_mobile_incident_page(data: Dict[str, Any]) -> str:
 
     diff_html = render_diff_html(patch_diff)
 
+    if status in ("DEPLOYED", "RESOLVED"):
+        footer_content = """
+    <div class="max-w-xl mx-auto flex items-center justify-between py-1">
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-sm">✓</div>
+        <div>
+          <div class="text-sm font-bold text-white">Remediation Deployed</div>
+          <div class="text-[11px] text-zinc-400">PR merged to main • Render auto-deploy active</div>
+        </div>
+      </div>
+      <a href="https://github.com/vishnunandan555/chunkstream/pulls" target="_blank" class="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 border border-zinc-700 flex items-center gap-1.5 transition">
+        <span>View PR</span>
+        <span class="text-[10px] text-zinc-400">↗</span>
+      </a>
+    </div>"""
+    elif status == "FAILED":
+        footer_content = """
+    <div class="max-w-xl mx-auto flex items-center justify-between py-1">
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center font-bold text-sm">✕</div>
+        <div>
+          <div class="text-sm font-bold text-white">Automated Triage Paused</div>
+          <div class="text-[11px] text-zinc-400">Escalated to human on-call engineer</div>
+        </div>
+      </div>
+      <button onclick="location.reload()" class="py-2 px-3 rounded-xl bg-zinc-800 text-xs font-semibold text-zinc-300 border border-zinc-700">Refresh</button>
+    </div>"""
+    elif status == "AWAITING_APPROVAL":
+        footer_content = f"""
+    <div id="action-panel" class="max-w-xl mx-auto flex items-center gap-2">
+      <button id="btn-approve" onclick="submitDecision('fix_forward')" class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-[0.98]">
+        <span>🚀 Approve PR & Merge</span>
+      </button>
+      <button id="btn-rollback" onclick="submitDecision('rollback')" class="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs border border-zinc-700 transition active:scale-[0.98]">
+        <span>⏪ Rollback</span>
+      </button>
+    </div>
+    <div id="status-panel" class="hidden max-w-xl mx-auto text-center py-2">
+      <p id="status-text" class="text-sm font-semibold text-emerald-400 animate-pulse"></p>
+      <p id="status-sub" class="text-xs text-zinc-400 mt-1"></p>
+    </div>"""
+    else:
+        footer_content = """
+    <div class="max-w-xl mx-auto flex items-center justify-between py-1">
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-sm animate-pulse">⚡</div>
+        <div>
+          <div class="text-sm font-bold text-white">Investigation in Progress</div>
+          <div class="text-[11px] text-zinc-400">Synthesizing repro test & staging canaries</div>
+        </div>
+      </div>
+      <button onclick="location.reload()" class="py-2 px-3 rounded-xl bg-zinc-800 text-xs font-semibold text-zinc-300 border border-zinc-700">Refresh</button>
+    </div>"""
+
     return f"""<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -179,18 +233,7 @@ def render_mobile_incident_page(data: Dict[str, Any]) -> str:
 
   <!-- Sticky Bottom Approval Bar -->
   <footer class="fixed bottom-0 inset-x-0 bg-zinc-950/95 backdrop-blur border-t border-zinc-800 p-3 z-50">
-    <div id="action-panel" class="max-w-xl mx-auto flex items-center gap-2">
-      <button id="btn-approve" onclick="submitDecision('fix_forward')" class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-[0.98]">
-        <span>🚀 Approve PR & Merge</span>
-      </button>
-      <button id="btn-rollback" onclick="submitDecision('rollback')" class="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs border border-zinc-700 transition active:scale-[0.98]">
-        <span>⏪ Rollback</span>
-      </button>
-    </div>
-    <div id="status-panel" class="hidden max-w-xl mx-auto text-center py-2">
-      <p id="status-text" class="text-sm font-semibold text-emerald-400 animate-pulse"></p>
-      <p id="status-sub" class="text-xs text-zinc-400 mt-1"></p>
-    </div>
+{footer_content}
   </footer>
 
   <script>

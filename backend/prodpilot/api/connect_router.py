@@ -580,6 +580,29 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
             "message": f"Active incident {existing['id']} already tracking this issue (recurrence: {inc.get('recurrence_count', 2)}x).",
         }
 
+    # Historical Crash Shield: check if this crash was already mitigated by a recent DEPLOYED/RESOLVED incident
+    from backend.prodpilot.db import get_db
+    with get_db() as conn:
+        resolved_row = conn.execute(
+            """
+            SELECT * FROM incidents 
+            WHERE (fingerprint = ? OR service = ?) AND status IN ('DEPLOYED', 'RESOLVED')
+            ORDER BY detected_at DESC LIMIT 1
+            """,
+            (fp, server.get("name", "production-service"))
+        ).fetchone()
+
+    if resolved_row:
+        health_url = server.get("health_url")
+        probe = RenderClient.probe_health(health_url) if health_url else {"status": "HEALTHY"}
+        if probe.get("status") == "HEALTHY":
+            return {
+                "ok": True,
+                "incident_created": False,
+                "severity": "NORMAL",
+                "message": f"Service is currently HEALTHY (200 OK). Crash in log stream was already resolved in incident {resolved_row['id']}.",
+            }
+
     # Create new Incident
     now_iso = datetime.utcnow().isoformat()
     incident_id = f"inc-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{os.urandom(2).hex()}"

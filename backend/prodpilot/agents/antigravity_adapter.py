@@ -209,16 +209,42 @@ class AntigravityAdapter:
                         if stype == "tool":
                             tool_name = su.get("tool_name", "tool")
                             tool_info = su.get("tool_info", {})
-                            summary_lines.append(f"Tool {tool_name} [{sstate}]")
+                            params = tool_info.get("parameters") or tool_info.get("args") or {}
+                            tool_result = tool_info.get("result") or tool_info.get("output") or su.get("output") or ""
+                            duration = su.get("duration_seconds")
+
+                            # Build rich, human-readable summary
+                            if tool_name == "run_command":
+                                cmd_str = params.get("CommandLine") or params.get("command") or ""
+                                summary = f"$ {cmd_str}" if cmd_str else "Executed shell command"
+                            elif tool_name in ("read_file", "view_file"):
+                                path = params.get("Path") or params.get("AbsolutePath") or ""
+                                start = params.get("StartLine")
+                                end = params.get("EndLine")
+                                line_info = f" L{start}-{end}" if start and end else ""
+                                summary = f"Inspecting {Path(path).name if path else 'file'}{line_info}"
+                            elif tool_name in ("write_to_file", "replace_file_content", "edit_file"):
+                                path = params.get("TargetFile") or params.get("Path") or ""
+                                summary = f"Modifying {Path(path).name if path else 'code'}"
+                            elif tool_name == "grep_search":
+                                query = params.get("Query") or ""
+                                summary = f"Grep for '{query}'"
+                            else:
+                                summary = f"Executed {tool_name}"
+
+                            summary_lines.append(f"{summary} [{sstate}]")
                             if on_event:
                                 on_event({
                                     "stage": stage,
                                     "kind": "tool_call",
                                     "payload": {
                                         "tool": tool_name,
-                                        "args": tool_info.get("args") if isinstance(tool_info, dict) else {},
-                                        "summary": f"Executed {tool_name} in worktree",
+                                        "args": params,
+                                        "parameters": params,
+                                        "summary": summary,
                                         "state": sstate,
+                                        "result": tool_result,
+                                        "duration_seconds": duration,
                                     },
                                 })
 

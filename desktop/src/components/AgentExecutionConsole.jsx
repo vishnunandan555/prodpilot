@@ -22,7 +22,11 @@ import {
   Check,
   Server,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Maximize2,
+  Minimize2,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 
 export default function AgentExecutionConsole({
@@ -34,8 +38,10 @@ export default function AgentExecutionConsole({
   onTakeover,
   actionLoading = false,
 }) {
-  const [expandedToolIndex, setExpandedToolIndex] = useState(null);
-  const [showThinking, setShowThinking] = useState(true);
+  const [activeViewMode, setActiveViewMode] = useState('unified'); // 'unified' | 'terminal' | 'thoughts'
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'thoughts' | 'tools' | 'tests'
+  const [expandedIndices, setExpandedIndices] = useState(new Set());
+  const [copiedIndex, setCopiedIndex] = useState(null);
 
   if (!incident) return null;
 
@@ -46,9 +52,8 @@ export default function AgentExecutionConsole({
   const isResolved = status === 'DEPLOYED' || status === 'RESOLVED' || status === 'ROLLED_BACK';
   const isTakeover = status === 'MANUAL_TAKEOVER';
 
-  // Extract structured thoughts and tool executions from events
-  const thoughts = [];
-  const toolExecutions = [];
+  // Build unified, chronological list of all agent actions
+  const unifiedStream = [];
 
   events.forEach((ev, idx) => {
     const stage = ev.stage || 'EXECUTE';
@@ -56,102 +61,74 @@ export default function AgentExecutionConsole({
     const payload = ev.payload || {};
     const ts = ev.ts ? new Date(ev.ts).toLocaleTimeString() : `Step ${idx + 1}`;
 
-    if (kind === 'stage_started' || kind === 'agent_step' || stage === 'UNDERSTAND' || stage === 'DECIDE') {
-      const msg = payload.message || (typeof payload === 'string' ? payload : JSON.stringify(payload));
-      thoughts.push({
-        id: ev.id || idx,
-        ts,
-        stage,
-        kind,
-        message: msg,
-      });
-    }
+    const isThought = kind === 'thought' || kind === 'stage_started' || kind === 'agent_step' || stage === 'UNDERSTAND' || stage === 'DECIDE';
+    const isTest = kind === 'test_result' || stage === 'VERIFY';
+    const isTool = kind === 'tool_call' || (!isThought && !isTest);
 
-    if (kind === 'tool_call' || kind === 'test_result' || kind === 'decision') {
-      let toolName = payload.tool || kind;
-      let args = payload.args || {};
-      let summary = payload.summary || payload.message || '';
-      let statusKind = 'success';
-      let details = payload;
+    let headline = payload.message || payload.summary || payload.error || '';
+    if (!headline && payload.thought) headline = payload.thought;
 
-      if (kind === 'test_result') {
-        toolName = `pytest ${payload.phase || 'verifier'}`;
-        summary = payload.summary || `Exit code ${payload.exit_code} (${payload.duration_sec}s)`;
-        statusKind = payload.passed ? 'success' : 'failed';
-      } else if (kind === 'decision') {
-        toolName = 'decision_engine';
-        summary = `Recommendation: ${payload.recommendation} (${Math.round((payload.probabilities?.fix_forward || 0.85) * 100)}% confidence)`;
-        statusKind = 'decision';
-      }
+    const params = payload.parameters || payload.args || {};
+    const commandLine = params.CommandLine || params.command || payload.command;
+    const targetFile = params.TargetFile || params.Path || params.AbsolutePath || payload.path;
 
-      toolExecutions.push({
-        id: ev.id || idx,
-        ts,
-        stage,
-        toolName,
-        args,
-        summary,
-        statusKind,
-        details,
-      });
-    }
+    unifiedStream.push({
+      id: ev.id || idx,
+      index: idx,
+      ts,
+      stage,
+      kind,
+      isThought,
+      isTool,
+      isTest,
+      toolName: payload.tool || kind,
+      headline,
+      commandLine,
+      targetFile,
+      params,
+      result: payload.result || payload.output || payload.details || (typeof payload === 'string' ? payload : null),
+      payload,
+      state: payload.state || (isTest ? (payload.passed ? 'DONE' : 'FAIL') : 'DONE'),
+    });
   });
 
-  // Synthesize realistic baseline thoughts if event log is sparse or starting up
-  const displayThoughts = [...thoughts];
-  if (displayThoughts.length === 0) {
-    if (incident.detected_at || incident.created_at) {
-      displayThoughts.push({
-        id: 'init-1',
-        ts: 'Triage 00:01',
-        stage: 'UNDERSTAND',
-        message: `Watchdog triggered: Non-200 probe received from ${incident.service || 'production service'}. Ingested stack trace.`,
-      });
-    }
-    if (incident.suspect_commit) {
-      const hash = typeof incident.suspect_commit === 'string' ? incident.suspect_commit.slice(0, 7) : incident.suspect_commit?.hash?.slice(0, 7);
-      displayThoughts.push({
-        id: 'init-2',
-        ts: 'Triage 00:03',
-        stage: 'UNDERSTAND',
-        message: `Correlated suspect commit ${hash || 'HEAD~1'} via git blame telemetry. Isolating execution sandbox in git worktree.`,
-      });
-    }
-  }
-
-  // Active thinking status banner
-  let activeStatusText = 'Idle';
-  let activeStatusColor = 'text-[#8b949e] border-[#212a3d] bg-[#161b26]';
-  let isPulsing = false;
-
-  if (isAwaiting) {
-    activeStatusText = 'Operator Approval Required';
-    activeStatusColor = 'text-[#d29922] border-[#d29922]/40 bg-[#d29922]/10';
-  } else if (isFixing) {
-    activeStatusText = 'Synthesizing & Verifying AST Patch';
-    activeStatusColor = 'text-[#58a6ff] border-[#1f6feb]/40 bg-[#1f6feb]/10';
-    isPulsing = true;
-  } else if (isInvestigating) {
-    activeStatusText = 'Reasoning Over Telemetry & Traceback';
-    activeStatusColor = 'text-[#388bfd] border-[#388bfd]/40 bg-[#388bfd]/10';
-    isPulsing = true;
-  } else if (isResolved) {
-    activeStatusText = 'Remediation Verified & Restored';
-    activeStatusColor = 'text-[#3fb950] border-[#3fb950]/40 bg-[#3fb950]/10';
-  } else if (isTakeover) {
-    activeStatusText = 'Manual Takeover (Automation Paused)';
-    activeStatusColor = 'text-[#a371f7] border-[#a371f7]/40 bg-[#a371f7]/10';
-  }
-
-  const toggleToolExpand = (idx) => {
-    setExpandedToolIndex(expandedToolIndex === idx ? null : idx);
+  const toggleExpand = (idx) => {
+    setExpandedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
   };
+
+  const expandAll = () => {
+    setExpandedIndices(new Set(unifiedStream.map((_, i) => i)));
+  };
+
+  const collapseAll = () => {
+    setExpandedIndices(new Set());
+  };
+
+  const handleCopy = (text, idx) => {
+    navigator.clipboard.writeText(typeof text === 'string' ? text : JSON.stringify(text, null, 2));
+    setCopiedIndex(idx);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  // Filter items
+  const filteredStream = unifiedStream.filter((item) => {
+    if (filterMode === 'all') return true;
+    if (filterMode === 'thoughts') return item.isThought;
+    if (filterMode === 'tools') return item.isTool;
+    if (filterMode === 'tests') return item.isTest;
+    return true;
+  });
 
   const getToolIcon = (name) => {
     const lower = (name || '').toLowerCase();
     if (lower.includes('pytest') || lower.includes('test')) return Play;
     if (lower.includes('read') || lower.includes('file')) return FileText;
-    if (lower.includes('write') || lower.includes('patch')) return FileCode;
+    if (lower.includes('write') || lower.includes('replace') || lower.includes('edit')) return FileCode;
     if (lower.includes('list') || lower.includes('dir')) return FolderTree;
     if (lower.includes('grep') || lower.includes('search')) return Search;
     if (lower.includes('decision')) return Zap;
@@ -159,181 +136,262 @@ export default function AgentExecutionConsole({
   };
 
   return (
-    <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] overflow-hidden shadow-lg space-y-0 font-sans">
-      {/* IDE Header Bar */}
+    <div className="rounded-xl bg-[#0d111a] border border-[#1b2234] overflow-hidden shadow-xl space-y-0 font-sans">
+      {/* Console Top Header Bar */}
       <div className="px-4 py-3 bg-[#0a0e17] border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#121929] border border-[#1f6feb]/30 flex items-center justify-center text-[#58a6ff]">
-            <Bot size={16} />
+          <div className="w-8 h-8 rounded-lg bg-[#121929] border border-[#1f6feb]/40 flex items-center justify-center text-[#58a6ff]">
+            <Bot size={17} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight flex items-center gap-1.5">
-                <span>Autonomous SRE Agent</span>
-                <span className="text-[10px] font-mono font-normal px-1.5 py-0.2 rounded bg-[#161f30] text-[#58a6ff] border border-[#2b3a58]">
-                  Gemini AST Engine
-                </span>
+              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">Autonomous SRE Agent Console</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161f30] text-[#58a6ff] border border-[#2b3a58]">
+                Native Antigravity Engine
               </span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Isolated git worktree sandbox & deterministic verification loop
+              Real-time terminal execution stream, cognitive thoughts & worktree sandbox
             </p>
           </div>
         </div>
 
+        {/* Action Controls & Filter Modes */}
         <div className="flex items-center gap-2">
-          {/* Active Status Badge */}
-          <div className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold border flex items-center gap-1.5 ${activeStatusColor}`}>
-            <span className={`w-2 h-2 rounded-full ${
-              isAwaiting ? 'bg-[#d29922]' :
-              isResolved ? 'bg-[#3fb950]' :
-              isFixing ? 'bg-[#58a6ff]' :
-              isInvestigating ? 'bg-[#388bfd]' : 'bg-[#8b949e]'
-            } ${isPulsing ? 'animate-ping' : ''}`} />
-            <span>{activeStatusText}</span>
-          </div>
-
-          <div className="text-[10px] font-mono px-2 py-1 rounded bg-[#07090f] text-[#6e7681] border border-[#1b2234]">
-            {toolExecutions.length} tools executed
-          </div>
-        </div>
-      </div>
-
-      {/* Main Agent Content Area */}
-      <div className="p-4 space-y-4">
-        {/* 1. Cognitive Reasoning Stream (Thinking Tray) */}
-        <div className="rounded-md bg-[#07090f] border border-[#1b2234] overflow-hidden">
-          <div
-            onClick={() => setShowThinking(!showThinking)}
-            className="px-3 py-2 bg-[#0a0e17] border-b border-[#1b2234] flex items-center justify-between cursor-pointer hover:bg-[#0f1422] transition"
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles size={13} className="text-[#a371f7]" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#c9d1d9] font-mono">
-                Agent Cognitive Reasoning & Monologue
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161226] text-[#a371f7] border border-[#2e2350]">
-                {displayThoughts.length} steps
-              </span>
-            </div>
-            <button className="text-[#8b949e] hover:text-[#f0f6fc] p-0.5">
-              {showThinking ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {/* View Mode Toggle */}
+          <div className="flex items-center rounded-lg bg-[#05070a] border border-[#1b2234] p-0.5 text-xs">
+            <button
+              onClick={() => setActiveViewMode('unified')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
+                activeViewMode === 'unified'
+                  ? 'bg-[#1f6feb] text-white shadow-xs'
+                  : 'text-[#8b949e] hover:text-[#c9d1d9]'
+              }`}
+            >
+              Unified Stream
+            </button>
+            <button
+              onClick={() => setActiveViewMode('terminal')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
+                activeViewMode === 'terminal'
+                  ? 'bg-[#1f6feb] text-white shadow-xs'
+                  : 'text-[#8b949e] hover:text-[#c9d1d9]'
+              }`}
+            >
+              Live Terminal Feed
             </button>
           </div>
 
-          {showThinking && (
-            <div className="p-3 space-y-2 text-xs font-mono max-h-56 overflow-y-auto divide-y divide-[#151b29]">
-              {displayThoughts.map((t, idx) => (
-                <div key={t.id || idx} className="pt-2 first:pt-0 flex items-start gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#a371f7] mt-1.5 flex-shrink-0" />
-                  <div className="flex-1 space-y-0.5">
-                    <div className="flex items-center gap-2 text-[10px] text-[#6e7681]">
-                      <span className="font-semibold text-[#8b949e]">{t.stage}</span>
-                      <span>·</span>
-                      <span>{t.ts}</span>
-                    </div>
-                    <p className="text-[11px] text-[#c9d1d9] leading-relaxed break-words">
-                      {t.message}
-                    </p>
-                  </div>
-                </div>
-              ))}
-
-              {/* Pulsing indicator when currently thinking or investigating */}
-              {(isFixing || isInvestigating) && (
-                <div className="pt-2 flex items-center gap-2.5 text-[#58a6ff] text-xs">
-                  <div className="w-2 h-2 rounded-full bg-[#58a6ff] animate-ping flex-shrink-0" />
-                  <span className="italic text-[11px]">
-                    {isFixing
-                      ? 'Thinking: Synthesizing AST candidate patch and running regression suite...'
-                      : 'Thinking: Correlating stack frames with recent git commits...'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+          <button
+            onClick={expandedIndices.size === unifiedStream.length ? collapseAll : expandAll}
+            className="px-2.5 py-1 rounded-md bg-[#121824] hover:bg-[#1b2436] border border-[#1b2234] text-[11px] font-semibold text-[#8b949e] hover:text-[#f0f6fc] transition"
+          >
+            {expandedIndices.size === unifiedStream.length ? 'Collapse All' : 'Expand All'}
+          </button>
         </div>
+      </div>
 
-        {/* 2. Tool & Command Execution Feed (IDE Terminal Feed) */}
-        <div className="rounded-md bg-[#07090f] border border-[#1b2234] overflow-hidden">
-          <div className="px-3 py-2 bg-[#0a0e17] border-b border-[#1b2234] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Terminal size={13} className="text-[#3fb950]" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#c9d1d9] font-mono">
-                Command & Tool Execution Console
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-[#6e7681]">
-              Gated Tool Execution Sandbox
-            </span>
+      {/* Sub-Filter Navigation Bar (Unified Mode) */}
+      {activeViewMode === 'unified' && (
+        <div className="px-4 py-2 bg-[#07090f] border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5">
+            {[
+              { id: 'all', label: 'All Activities', count: unifiedStream.length },
+              { id: 'thoughts', label: 'Thoughts', count: unifiedStream.filter((s) => s.isThought).length },
+              { id: 'tools', label: 'Tool Calls & Commands', count: unifiedStream.filter((s) => s.isTool).length },
+              { id: 'tests', label: 'Verifications', count: unifiedStream.filter((s) => s.isTest).length },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFilterMode(f.id)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition flex items-center gap-1 ${
+                  filterMode === f.id
+                    ? 'bg-[#161f30] text-[#58a6ff] border border-[#2b3a58]'
+                    : 'text-[#8b949e] hover:bg-[#121824] border border-transparent'
+                }`}
+              >
+                <span>{f.label}</span>
+                <span className="text-[10px] opacity-75 font-mono">({f.count})</span>
+              </button>
+            ))}
           </div>
 
-          <div className="p-2 space-y-1.5 max-h-72 overflow-y-auto font-mono text-xs">
-            {toolExecutions.length === 0 ? (
-              <div className="p-4 text-center text-[#6e7681] text-xs">
-                No tool executions dispatched yet. Agent is initializing sandbox.
+          <span className="text-[10px] font-mono text-[#6e7681]">
+            Total {unifiedStream.length} actions captured
+          </span>
+        </div>
+      )}
+
+      {/* Main Stream Area */}
+      <div className="p-4 bg-[#080b11]">
+        {activeViewMode === 'terminal' ? (
+          /* Live Terminal Feed Mode */
+          <div className="rounded-lg bg-[#05070a] border border-[#1b2234] p-3 font-mono text-xs text-[#c9d1d9] space-y-2 max-h-[500px] overflow-y-auto">
+            <div className="text-[11px] text-[#58a6ff] pb-1 border-b border-[#1b2234] flex items-center justify-between">
+              <span>=== Antigravity Execution Session Terminal ===</span>
+              <span>Worktree Sandbox</span>
+            </div>
+            {unifiedStream.length === 0 ? (
+              <div className="text-[#6e7681] italic">Waiting for agent process output...</div>
+            ) : (
+              unifiedStream.map((item, idx) => (
+                <div key={idx} className="space-y-1">
+                  {item.isThought && (
+                    <div className="text-[#a371f7] text-[11px]">
+                      <span className="text-[#6e7681]">[{item.ts}]</span> 🧠 {item.headline}
+                    </div>
+                  )}
+                  {item.commandLine && (
+                    <div className="text-[#3fb950] font-bold">
+                      <span className="text-[#6e7681]">[{item.ts}]</span> $ {item.commandLine}
+                    </div>
+                  )}
+                  {item.targetFile && !item.commandLine && (
+                    <div className="text-[#58a6ff]">
+                      <span className="text-[#6e7681]">[{item.ts}]</span> ⚙️ [{item.toolName}] {item.targetFile}
+                    </div>
+                  )}
+                  {item.result && (
+                    <pre className="text-[#8b949e] text-[10px] pl-4 whitespace-pre-wrap max-h-36 overflow-y-auto">
+                      {typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          /* Unified Interactive Stream Mode */
+          <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+            {filteredStream.length === 0 ? (
+              <div className="p-8 text-center text-[#6e7681] text-xs">
+                No events match the selected category.
               </div>
             ) : (
-              toolExecutions.map((tool, idx) => {
-                const IconComponent = getToolIcon(tool.toolName);
-                const isExpanded = expandedToolIndex === idx;
-                const isSuccess = tool.statusKind === 'success';
-                const isDecision = tool.statusKind === 'decision';
+              filteredStream.map((item) => {
+                const isExpanded = expandedIndices.has(item.index);
+                const IconComp = getToolIcon(item.toolName);
 
                 return (
                   <div
-                    key={tool.id || idx}
-                    className="rounded bg-[#0a0e17] border border-[#1b2234] hover:border-[#2b3a58] transition overflow-hidden"
+                    key={item.id}
+                    className={`rounded-lg border transition overflow-hidden ${
+                      item.isThought
+                        ? 'bg-[#0d111a] border-[#1f2738]'
+                        : item.isTest
+                        ? 'bg-[#0a1219] border-[#1d3d2b]'
+                        : 'bg-[#0a0e17] border-[#1b2234]'
+                    }`}
                   >
+                    {/* Header Row */}
                     <div
-                      onClick={() => toggleToolExpand(idx)}
-                      className="px-2.5 py-1.5 flex items-center justify-between gap-2 cursor-pointer select-none"
+                      onClick={() => toggleExpand(item.index)}
+                      className="px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-[#0f1422] transition"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <IconComponent size={13} className={
-                          isSuccess ? 'text-[#3fb950]' :
-                          isDecision ? 'text-[#e3b341]' : 'text-[#ff7b72]'
-                        } />
-                        <span className="font-bold text-[11px] text-[#f0f6fc] truncate">
-                          {tool.toolName}
-                        </span>
-                        {tool.summary && (
-                          <span className="text-[11px] text-[#8b949e] truncate hidden sm:inline">
-                            - {tool.summary}
-                          </span>
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {/* Type Icon */}
+                        {item.isThought ? (
+                          <div className="w-5 h-5 rounded-full bg-[#161226] border border-[#2e2350] flex items-center justify-center text-[#a371f7] flex-shrink-0">
+                            <Sparkles size={11} />
+                          </div>
+                        ) : (
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 ${
+                            item.state === 'FAIL'
+                              ? 'bg-[#261317] border border-[#4a1c24] text-[#ff7b72]'
+                              : 'bg-[#0f1f1d] border border-[#1b3d2b] text-[#3fb950]'
+                          }`}>
+                            <IconComp size={11} />
+                          </div>
                         )}
+
+                        {/* Timestamp */}
+                        <span className="text-[10px] text-[#6e7681] font-mono flex-shrink-0">
+                          {item.ts}
+                        </span>
+
+                        {/* Stage Tag */}
+                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[#161b24] text-[#8b949e] border border-[#21262d] flex-shrink-0">
+                          {item.stage}
+                        </span>
+
+                        {/* Main Title / Command Line */}
+                        <div className="text-xs truncate font-medium flex-1">
+                          {item.commandLine ? (
+                            <span className="text-[#3fb950] font-mono font-bold">
+                              $ {item.commandLine}
+                            </span>
+                          ) : item.headline ? (
+                            <span className={item.isThought ? 'text-[#c9d1d9]' : 'text-[#f0f6fc]'}>
+                              {item.headline}
+                            </span>
+                          ) : (
+                            <span className="text-[#8b949e]">
+                              {item.toolName} {item.targetFile || ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
+                      {/* Right-hand Status & Chevron */}
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
-                          isSuccess
-                            ? 'bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]'
-                            : isDecision
-                            ? 'bg-[#1c180e] text-[#e3b341] border border-[#3b2e13]'
-                            : 'bg-[#261317] text-[#ff7b72] border border-[#4a1c24]'
-                        }`}>
-                          {isSuccess ? 'EXIT 0' : isDecision ? 'DECIDED' : 'FAIL'}
-                        </span>
-                        <span className="text-[10px] text-[#6e7681]">{tool.ts}</span>
-                        {isExpanded ? <ChevronUp size={12} className="text-[#8b949e]" /> : <ChevronDown size={12} className="text-[#8b949e]" />}
+                        {item.state && (
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
+                            item.state === 'FAIL'
+                              ? 'bg-[#261317] text-[#ff7b72] border border-[#4a1c24]'
+                              : 'bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]'
+                          }`}>
+                            {item.state}
+                          </span>
+                        )}
+                        {isExpanded ? <ChevronUp size={13} className="text-[#8b949e]" /> : <ChevronDown size={13} className="text-[#8b949e]" />}
                       </div>
                     </div>
 
-                    {/* Tool Detailed Payload */}
+                    {/* Expandable Details Drawer */}
                     {isExpanded && (
-                      <div className="p-2.5 bg-[#05070a] border-t border-[#1b2234] text-[10px] text-[#8b949e] space-y-1.5">
-                        {tool.args && Object.keys(tool.args).length > 0 && (
+                      <div className="px-4 py-3 bg-[#05070a] border-t border-[#1b2234] space-y-2.5 text-xs font-mono">
+                        {/* Target File link */}
+                        {item.targetFile && (
+                          <div className="flex items-center gap-2 text-[11px] text-[#8b949e]">
+                            <span className="text-[#6e7681] font-semibold">Target File:</span>
+                            <code className="text-[#58a6ff] bg-[#0c121e] px-1.5 py-0.5 rounded border border-[#1c283d]">
+                              {item.targetFile}
+                            </code>
+                          </div>
+                        )}
+
+                        {/* Input Parameters */}
+                        {item.params && Object.keys(item.params).length > 0 && (
                           <div>
-                            <span className="text-[#6e7681] block uppercase text-[9px]">Input Parameters:</span>
-                            <pre className="text-[#58a6ff] bg-[#07090f] p-1.5 rounded border border-[#151d2e] overflow-x-auto mt-0.5">
-                              {JSON.stringify(tool.args, null, 2)}
+                            <span className="text-[10px] uppercase font-bold text-[#6e7681] block mb-1">
+                              Parameters & Arguments:
+                            </span>
+                            <pre className="p-2 rounded bg-[#07090f] border border-[#151d2e] text-[#58a6ff] overflow-x-auto text-[11px]">
+                              {JSON.stringify(item.params, null, 2)}
                             </pre>
                           </div>
                         )}
+
+                        {/* Output / Result Block */}
                         <div>
-                          <span className="text-[#6e7681] block uppercase text-[9px]">Execution Output / Details:</span>
-                          <pre className="text-[#c9d1d9] bg-[#07090f] p-1.5 rounded border border-[#151d2e] overflow-x-auto mt-0.5 whitespace-pre-wrap">
-                            {typeof tool.details === 'string' ? tool.details : JSON.stringify(tool.details, null, 2)}
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] uppercase font-bold text-[#6e7681]">
+                              Execution Output / Stdout:
+                            </span>
+                            <button
+                              onClick={() => handleCopy(item.result || item.payload, item.index)}
+                              className="text-[10px] text-[#58a6ff] hover:underline flex items-center gap-1"
+                            >
+                              {copiedIndex === item.index ? <Check size={11} className="text-[#3fb950]" /> : <Copy size={11} />}
+                              <span>{copiedIndex === item.index ? 'Copied' : 'Copy Output'}</span>
+                            </button>
+                          </div>
+                          <pre className="p-2.5 rounded bg-[#07090f] border border-[#151d2e] text-[#c9d1d9] overflow-x-auto whitespace-pre-wrap max-h-60 text-[11px] leading-relaxed">
+                            {typeof item.result === 'string'
+                              ? item.result
+                              : item.result
+                              ? JSON.stringify(item.result, null, 2)
+                              : JSON.stringify(item.payload, null, 2)}
                           </pre>
                         </div>
                       </div>
@@ -343,58 +401,50 @@ export default function AgentExecutionConsole({
               })
             )}
           </div>
-        </div>
+        )}
 
-        {/* 3. Operator Approval Action Banner (Appears when Gate / Approval is needed) */}
+        {/* Operator Approval Gate Banner */}
         {isAwaiting && (
-          <div className="rounded-lg bg-[#14120b] border-2 border-[#d29922]/50 p-4 space-y-3 shadow-xl animate-in fade-in">
+          <div className="mt-4 rounded-lg bg-[#14120b] border-2 border-[#d29922]/50 p-4 space-y-3 shadow-xl animate-in fade-in">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[#271d0b] border border-[#d29922]/40 flex items-center justify-center text-[#d29922] flex-shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-lg bg-[#271d0c] border border-[#d29922]/40 flex items-center justify-center text-[#d29922] flex-shrink-0">
                 <ShieldAlert size={18} />
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-[#f0f6fc]">
-                    Human Operator Approval Required
-                  </h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#d29922]/20 text-[#d29922] border border-[#d29922]/40">
-                    Stage 6 Gate
-                  </span>
-                </div>
-                <p className="text-xs text-[#c9d1d9] mt-1 leading-relaxed">
-                  The autonomous agent has reproduced the failure, synthesized a candidate patch in git worktree isolation, passed test verification, and staged dual canaries (ports 8001 & 8002).
-                </p>
-                <p className="text-xs text-[#8b949e] mt-1">
-                  <strong>Decision Engine Recommendation:</strong> Fix-Forward (85% confidence). Confirm promotion to port 8000.
+                <h3 className="text-xs font-bold text-[#f0f6fc]">
+                  Human-in-the-Loop Approval Required
+                </h3>
+                <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
+                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review the candidate diff before promoting to production.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-[#2e2413]">
+            <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={() => onApprove && onApprove('fix_forward')}
                 disabled={actionLoading}
-                className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
               >
-                <Zap size={14} />
-                <span>{actionLoading ? 'Promoting...' : 'Approve & Promote Fix to Production'}</span>
+                <Check size={14} />
+                <span>Approve & Promote Fix-Forward</span>
               </button>
 
               <button
                 onClick={() => onRollback && onRollback()}
                 disabled={actionLoading}
-                className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
+                className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#30363d] flex items-center gap-1.5 transition"
               >
-                <RotateCcw size={13} />
-                <span>Rollback Codebase</span>
+                <RotateCcw size={14} className="text-[#f85149]" />
+                <span>Trigger Safe Rollback</span>
               </button>
 
               <button
                 onClick={() => onTakeover && onTakeover()}
                 disabled={actionLoading}
-                className="px-3 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-lg border border-[#212a3d] transition disabled:opacity-50"
+                className="px-3.5 py-2 bg-[#121929] hover:bg-[#1b263b] text-[#58a6ff] text-xs font-semibold rounded-lg border border-[#1f2d42] flex items-center gap-1.5 transition"
               >
-                Take Over Manually
+                <span>Manual Takeover</span>
               </button>
             </div>
           </div>

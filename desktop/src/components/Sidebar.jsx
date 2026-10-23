@@ -11,7 +11,8 @@ import {
   Settings,
   ChevronRight,
   Filter,
-  Trash2
+  Trash2,
+  Activity
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -50,6 +51,7 @@ export default function Sidebar({
       badge: activeCount.length > 0 ? `${activeCount.length}` : null,
       badgeColor: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
     },
+    { id: 'master_logs', label: 'Platform Master Log', icon: Activity },
     { id: 'logs', label: 'Logs Explorer', icon: Terminal },
     { id: 'servers', label: 'Production Servers', icon: Server },
     { id: 'projects', label: 'Projects', icon: FolderGit2 },

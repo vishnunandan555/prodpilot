@@ -217,28 +217,29 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
     # Fetch artifacts
     art_rows = get_artifacts(incident_id)
     artifacts_map: Dict[str, Any] = {
-        "repro_test": "tests/test_repro.py",
+        "repro_test": None,
         "patch_diff": "",
-        "test_evidence": {
-            "before": "FAILED (KeyError: discount)",
-            "after": "PASSED",
-        },
+        "test_evidence": None,
     }
     for row in art_rows:
         kind = row.get("kind")
         content = row.get("content", "")
         if kind == "repro_test":
-            artifacts_map["repro_test"] = content or row.get("path", "tests/test_repro.py")
+            artifacts_map["repro_test"] = content or row.get("path")
         elif kind == "patch_diff":
             artifacts_map["patch_diff"] = content
         elif kind == "test_log_before":
-            artifacts_map["test_evidence"]["before"] = "FAILED (KeyError: discount)" if "KeyError" in content else content[:100]
+            if not artifacts_map["test_evidence"]:
+                artifacts_map["test_evidence"] = {}
+            artifacts_map["test_evidence"]["before"] = content
         elif kind == "test_log_after":
-            artifacts_map["test_evidence"]["after"] = "PASSED" if "passed" in content.lower() else content[:100]
+            if not artifacts_map["test_evidence"]:
+                artifacts_map["test_evidence"] = {}
+            artifacts_map["test_evidence"]["after"] = content
 
     # Staging status
-    staging_info = {
-        "fix_forward": {"port": 8001, "health": True},
+    staging_info = inc.get("staging") or {
+        "fix_forward": {"port": 8001, "health": inc.get("status") in ("STAGED", "AWAITING_APPROVAL", "DEPLOYED", "RESOLVED")},
         "rollback": {"port": 8002, "health": True},
     }
 
@@ -665,4 +666,35 @@ def clarify_issue_endpoint(issue_id: str, body: Optional[IssueClarifyRequest] = 
         "clarifying_questions": questions,
         "source": source,
     }
+
+
+@app.get("/platform/master-logs")
+def get_master_platform_logs(limit: int = 150) -> Dict[str, Any]:
+    """Returns a unified master activity stream across all platform systems."""
+    from backend.prodpilot.db import get_db
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.ts, e.incident_id, e.stage, e.kind, e.payload, 
+                   i.service, i.status as incident_status, i.severity
+            FROM run_events e
+            LEFT JOIN incidents i ON e.incident_id = i.id
+            ORDER BY e.id DESC
+            LIMIT ?
+            """,
+            (limit,)
+        ).fetchall()
+        
+        events = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get("payload"), str):
+                try:
+                    d["payload"] = json.loads(d["payload"])
+                except Exception:
+                    pass
+            events.append(d)
+            
+        return {"ok": True, "count": len(events), "logs": events}
+
 

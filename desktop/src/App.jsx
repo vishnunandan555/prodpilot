@@ -10,6 +10,7 @@ import PlatformServicesView from './components/PlatformServicesView';
 import AgentsView from './components/AgentsView';
 import TeamView from './components/TeamView';
 import SettingsView from './components/SettingsView';
+import MasterLogsView from './components/MasterLogsView';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
 import { GlobalProgressBar } from './components/LoadingSkeleton';
@@ -465,6 +466,17 @@ export default function App() {
               onBack={isMobileScreen ? () => setShowMobileList(true) : null}
               onNavigate={handleNavigate}
               onDeleteIncident={handleDeleteIncident}
+            />
+          )}
+
+          {activeNav === 'master_logs' && (
+            <MasterLogsView
+              apiUrl={apiUrl}
+              onNavigate={handleNavigate}
+              onSelectIncident={(inc) => {
+                handleSelectIncident(inc);
+                setActiveNav('incidents');
+              }}
             />
           )}
 
