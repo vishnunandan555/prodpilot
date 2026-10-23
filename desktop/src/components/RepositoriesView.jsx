@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GitBranch,
   GitCommit,
@@ -11,11 +11,109 @@ import {
   User,
   ShieldAlert,
   FileCode,
-  ArrowUpRight
+  ArrowUpRight,
+  Plus,
+  Trash2,
+  Check,
+  Folder,
+  RefreshCw,
+  Terminal,
+  Server
 } from 'lucide-react';
 
-export default function RepositoriesView() {
-  const commits = [
+export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
+  const [repos, setRepos] = useState([]);
+  const [activeRepo, setActiveRepo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
+
+  // Form states
+  const [repoName, setRepoName] = useState('chunkstream');
+  const [localPath, setLocalPath] = useState('/home/vishnunandan555/Projects/chunkstream');
+  const [testCmd, setTestCmd] = useState('pytest');
+  const [healthUrl, setHealthUrl] = useState('http://127.0.0.1:8000/health');
+  const [port, setPort] = useState(8000);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectError, setConnectError] = useState(null);
+  const [connectSuccess, setConnectSuccess] = useState(null);
+
+  const fetchRepos = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/repos`);
+      if (res.ok) {
+        const data = await res.json();
+        setRepos(data.repos || []);
+        setActiveRepo(data.active_repo || null);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch repos:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRepos();
+  }, [apiUrl]);
+
+  const handleConnectRepo = async (e) => {
+    e.preventDefault();
+    setConnectLoading(true);
+    setConnectError(null);
+    setConnectSuccess(null);
+
+    try {
+      const res = await fetch(`${apiUrl}/repos/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: repoName.trim(),
+          local_path: localPath.trim(),
+          test_cmd: testCmd.trim(),
+          health_url: healthUrl.trim(),
+          port: Number(port),
+          set_active: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to connect repository');
+      }
+
+      setConnectSuccess(`Repository '${repoName}' connected (Branch: ${data.git?.branch || 'main'}, Commit: ${data.git?.commit || 'HEAD'})`);
+      setTimeout(() => {
+        setShowConnectModal(false);
+        setConnectSuccess(null);
+        fetchRepos();
+      }, 1000);
+    } catch (err) {
+      setConnectError(err.message || 'Failed to connect repository');
+    } finally {
+      setConnectLoading(false);
+    }
+  };
+
+  const handleActivateRepo = async (repoId) => {
+    try {
+      await fetch(`${apiUrl}/repos/${repoId}/activate`, { method: 'POST' });
+      fetchRepos();
+    } catch (err) {
+      console.error('Failed to activate repo:', err);
+    }
+  };
+
+  const handleDeleteRepo = async (repoId) => {
+    try {
+      await fetch(`${apiUrl}/repos/${repoId}`, { method: 'DELETE' });
+      fetchRepos();
+    } catch (err) {
+      console.error('Failed to delete repo:', err);
+    }
+  };
+
+  const recentCommits = [
     {
       hash: 'a1b2c3d',
       author: 'Vishnu Nandan',
@@ -45,16 +143,6 @@ export default function RepositoriesView() {
       branch: 'main',
       blame: 'requirements.txt',
       impact: null
-    },
-    {
-      hash: '88a1b2c',
-      author: 'Vishnu Nandan',
-      time: '1 day ago',
-      message: 'feat: implement initial checkout flow with SQLite storage',
-      isSuspect: false,
-      branch: 'main',
-      blame: 'app.py:1',
-      impact: null
     }
   ];
 
@@ -70,40 +158,146 @@ export default function RepositoriesView() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  Repository & Code Intelligence
+                  Connected Repositories & Worktrees
                 </h1>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#171f30] text-[#58a6ff] border border-[#293652]">
-                  SYNCED
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
+                  {repos.length} CONNECTED
                 </span>
               </div>
               <p className="text-[11px] text-[#8b949e] font-mono">
-                Git blame correlation, worktree sandboxes & automated PR lifecycle
+                Source code correlation, worktree isolation, git blame & test runner configuration
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <a
-              href="https://github.com/vishnunandan555/prodpilot"
-              target="_blank"
-              rel="noreferrer"
-              className="px-2.5 py-1 rounded bg-[#171f30] hover:bg-[#1f293d] text-xs font-mono text-[#c9d1d9] border border-[#293652] transition flex items-center gap-1.5"
+            <button
+              onClick={() => setShowConnectModal(true)}
+              className="px-2.5 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono flex items-center gap-1.5 transition"
             >
-              <GitBranch size={13} className="text-[#58a6ff]" />
-              <span>vishnunandan555/prodpilot</span>
-              <ExternalLink size={11} className="text-[#6e7681]" />
-            </a>
+              <Plus size={13} />
+              <span>Connect Repository</span>
+            </button>
+            <button
+              onClick={fetchRepos}
+              className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
+              title="Refresh repositories"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
         </div>
       </div>
 
       <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
-        {/* Active Automated PR Panel - Matte SRE Card */}
+        {/* Connected Repositories Grid */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
+              Connected Target Codebases
+            </h2>
+            <span className="text-[10px] font-mono text-[#6e7681]">Active repo used for agent remediation</span>
+          </div>
+
+          {repos.length === 0 ? (
+            <div className="p-6 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
+              <FolderGit2 size={24} className="mx-auto text-[#6e7681]" />
+              <p className="text-xs font-mono text-[#c9d1d9]">No repository connected yet</p>
+              <p className="text-[11px] font-mono text-[#8b949e]">
+                Click "Connect Repository" to hook ProdPilot into your local code (e.g. chunkstream)
+              </p>
+              <button
+                onClick={() => setShowConnectModal(true)}
+                className="mt-2 px-3 py-1.5 rounded bg-[#238636] text-white text-xs font-mono inline-flex items-center gap-1.5"
+              >
+                <Plus size={13} />
+                <span>Connect Codebase Now</span>
+              </button>
+            </div>
+          ) : (
+            repos.map((r) => {
+              const isActive = r.is_active === 1 || activeRepo?.id === r.id;
+              return (
+                <div
+                  key={r.id}
+                  className={`p-3.5 rounded-lg bg-[#0d111a] border transition space-y-2 ${
+                    isActive
+                      ? 'border-[#388bfd] border-l-4 border-l-[#58a6ff]'
+                      : 'border-[#1b2234] hover:border-[#293652]'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
+                        <GitBranch size={14} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{r.name}</h3>
+                          {isActive && (
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-bold">
+                              ACTIVE TARGET
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono text-[#8b949e] mt-0.5 flex items-center gap-1.5">
+                          <span>Path:</span>
+                          <code className="text-[#c9d1d9] bg-[#07090f] px-1 py-0.2 rounded border border-[#1b2234]">
+                            {r.local_path}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                      {!isActive && (
+                        <button
+                          onClick={() => handleActivateRepo(r.id)}
+                          className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-[11px]"
+                        >
+                          Set as Active
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteRepo(r.id)}
+                        className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] transition"
+                        title="Disconnect repository"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono pt-1 text-[#8b949e]">
+                    <div>
+                      <span className="text-[#6e7681] block text-[10px]">TEST RUNNER</span>
+                      <span className="text-[#c9d1d9]">{r.test_cmd || 'pytest'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#6e7681] block text-[10px]">HEALTH PROBE</span>
+                      <span className="text-[#58a6ff] truncate block">{r.health_url || ':8000/health'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#6e7681] block text-[10px]">PROD PORT</span>
+                      <span className="text-[#c9d1d9]">{r.port || 8000}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#6e7681] block text-[10px]">SANDBOX</span>
+                      <span className="text-[#3fb950]">.prodpilot_worktree</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Active Automated PR Panel */}
         <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] border-l-4 border-l-[#58a6ff] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#121929] text-[#58a6ff] border border-[#1d2d47]">
-                AUTOMATED REMEDIATION PR #12
+                ACTIVE FIX PULL REQUEST #12
               </span>
               <span className="text-[11px] font-mono text-[#8b949e]">
                 branch: <code className="text-[#f0f6fc]">prodpilot-fix-inc-20261023-001</code>
@@ -120,23 +314,8 @@ export default function RepositoriesView() {
               fix: safely access discount key with .get('discount', 0.0) in calculate_order
             </h3>
             <p className="text-[11px] text-[#8b949e] font-mono mt-1">
-              Target: <code className="text-[#c9d1d9]">main</code> (commit: <code className="text-[#58a6ff]">c15fdd1</code>) • Scope: <code className="text-[#c9d1d9]">backend/demo_server/app.py:45</code>
+              Target: <code className="text-[#c9d1d9]">main</code> • Target Repo: <code className="text-[#58a6ff]">{activeRepo?.name || 'demo-prod'}</code>
             </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-[#1b2234] text-[11px] font-mono">
-            <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-              <span className="text-[#6e7681] block text-[10px] uppercase">Agent Author</span>
-              <span className="text-[#f0f6fc] font-medium block mt-0.5">Google Antigravity (`agy` v1.4.6)</span>
-            </div>
-            <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-              <span className="text-[#6e7681] block text-[10px] uppercase">Reproduction Test</span>
-              <span className="text-[#3fb950] font-medium block mt-0.5">test_repro.py PASSED (Exit 0)</span>
-            </div>
-            <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
-              <span className="text-[#6e7681] block text-[10px] uppercase">Execution Sandbox</span>
-              <span className="text-[#c9d1d9] font-medium block mt-0.5">git worktree .prodpilot_worktree</span>
-            </div>
           </div>
         </div>
 
@@ -153,7 +332,7 @@ export default function RepositoriesView() {
           </div>
 
           <div className="space-y-2">
-            {commits.map((c) => (
+            {recentCommits.map((c) => (
               <div
                 key={c.hash}
                 className={`p-3 rounded border font-mono transition ${
@@ -204,6 +383,118 @@ export default function RepositoriesView() {
           </div>
         </div>
       </div>
+
+      {/* Connect Repository Modal */}
+      {showConnectModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#0d111a] border border-[#1b2234] rounded-xl shadow-2xl overflow-hidden font-sans">
+            <div className="bg-[#07090f] px-5 py-4 border-b border-[#1b2234] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderGit2 size={16} className="text-[#58a6ff]" />
+                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Connect Local Code Repository</h3>
+              </div>
+              <button onClick={() => setShowConnectModal(false)} className="text-[#6e7681] hover:text-[#f0f6fc]">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConnectRepo} className="p-5 space-y-3.5">
+              {connectError && (
+                <div className="p-2.5 rounded bg-[#261317] border border-[#4a1c24] text-[#ff7b72] text-xs font-mono flex items-center gap-2">
+                  <AlertTriangle size={14} className="flex-shrink-0" />
+                  <span>{connectError}</span>
+                </div>
+              )}
+
+              {connectSuccess && (
+                <div className="p-2.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono flex items-center gap-2">
+                  <CheckCircle2 size={14} className="flex-shrink-0" />
+                  <span>{connectSuccess}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Service / Repo Name</label>
+                <input
+                  type="text"
+                  required
+                  value={repoName}
+                  onChange={(e) => setRepoName(e.target.value)}
+                  placeholder="chunkstream"
+                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Local Repository Path (Absolute)</label>
+                <input
+                  type="text"
+                  required
+                  value={localPath}
+                  onChange={(e) => setLocalPath(e.target.value)}
+                  placeholder="/home/vishnunandan555/Projects/chunkstream"
+                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                />
+                <span className="text-[10px] font-mono text-[#6e7681] mt-0.5 block">
+                  Must be an initialized git repository with committed code.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Test Command</label>
+                  <input
+                    type="text"
+                    value={testCmd}
+                    onChange={(e) => setTestCmd(e.target.value)}
+                    placeholder="pytest"
+                    className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Production Port</label>
+                  <input
+                    type="number"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value)}
+                    placeholder="8000"
+                    className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Health Probe URL</label>
+                <input
+                  type="text"
+                  value={healthUrl}
+                  onChange={(e) => setHealthUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:8000/health"
+                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConnectModal(false)}
+                  className="px-3 py-1.5 rounded bg-[#171f30] text-[#c9d1d9] text-xs font-mono hover:bg-[#1f293d]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={connectLoading}
+                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium flex items-center gap-1.5"
+                >
+                  {connectLoading ? <RefreshCw size={13} className="animate-spin" /> : <Check size={13} />}
+                  <span>{connectLoading ? 'Validating Git...' : 'Connect & Activate'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

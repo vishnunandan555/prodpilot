@@ -6,14 +6,19 @@ import {
   WifiOff,
   Minimize2,
   Square,
-  X
+  X,
+  User,
+  LogOut
 } from 'lucide-react';
 
 export default function WindowHeader({
   apiConnected,
   onTriggerCrash,
   onResetDemo,
-  isRefreshing
+  isRefreshing,
+  currentUser,
+  onLogout,
+  onOpenAuth
 }) {
   return (
     <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
@@ -61,6 +66,36 @@ export default function WindowHeader({
             </span>
           )}
         </div>
+
+        {/* Operator Profile / Auth */}
+        {currentUser ? (
+          <div className="flex items-center gap-1.5 pl-2 border-l border-[#1b2234]">
+            <div className="w-4 h-4 rounded-full bg-[#171f30] border border-[#293652] flex items-center justify-center text-[9px] font-bold text-[#58a6ff]">
+              {(currentUser.username || 'A').charAt(0).toUpperCase()}
+            </div>
+            <span className="text-[11px] font-mono text-[#c9d1d9] hidden sm:inline">
+              {currentUser.username}
+            </span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#171f30] text-[#58a6ff] border border-[#293652] uppercase">
+              {currentUser.role || 'sre'}
+            </span>
+            <button
+              onClick={onLogout}
+              className="text-[#6e7681] hover:text-[#ff7b72] transition ml-0.5"
+              title="Sign Out"
+            >
+              <LogOut size={11} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onOpenAuth}
+            className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-[11px] font-mono flex items-center gap-1"
+          >
+            <User size={11} />
+            <span>Sign In</span>
+          </button>
+        )}
 
         {/* Linux Window Minimizer/Maximizer Icons */}
         <div className="flex items-center gap-2 text-[#8b949e] pl-2 border-l border-[#1b2234]">

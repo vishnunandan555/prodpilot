@@ -55,33 +55,120 @@ def compute_fingerprint(trace: Optional[str]) -> str:
     return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
 
 
+def hash_password(password: str, salt: Optional[str] = None) -> str:
+    if not salt:
+        salt = os.urandom(16).hex()
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return f"{salt}${dk.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        if not password_hash or "$" not in password_hash:
+            return False
+        salt, h = password_hash.split("$", 1)
+        check = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+        return h == check
+    except Exception:
+        return False
+
+
 def _migrate_db(conn: sqlite3.Connection) -> None:
-    """Ensures incidents table has Phase 4 columns and indexes."""
+    """Ensures database has incidents, users, repos, and servers tables."""
     try:
         cur = conn.cursor()
+
+        # 1. Ensure incidents table has Phase 4 columns
         cur.execute("PRAGMA table_info(incidents);")
         existing_cols = {row[1] for row in cur.fetchall()}
-        if not existing_cols:
-            return
+        if existing_cols:
+            new_cols = [
+                ("fingerprint", "TEXT"),
+                ("recurrence_count", "INTEGER DEFAULT 1"),
+                ("root_cause_report", "TEXT"),
+                ("recovery_action", "TEXT"),
+                ("last_seen_at", "TIMESTAMP"),
+                ("severity", "TEXT DEFAULT 'HIGH'"),
+            ]
+            for col_name, col_type in new_cols:
+                if col_name not in existing_cols:
+                    try:
+                        cur.execute(f"ALTER TABLE incidents ADD COLUMN {col_name} {col_type};")
+                    except Exception:
+                        pass
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_incidents_fingerprint ON incidents(fingerprint);")
 
-        new_cols = [
-            ("fingerprint", "TEXT"),
-            ("recurrence_count", "INTEGER DEFAULT 1"),
-            ("root_cause_report", "TEXT"),
-            ("recovery_action", "TEXT"),
-            ("last_seen_at", "TIMESTAMP"),
-            ("severity", "TEXT DEFAULT 'HIGH'"),
-        ]
-        for col_name, col_type in new_cols:
-            if col_name not in existing_cols:
-                try:
-                    cur.execute(f"ALTER TABLE incidents ADD COLUMN {col_name} {col_type};")
-                except Exception:
-                    pass
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_incidents_fingerprint ON incidents(fingerprint);")
+        # 2. Users table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            full_name TEXT,
+            role TEXT DEFAULT 'sre',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
+        # Seed default admin user if users table is empty
+        cur.execute("SELECT COUNT(*) FROM users;")
+        if cur.fetchone()[0] == 0:
+            admin_hash = hash_password("admin")
+            cur.execute(
+                "INSERT INTO users (id, username, email, password_hash, full_name, role) VALUES (?, ?, ?, ?, ?, ?)",
+                ("usr-admin", "admin", "admin@prodpilot.io", admin_hash, "SRE Administrator", "admin")
+            )
+
+        # 3. Repositories table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS repos (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            test_cmd TEXT DEFAULT 'pytest',
+            health_url TEXT DEFAULT 'http://127.0.0.1:8000/health',
+            start_cmd TEXT DEFAULT '',
+            port INTEGER DEFAULT 8000,
+            is_active INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        cur.execute("PRAGMA table_info(repos);")
+        repo_cols = {row[1] for row in cur.fetchall()}
+        if "is_active" not in repo_cols:
+            try:
+                cur.execute("ALTER TABLE repos ADD COLUMN is_active INTEGER DEFAULT 0;")
+            except Exception:
+                pass
+
+        # 4. Servers table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            repo_id TEXT,
+            host TEXT DEFAULT '127.0.0.1',
+            port INTEGER DEFAULT 8000,
+            health_url TEXT NOT NULL,
+            status TEXT DEFAULT 'UNKNOWN',
+            latency_ms REAL DEFAULT 0.0,
+            last_checked_at TIMESTAMP,
+            is_active INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        cur.execute("PRAGMA table_info(servers);")
+        server_cols = {row[1] for row in cur.fetchall()}
+        if "is_active" not in server_cols:
+            try:
+                cur.execute("ALTER TABLE servers ADD COLUMN is_active INTEGER DEFAULT 0;")
+            except Exception:
+                pass
+
         conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Migration error: {e}")
 
 
 def get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
@@ -441,6 +528,225 @@ def record_approval(
             """,
             (approval_id, run_id, incident_id, decision, source, reason)
         )
+
+
+# --- Users & Auth ---
+
+def create_user(
+    username: str,
+    password: str,
+    email: Optional[str] = None,
+    full_name: Optional[str] = None,
+    role: str = "sre",
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    user_id = f"usr-{os.urandom(4).hex()}"
+    p_hash = hash_password(password)
+    with get_db(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO users (id, username, email, password_hash, full_name, role)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, username.strip(), email.strip() if email else None, p_hash, full_name, role)
+        )
+    return {
+        "id": user_id,
+        "username": username,
+        "email": email,
+        "full_name": full_name,
+        "role": role,
+    }
+
+
+def authenticate_user(
+    username_or_email: str,
+    password: str,
+    db_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    clean = username_or_email.strip()
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, username, email, password_hash, full_name, role, created_at FROM users WHERE username = ? OR email = ?",
+            (clean, clean)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if verify_password(password, d["password_hash"]):
+            return {
+                "id": d["id"],
+                "username": d["username"],
+                "email": d["email"],
+                "full_name": d["full_name"],
+                "role": d["role"],
+                "created_at": d["created_at"],
+            }
+        return None
+
+
+def get_user_by_id(user_id: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, email, full_name, role, created_at FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+# --- Repositories ---
+
+def list_repos(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM repos ORDER BY is_active DESC, created_at DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+
+def connect_repo(
+    name: str,
+    local_path: str,
+    test_cmd: str = "pytest",
+    health_url: str = "http://127.0.0.1:8000/health",
+    start_cmd: str = "",
+    port: int = 8000,
+    set_active: bool = True,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    repo_id = f"repo-{os.urandom(3).hex()}"
+    with get_db(db_path) as conn:
+        if set_active:
+            conn.execute("UPDATE repos SET is_active = 0")
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO repos (
+                id, name, local_path, test_cmd, health_url, start_cmd, port, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (repo_id, name, local_path, test_cmd, health_url, start_cmd, port, 1 if set_active else 0)
+        )
+    return {
+        "id": repo_id,
+        "name": name,
+        "local_path": local_path,
+        "test_cmd": test_cmd,
+        "health_url": health_url,
+        "start_cmd": start_cmd,
+        "port": port,
+        "is_active": 1 if set_active else 0,
+    }
+
+
+def set_active_repo(repo_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("UPDATE repos SET is_active = 0")
+        conn.execute("UPDATE repos SET is_active = 1 WHERE id = ?", (repo_id,))
+
+
+def delete_repo(repo_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM repos WHERE id = ?", (repo_id,))
+
+
+def get_active_repo(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM repos WHERE is_active = 1 LIMIT 1")
+        row = cur.fetchone()
+        if not row:
+            cur.execute("SELECT * FROM repos ORDER BY created_at DESC LIMIT 1")
+            row = cur.fetchone()
+        return dict(row) if row else None
+
+
+# --- Connected Servers / Services ---
+
+def list_servers(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM servers ORDER BY is_active DESC, created_at DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+
+def connect_server(
+    name: str,
+    health_url: str,
+    port: int = 8000,
+    host: str = "127.0.0.1",
+    repo_id: Optional[str] = None,
+    status: str = "UNKNOWN",
+    latency_ms: float = 0.0,
+    set_active: bool = True,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    server_id = f"srv-{os.urandom(3).hex()}"
+    now_iso = datetime.utcnow().isoformat()
+    with get_db(db_path) as conn:
+        if set_active:
+            conn.execute("UPDATE servers SET is_active = 0")
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO servers (
+                id, name, repo_id, host, port, health_url, status, latency_ms, last_checked_at, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (server_id, name, repo_id, host, port, health_url, status, latency_ms, now_iso, 1 if set_active else 0)
+        )
+    return {
+        "id": server_id,
+        "name": name,
+        "repo_id": repo_id,
+        "host": host,
+        "port": port,
+        "health_url": health_url,
+        "status": status,
+        "latency_ms": latency_ms,
+        "last_checked_at": now_iso,
+        "is_active": 1 if set_active else 0,
+    }
+
+
+def update_server_status(
+    server_id: str,
+    status: str,
+    latency_ms: Optional[float] = None,
+    db_path: Optional[str] = None,
+) -> None:
+    now_iso = datetime.utcnow().isoformat()
+    with get_db(db_path) as conn:
+        if latency_ms is not None:
+            conn.execute(
+                "UPDATE servers SET status = ?, latency_ms = ?, last_checked_at = ? WHERE id = ?",
+                (status, latency_ms, now_iso, server_id)
+            )
+        else:
+            conn.execute(
+                "UPDATE servers SET status = ?, last_checked_at = ? WHERE id = ?",
+                (status, now_iso, server_id)
+            )
+
+
+def set_active_server(server_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("UPDATE servers SET is_active = 0")
+        conn.execute("UPDATE servers SET is_active = 1 WHERE id = ?", (server_id,))
+
+
+def delete_server(server_id: str, db_path: Optional[str] = None) -> None:
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM servers WHERE id = ?", (server_id,))
+
+
+def get_active_server(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM servers WHERE is_active = 1 LIMIT 1")
+        row = cur.fetchone()
+        if not row:
+            cur.execute("SELECT * FROM servers ORDER BY created_at DESC LIMIT 1")
+            row = cur.fetchone()
+        return dict(row) if row else None
 
 
 # Hook to automatically mount the ingest router whenever FastAPI is initialized

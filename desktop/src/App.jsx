@@ -9,6 +9,7 @@ import RepositoriesView from './components/RepositoriesView';
 import AgentsView from './components/AgentsView';
 import TeamView from './components/TeamView';
 import SettingsView from './components/SettingsView';
+import AuthModal from './components/AuthModal';
 
 // Read API URL from Vite environment variable (Cloudflare Tunnel URL) with localStorage fallback
 const getInitialApiUrl = () => {
@@ -107,7 +108,32 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(false);
-  const [showMobileList, setShowMobileList] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('prodpilot_user');
+      return stored ? JSON.parse(stored) : { id: 'usr-admin', username: 'admin', role: 'admin', full_name: 'SRE Administrator' };
+    } catch {
+      return { id: 'usr-admin', username: 'admin', role: 'admin', full_name: 'SRE Administrator' };
+    }
+  });
+  const [token, setToken] = useState(() => localStorage.getItem('prodpilot_token') || '');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  const handleLoginSuccess = (user, tokenStr) => {
+    setCurrentUser(user);
+    setToken(tokenStr);
+    localStorage.setItem('prodpilot_user', JSON.stringify(user));
+    localStorage.setItem('prodpilot_token', tokenStr);
+    setShowAuthModal(false);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setToken('');
+    localStorage.removeItem('prodpilot_user');
+    localStorage.removeItem('prodpilot_token');
+    setShowAuthModal(true);
+  };
 
   const eventSourceRef = useRef(null);
 
@@ -343,6 +369,9 @@ export default function App() {
           onTriggerCrash={handleTriggerCrash}
           onResetDemo={handleResetDemo}
           isRefreshing={isRefreshing}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenAuth={() => setShowAuthModal(true)}
         />
       </div>
 
@@ -398,11 +427,11 @@ export default function App() {
           )}
 
           {activeNav === 'services' && (
-            <ServicesView apiConnected={apiConnected} />
+            <ServicesView apiConnected={apiConnected} apiUrl={apiUrl} />
           )}
 
           {activeNav === 'repositories' && (
-            <RepositoriesView />
+            <RepositoriesView apiUrl={apiUrl} />
           )}
 
           {activeNav === 'agents' && (
@@ -422,6 +451,14 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Authentication & Signup Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onLoginSuccess={handleLoginSuccess}
+        apiUrl={apiUrl}
+      />
     </div>
   );
 }

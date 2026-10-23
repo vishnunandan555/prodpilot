@@ -56,6 +56,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from backend.prodpilot.api.connect_router import router as connect_router
+from backend.prodpilot.ingest.router import router as ingest_router
+
+app.include_router(connect_router)
+app.include_router(ingest_router)
+
 # Shared in-memory staging manager or deploy adapter
 deploy_adapter = DeployAdapter(prod_port=int(os.environ.get("PROD_PORT", 8000)))
 
