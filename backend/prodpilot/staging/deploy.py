@@ -571,18 +571,17 @@ def approve_incident(
     # Determine repo path
     target_repo = repo_path
     if not target_repo or not Path(target_repo).exists():
-        env_repo = os.environ.get("DEMO_PROD_PATH")
+        env_repo = os.environ.get("TARGET_REPO_PATH") or os.environ.get("DEMO_PROD_PATH")
         if env_repo and Path(env_repo).exists():
             target_repo = env_repo
         else:
-            candidates = [
-                Path(__file__).resolve().parent.parent.parent.parent / "demo-prod",
-                Path.cwd() / "demo-prod",
-            ]
-            for c in candidates:
-                if c.exists():
-                    target_repo = str(c)
-                    break
+            try:
+                from prodpilot.db import get_active_repo
+                active = get_active_repo(db_path=db_path)
+                if active and active.get("local_path") and Path(active["local_path"]).exists():
+                    target_repo = str(Path(active["local_path"]).resolve())
+            except Exception:
+                pass
     if not target_repo:
         target_repo = str(Path.cwd())
 

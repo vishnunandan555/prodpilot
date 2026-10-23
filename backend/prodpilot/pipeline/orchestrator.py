@@ -30,28 +30,28 @@ logger = logging.getLogger("prodpilot.orchestrator")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
-def resolve_demo_repo_path(custom_path: Optional[str] = None) -> str:
-    """Finds the local git repository for the service (demo-prod)."""
+def resolve_target_repo_path(custom_path: Optional[str] = None) -> str:
+    """Finds the target git repository for the active service."""
     if custom_path and Path(custom_path).exists():
         return str(Path(custom_path).resolve())
 
-    env_path = os.environ.get("DEMO_PROD_PATH")
+    env_path = os.environ.get("TARGET_REPO_PATH") or os.environ.get("DEMO_PROD_PATH")
     if env_path and Path(env_path).exists():
         return str(Path(env_path).resolve())
 
-    # Check relative to this repo
-    candidates = [
-        Path(__file__).resolve().parent.parent.parent.parent / "demo-prod",
-        Path.cwd() / "demo-prod",
-        Path("/home/vishnunandan555/Projects/prodpilot-a/demo-prod"),
-        Path("/home/vishnunandan555/Projects/prodpilot/demo-prod"),
-    ]
-    for c in candidates:
-        if c.exists() and (c / ".git").exists():
-            return str(c.resolve())
+    try:
+        from prodpilot.db import get_active_repo
+        active = get_active_repo()
+        if active and active.get("local_path") and Path(active["local_path"]).exists():
+            return str(Path(active["local_path"]).resolve())
+    except Exception:
+        pass
 
     # Fallback to current directory if git repo
     return str(Path.cwd().resolve())
+
+# Backward compatibility alias
+resolve_demo_repo_path = resolve_target_repo_path
 
 
 def process_incident(

@@ -354,13 +354,15 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         payload={"action": action, "source": body.source, "message": f"Deploying {action} to production port 8000..."},
     )
 
-    # Find repo path for the service (demo-prod)
-    repo_path = body.repo_path or os.environ.get("DEMO_PROD_PATH")
+    # Find repo path for the target service
+    repo_path = body.repo_path or os.environ.get("TARGET_REPO_PATH") or os.environ.get("DEMO_PROD_PATH")
     if not repo_path or not Path(repo_path).exists():
-        # Look in workspace
-        candidate = Path(__file__).resolve().parent.parent.parent.parent / "demo-prod"
-        if candidate.exists():
-            repo_path = str(candidate)
+        try:
+            active = get_active_repo()
+            if active and active.get("local_path") and Path(active["local_path"]).exists():
+                repo_path = str(Path(active["local_path"]).resolve())
+        except Exception:
+            pass
 
     suspect_commit_hash = None
     suspect = inc.get("suspect_commit")

@@ -34,8 +34,8 @@ if [ -d "$PID_DIR" ]; then
     done
 fi
 
-# 2. Kill any processes bound to ports 8000 (demo-prod) and 8765 (api-server)
-for port in 8000 8765; do
+# 2. Kill any processes bound to port 8765 (api-server)
+for port in 8765; do
     if command -v fuser >/dev/null 2>&1; then
         fuser -k "${port}/tcp" 2>/dev/null || true
     elif command -v lsof >/dev/null 2>&1; then
@@ -50,6 +50,5 @@ done
 pkill -f "backend.prodpilot.watcher.watcher" 2>/dev/null || true
 pkill -f "backend.prodpilot.pipeline.orchestrator" 2>/dev/null || true
 pkill -f "backend.prodpilot.api.server" 2>/dev/null || true
-pkill -f "demo-prod/app.py" 2>/dev/null || true
 
 echo "✓ All ProdPilot services stopped cleanly."
