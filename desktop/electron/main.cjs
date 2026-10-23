@@ -9,7 +9,7 @@ function createWindow() {
     height: 920,
     minWidth: 1024,
     backgroundColor: '#0d1117',
-    title: 'GitHub Copilot',
+    title: 'ProdPilot',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

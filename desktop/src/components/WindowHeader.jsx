@@ -22,9 +22,9 @@ export default function WindowHeader({
         <div className="w-3.5 h-3.5 rounded-full bg-gh-border flex items-center justify-center text-[8px] font-bold text-gh-text-bright">
           P
         </div>
-        <span className="font-semibold text-gh-text-bright tracking-tight">GitHub Copilot</span>
+        <span className="font-semibold text-gh-text-bright tracking-tight">ProdPilot</span>
         <span className="text-gh-text-dim">·</span>
-        <span className="text-gh-text-muted font-mono text-[11px]">ProdPilot Desktop (Linux)</span>
+        <span className="text-gh-text-muted font-mono text-[11px]">Autonomous SRE & Developer Workspace</span>
       </div>
 
       {/* Center: Live Demo Quick Action Controls */}

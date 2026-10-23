@@ -108,7 +108,7 @@ export default function CustomizeView() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-[14px] text-gh-text-bright">Editor's picks</h3>
-              <p className="text-[12px] text-gh-text-muted">Standout ways to customize Copilot.</p>
+              <p className="text-[12px] text-gh-text-muted">Standout ways to customize ProdPilot.</p>
             </div>
             <div className="flex items-center gap-1 text-gh-text-muted">
               <button className="p-1 hover:text-gh-text-bright rounded"><ChevronLeft size={14} /></button>

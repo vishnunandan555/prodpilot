@@ -242,7 +242,7 @@ export default function SessionView({
           <textarea
             value={promptText}
             onChange={(e) => setPromptText(e.target.value)}
-            placeholder="Ask Copilot or provide follow-up instructions..."
+            placeholder="Ask ProdPilot or provide follow-up instructions..."
             rows={2}
             className="w-full bg-transparent text-[13px] text-gh-text placeholder-gh-text-dim resize-none outline-none"
           />
