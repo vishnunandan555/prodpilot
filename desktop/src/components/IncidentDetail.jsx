@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   GitCommit,
@@ -12,7 +12,6 @@ import {
   FileText,
   CheckCircle2,
   Sparkles,
-  Award,
   ChevronDown,
   ChevronUp,
   Radio,
@@ -22,7 +21,10 @@ import {
   GitPullRequest,
   Check,
   UserX,
-  ArrowLeft
+  ArrowLeft,
+  Copy,
+  Info,
+  Server
 } from 'lucide-react';
 import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
@@ -39,24 +41,15 @@ export default function IncidentDetail({
   onBack,
   isStandaloneMobile = false,
 }) {
-  // Accordion state
-  const [openAccordions, setOpenAccordions] = useState({
-    diff: true,
-    evidence: true,
-    traceback: false,
-    timeline: false,
-  });
-
-  const toggleAccordion = (key) => {
-    setOpenAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const [activeTab, setActiveTab] = useState('overview');
+  const [copiedTrace, setCopiedTrace] = useState(false);
 
   if (!incident) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gh-text-dim">
-        <ShieldAlert size={36} className="text-gh-text-muted mb-3" />
-        <p className="text-sm font-semibold text-gh-text-bright">No Incident Selected</p>
-        <p className="text-xs text-gh-text-muted mt-1 max-w-sm">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#6e7681]">
+        <ShieldAlert size={32} className="text-[#485263] mb-2" />
+        <p className="text-xs font-semibold text-[#f0f6fc]">No Incident Selected</p>
+        <p className="text-[11px] text-[#6e7681] mt-0.5 max-w-sm">
           Select an incident from the sidebar or pass a valid incident ID in the URL.
         </p>
       </div>
@@ -75,7 +68,7 @@ export default function IncidentDetail({
   const suspectAuthor = suspect.author || 'Vishnu Nandan';
   const suspectMessage = suspect.message || 'feat: add discount support to order checkout';
   const suspectTime = suspect.minutes_ago !== undefined ? `${suspect.minutes_ago}m ago` : '15m ago';
-  const suspectLocation = incident.suspected_area || suspect.suspect_file ? `${suspect.suspect_file || 'app.py'}:${suspect.suspect_line || 45}` : 'app.py:45';
+  const suspectLocation = incident.suspected_area || (suspect.suspect_file ? `${suspect.suspect_file}:${suspect.suspect_line || 45}` : 'app.py:45');
 
   const brief = incident.brief || {};
   const rootCauseSummary = brief.summary || incident.title || `KeyError: 'discount' in ${suspectLocation}`;
@@ -98,14 +91,10 @@ export default function IncidentDetail({
   };
 
   const staging = incident.staging || {};
-  const canary8001Healthy = staging.fix_forward?.health !== false;
-  const canary8002Healthy = staging.rollback?.health !== false;
-
   const decision = incident.decision || {};
   const ffConfidence = Math.round((decision.probabilities?.fix_forward ?? 0.85) * 100);
   const rbConfidence = Math.round((decision.probabilities?.rollback ?? 0.15) * 100);
 
-  // Stages for the animated progression bar
   const STAGES = [
     { key: 'DETECTED', label: 'Detected' },
     { key: 'TRIAGED', label: 'Triaged' },
@@ -145,458 +134,577 @@ export default function IncidentDetail({
 
   const currentStageIdx = getStageStatusIndex();
 
+  const handleCopyTrace = () => {
+    if (incident.trace) {
+      navigator.clipboard.writeText(incident.trace);
+      setCopiedTrace(true);
+      setTimeout(() => setCopiedTrace(false), 2000);
+    }
+  };
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: ShieldAlert },
+    { id: 'logs', label: 'Logs & Traces', icon: Terminal },
+    { id: 'investigation', label: 'Investigation & RCA', icon: AlertTriangle },
+    { id: 'recovery', label: 'Recovery & Canaries', icon: Server },
+    { id: 'changes', label: 'Changes & Diffs', icon: FileCode },
+    { id: 'timeline', label: 'Timeline & Audit', icon: Radio },
+  ];
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0b0f19] text-slate-100 overflow-y-auto pb-24 md:pb-8">
-      {/* Mobile Top Navigation Bar (if accessed as mobile incident page) */}
-      <div className="sticky top-0 z-40 bg-[#0d1322]/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
-              title="Back"
+    <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto pb-24 md:pb-10 font-sans">
+      {/* 1. Unified Sticky Top Header & 6-Tab Navigation (Matte Obsidian) */}
+      <div className="sticky top-0 z-40 bg-[#0d111a] border-b border-[#1b2234]">
+        {/* Top Header Row */}
+        <div className="px-4 py-2.5 flex items-center justify-between border-b border-[#1b2234]">
+          <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="p-1 rounded bg-[#161b26] text-[#8b949e] hover:text-[#f0f6fc] border border-[#212a3d] transition"
+                title="Back"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${isResolved ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+              <span className="font-mono text-xs font-bold text-[#58a6ff]">
+                {incident.id}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+              SEV-1 HIGH
+            </span>
+            <span
+              className={`px-2 py-0.2 rounded text-[10px] font-bold font-mono border ${
+                isAwaiting
+                  ? 'bg-[#1c180e] text-[#e3b341] border-[#3b2e13]'
+                  : isResolved
+                  ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                  : isTakeover
+                  ? 'bg-[#1a1226] text-[#a371f7] border-[#32234d]'
+                  : 'bg-[#161b26] text-[#8b949e] border-[#212a3d]'
+              }`}
             >
-              <ArrowLeft size={16} />
-            </button>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-mono text-xs font-bold text-indigo-400">
-              {incident.id}
+              {incident.status}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-red-950/80 text-rose-300 border border-rose-800/80">
-            SEV-1 HIGH
-          </span>
-          <span
-            className={`px-2.5 py-0.5 rounded text-[11px] font-bold font-mono ${
-              isAwaiting
-                ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 animate-pulse'
-                : isResolved
-                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50'
-                : isTakeover
-                ? 'bg-purple-950/80 text-purple-300 border border-purple-500/50'
-                : 'bg-slate-800 text-slate-300 border border-slate-700'
-            }`}
-          >
-            {incident.status}
-          </span>
+        {/* 6-Tab Row */}
+        <div className="px-3 py-1 flex items-center gap-1 overflow-x-auto select-none bg-[#090d16]">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono font-medium flex items-center gap-1.5 transition whitespace-nowrap border ${
+                  isActive
+                    ? 'bg-[#161f30] text-[#f0f6fc] border-[#2b3a58]'
+                    : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#0f1422] border-transparent'
+                }`}
+              >
+                <Icon size={12} className={isActive ? 'text-[#58a6ff]' : 'text-[#6e7681]'} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="max-w-4xl w-full mx-auto p-4 md:p-6 space-y-4">
-        {/* Production Restored Celebration Banner */}
+      <div className="max-w-4xl w-full mx-auto p-4 space-y-3.5">
+        {/* Production Restored Celebration Banner (Matte Green Solid) */}
         {(deploySuccess || isResolved) && (
-          <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/90 via-emerald-900/40 to-teal-950/90 border border-emerald-500/50 shadow-lg shadow-emerald-950/50 flex items-center justify-between gap-3 animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center flex-shrink-0">
-                <Sparkles className="w-5 h-5 text-emerald-300 animate-spin" />
-              </div>
+          <div className="p-3 rounded-md bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-[#3fb950] flex-shrink-0" />
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                  <span>✅ PRODUCTION RESTORED</span>
-                  <span className="text-[11px] font-mono font-normal text-emerald-300">
+                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono flex items-center gap-1.5">
+                  <span>PRODUCTION RESTORED</span>
+                  <span className="text-[10px] text-[#3fb950] font-normal">
                     (Port 8000: 200 OK)
                   </span>
                 </h3>
-                <p className="text-xs text-emerald-200/80 mt-0.5 font-mono">
-                  Promoted verified build to production port 8000 • 10s health probe passed
+                <p className="text-[11px] text-[#8b949e] font-mono">
+                  Promoted verified fix to production port 8000 • 10-second watchdog passed
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* 1. HEADER CARD: Title, Status, Severity, Detection Time */}
-        <div className="rounded-xl bg-slate-900/80 border border-slate-800 p-4 md:p-5 shadow-lg space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs px-2 py-0.5 rounded font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {incident.service || 'demo-prod'}
-                </span>
-                <span className="text-xs text-slate-400">·</span>
-                <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
-                  <Clock size={12} className="text-slate-500" />
-                  Detected: {incident.detected_at || 'Just now (15m ago)'}
-                </span>
-              </div>
-              <h1 className="text-lg md:text-xl font-bold text-white mt-1.5 leading-snug">
-                {incident.title || `[OUTAGE] ${incident.suspected_area || 'KeyError discount on /orders'}`}
-              </h1>
-            </div>
+        {/* ===================== TAB 1: OVERVIEW ===================== */}
+        {activeTab === 'overview' && (
+          <div className="space-y-3 animate-in fade-in">
+            {/* Header summary card (Matte panel) */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2.5">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#58a6ff] border border-[#1b2234]">
+                      {incident.service || 'demo-prod'}
+                    </span>
+                    <span className="text-[#6e7681]">·</span>
+                    <span className="text-[11px] text-[#6e7681] flex items-center gap-1">
+                      <Clock size={11} />
+                      Detected: {incident.detected_at || 'Just now'}
+                    </span>
+                  </div>
+                  <h1 className="text-base font-semibold text-[#f0f6fc] mt-1">
+                    {incident.title || `[OUTAGE] ${incident.suspected_area || 'KeyError discount on /orders'}`}
+                  </h1>
+                </div>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs font-mono text-slate-400">Severity:</span>
-              <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-rose-950/70 text-rose-300 border border-rose-500/40">
-                HIGH (SEV-1)
-              </span>
-            </div>
-          </div>
-
-          {/* Quick Info Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80">
-              <span className="text-slate-500 block text-[10px] uppercase tracking-wider font-mono">Target Service</span>
-              <span className="font-semibold text-slate-200 font-mono text-xs">{incident.service || 'demo-prod'}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80">
-              <span className="text-slate-500 block text-[10px] uppercase tracking-wider font-mono">Health URL</span>
-              <span className="font-semibold text-indigo-400 font-mono text-xs truncate block" title="http://127.0.0.1:8000/health">
-                :8000/health
-              </span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80">
-              <span className="text-slate-500 block text-[10px] uppercase tracking-wider font-mono">Auto Recovery</span>
-              <span className="font-semibold text-emerald-400 font-mono text-xs">Staged (8001)</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80">
-              <span className="text-slate-500 block text-[10px] uppercase tracking-wider font-mono">Status</span>
-              <span className="font-semibold text-amber-400 font-mono text-xs">{incident.status}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. LIVE SSE TIMELINE: Animated Stage Progression */}
-        <div className="rounded-xl bg-slate-900/80 border border-slate-800 p-4 md:p-5 shadow-lg space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Radio size={14} className="text-indigo-400 animate-pulse" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                Live SSE Remediation Pipeline
-              </h2>
-            </div>
-            <span className="text-[11px] font-mono text-slate-400">
-              Stage {Math.min(currentStageIdx + 1, 7)} of 7
-            </span>
-          </div>
-
-          {/* Visual Step Progression Bar */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-1">
-            {STAGES.map((stg, idx) => {
-              const isPast = idx < currentStageIdx;
-              const isCurrent = idx === currentStageIdx;
-              const isPending = idx > currentStageIdx;
-
-              return (
-                <div key={stg.key} className="flex flex-col items-center text-center">
-                  <div
-                    className={`w-full h-1.5 rounded-full transition-all duration-300 ${
-                      isPast
-                        ? 'bg-emerald-500'
-                        : isCurrent
-                        ? 'bg-amber-400 animate-pulse'
-                        : 'bg-slate-800'
-                    }`}
-                  />
-                  <span
-                    className={`text-[10px] sm:text-[11px] mt-1.5 font-mono truncate w-full ${
-                      isPast
-                        ? 'text-emerald-400 font-medium'
-                        : isCurrent
-                        ? 'text-amber-300 font-bold'
-                        : 'text-slate-600'
-                    }`}
-                  >
-                    {stg.label}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[10px] font-mono text-[#6e7681]">Severity:</span>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                    HIGH (SEV-1)
                   </span>
                 </div>
-              );
-            })}
-          </div>
+              </div>
 
-          {/* Toggleable Full Events Feed */}
-          <div className="pt-1">
-            <button
-              onClick={() => toggleAccordion('timeline')}
-              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono transition"
-            >
-              {openAccordions.timeline ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              <span>{openAccordions.timeline ? 'Hide detailed event logs' : `View ${events.length} live SSE pipeline events`}</span>
-            </button>
-            {openAccordions.timeline && (
-              <div className="mt-3 p-3 rounded-lg bg-black/60 border border-slate-800 text-xs font-mono max-h-48 overflow-y-auto space-y-1.5">
+              {/* Quick Info Grid (High Density) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Target Service</span>
+                  <span className="font-semibold text-[#c9d1d9] text-[11px] mt-0.5 block">{incident.service || 'demo-prod'}</span>
+                </div>
+                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Health URL</span>
+                  <span className="font-semibold text-[#58a6ff] text-[11px] truncate block mt-0.5" title="http://127.0.0.1:8000/health">
+                    :8000/health
+                  </span>
+                </div>
+                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Auto Recovery</span>
+                  <span className="font-semibold text-[#3fb950] text-[11px] mt-0.5 block">Staged (8001)</span>
+                </div>
+                <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
+                  <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Status</span>
+                  <span className="font-semibold text-[#e3b341] text-[11px] mt-0.5 block">{incident.status}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pipeline Stage Progression (Crisp, Non-Neon) */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Radio size={13} className="text-[#58a6ff]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
+                    Live SSE Remediation Pipeline
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-[#6e7681]">
+                  Stage {Math.min(currentStageIdx + 1, 7)} of 7
+                </span>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 pt-1">
+                {STAGES.map((stg, idx) => {
+                  const isPast = idx < currentStageIdx;
+                  const isCurrent = idx === currentStageIdx;
+                  return (
+                    <div key={stg.key} className="flex flex-col items-center text-center">
+                      <div
+                        className={`w-full h-1 rounded-xs transition-all ${
+                          isPast
+                            ? 'bg-[#238636]'
+                            : isCurrent
+                            ? 'bg-[#d29922]'
+                            : 'bg-[#1b2234]'
+                        }`}
+                      />
+                      <span
+                        className={`text-[9px] mt-1 font-mono truncate w-full ${
+                          isPast
+                            ? 'text-[#3fb950]'
+                            : isCurrent
+                            ? 'text-[#e3b341] font-bold'
+                            : 'text-[#485263]'
+                        }`}
+                      >
+                        {stg.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Decision Engine Recommendation Card (Solid Matte) */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Zap size={14} className="text-[#e3b341]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
+                    Decision Engine Recommendation
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
+                  {ffConfidence}% Confidence Fix-Forward
+                </span>
+              </div>
+
+              <p className="text-xs text-[#c9d1d9] font-mono leading-relaxed">
+                {decision.reason || 'Clean 1-line patch with 100% test pass. Suspect commit landed recently with zero database migrations.'}
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 pt-1 text-xs font-mono">
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[#3fb950] text-[11px]">Option A: Fix-Forward</span>
+                    <span className="text-[#3fb950] font-bold text-[11px]">{ffConfidence}%</span>
+                  </div>
+                  <p className="text-[10px] text-[#6e7681] mt-0.5">
+                    Deploy Canary 8001 patch • Zero data loss • Safe defensive fix
+                  </p>
+                </div>
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#2e2350]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[#a371f7] text-[11px]">Option B: Rollback</span>
+                    <span className="text-[#a371f7] font-bold text-[11px]">{rbConfidence}%</span>
+                  </div>
+                  <p className="text-[10px] text-[#6e7681] mt-0.5">
+                    Revert to parent commit {suspectHash} • Canary 8002 ready
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== TAB 2: LOGS & TRACES ===================== */}
+        {activeTab === 'logs' && (
+          <div className="space-y-3 animate-in fade-in">
+            {/* Extracted Traceback */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Terminal size={14} className="text-[#ff7b72]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#ff7b72] font-mono">
+                    Extracted Production Traceback
+                  </span>
+                </div>
+                <button
+                  onClick={handleCopyTrace}
+                  className="px-2 py-0.5 rounded bg-[#161b26] hover:bg-[#212a3d] text-[10px] font-mono text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1 transition border border-[#212a3d]"
+                >
+                  <Copy size={11} />
+                  <span>{copiedTrace ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+
+              <div className="p-3 rounded bg-[#07090f] border border-[#261317] text-xs font-mono text-[#ff7b72] overflow-x-auto leading-relaxed">
+                <pre>{incident.trace || `Traceback (most recent call last):\n  File "app.py", line 45, in calculate_order\n    discount = order["discount"]\nKeyError: 'discount'`}</pre>
+              </div>
+            </div>
+
+            {/* Surrounding Log Tail */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono flex items-center gap-1.5">
+                  <Clock size={12} className="text-[#58a6ff]" />
+                  <span>Surrounding Production Log Context</span>
+                </span>
+                <span className="text-[10px] font-mono text-[#6e7681]">Render Log Forwarder</span>
+              </div>
+
+              <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#8b949e] overflow-x-auto leading-relaxed">
+                <pre>{incident.log_tail || `2026-10-23 14:29:58 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}\n2026-10-23 14:29:59 [ERROR] KeyError: 'discount' in /orders (app.py:45)\n2026-10-23 14:30:00 [WARN] Healthcheck probe failed: 500 Internal Server Error\n2026-10-23 14:30:05 [WARN] Healthcheck probe failed: 500 Internal Server Error`}</pre>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== TAB 3: INVESTIGATION & RCA ===================== */}
+        {activeTab === 'investigation' && (
+          <div className="space-y-3 animate-in fade-in">
+            {/* RCA Card */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center gap-1.5 border-b border-[#1b2234] pb-2">
+                <AlertTriangle size={14} className="text-[#ff7b72]" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#ff7b72] font-mono">
+                  Root Cause Analysis (RCA) Report
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded bg-[#160d10] border border-[#3e1b23] text-xs space-y-1">
+                <span className="text-[#6e7681] font-mono text-[9px] uppercase">Identified Root Cause:</span>
+                <div className="text-[#ff7b72] font-bold font-mono text-xs">
+                  {rootCauseSummary}
+                </div>
+                <p className="text-[#8b949e] font-mono text-[11px]">
+                  The endpoint assumed a <code className="text-[#ff7b72]">discount</code> key was present in every order payload. Incoming requests omitting this key raised an unhandled <code className="text-[#ff7b72]">KeyError</code> on line 45.
+                </p>
+              </div>
+
+              {/* Suspect Commit Card */}
+              <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#6e7681] font-mono text-[9px] uppercase flex items-center gap-1">
+                    <GitCommit size={11} className="text-[#58a6ff]" />
+                    Suspect Commit (Git Blame Attribution)
+                  </span>
+                  <span className="text-[#58a6ff] font-mono font-bold text-xs">
+                    {suspectHash}
+                  </span>
+                </div>
+                <div className="text-xs font-semibold text-[#f0f6fc]">
+                  {suspectMessage}
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-[#6e7681]">
+                  <span>Author: <strong className="text-[#c9d1d9]">{suspectAuthor}</strong></span>
+                  <span>•</span>
+                  <span>Landed: <strong className="text-[#c9d1d9]">{suspectTime}</strong></span>
+                  <span>•</span>
+                  <span>Line: <strong className="text-[#58a6ff]">{suspectLocation}</strong></span>
+                </div>
+              </div>
+
+              {/* Hypotheses vs Facts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono pt-1">
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
+                  <div className="flex items-center gap-1 text-[#3fb950] font-bold text-[11px]">
+                    <CheckCircle2 size={12} />
+                    <span>Confirmed Facts</span>
+                  </div>
+                  <ul className="list-disc list-inside text-[#8b949e] text-[10px] space-y-0.5">
+                    <li>KeyError raised at calculate_order (line 45)</li>
+                    <li>Payload lacked optional discount property</li>
+                    <li>Port 8000 returned 500 on all order requests</li>
+                  </ul>
+                </div>
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1">
+                  <div className="flex items-center gap-1 text-[#6e7681] font-bold text-[11px]">
+                    <Info size={12} />
+                    <span>Ruled-Out Hypotheses</span>
+                  </div>
+                  <ul className="list-disc list-inside text-[#6e7681] text-[10px] space-y-0.5">
+                    <li>Database connection timeout (ruled out)</li>
+                    <li>Network partition on Render (ruled out)</li>
+                    <li>Memory leak / OOM error (ruled out)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== TAB 4: RECOVERY & CANARIES ===================== */}
+        {activeTab === 'recovery' && (
+          <div className="space-y-3 animate-in fade-in">
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Server size={14} className="text-[#3fb950]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#3fb950] font-mono">
+                    Staged Canary Verification Environments
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-[#3fb950]">
+                  Dual Canaries Live
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Canary 8001 */}
+                <div className="p-3 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#3fb950]" />
+                      <span className="font-bold text-[#f0f6fc] font-mono text-xs">Canary 8001 (Fix-Forward)</span>
+                    </div>
+                    <span className="px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] text-[9px] font-mono font-bold">
+                      200 OK
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#8b949e] font-mono">
+                    Contains Antigravity AI verified fix with <code className="text-[#3fb950]">.get("discount", 0.0)</code>.
+                  </p>
+                  <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
+                    <div>Test Status: <strong className="text-[#3fb950]">5/5 Passed (100%)</strong></div>
+                    <div className="mt-0.5">Probe URL: <code className="text-[#58a6ff]">http://127.0.0.1:8001/health</code></div>
+                  </div>
+                </div>
+
+                {/* Canary 8002 */}
+                <div className="p-3 rounded bg-[#07090f] border border-[#2e2350] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#a371f7]" />
+                      <span className="font-bold text-[#f0f6fc] font-mono text-xs">Canary 8002 (Rollback)</span>
+                    </div>
+                    <span className="px-1.5 py-0.2 rounded bg-[#161226] text-[#a371f7] border border-[#2e2350] text-[9px] font-mono font-bold">
+                      200 OK
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#8b949e] font-mono">
+                    Clean checkout of parent commit <code className="text-[#a371f7]">{suspectHash}</code>.
+                  </p>
+                  <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
+                    <div>Test Status: <strong className="text-[#a371f7]">Known Good Head</strong></div>
+                    <div className="mt-0.5">Probe URL: <code className="text-[#58a6ff]">http://127.0.0.1:8002/health</code></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Watchdog explanation */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-3 space-y-1 text-xs font-mono">
+              <div className="flex items-center gap-1.5 font-bold text-[#f0f6fc] text-[11px]">
+                <ShieldCheck size={13} className="text-[#58a6ff]" />
+                <span>10-Second Post-Deploy Watchdog Guard</span>
+              </div>
+              <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                When approved, ProdPilot promotes the canary to port 8000 and probes <code className="text-[#58a6ff]">/health</code> every second for 10 seconds. Any non-200 probe automatically triggers instant rollback.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== TAB 5: CHANGES & DIFFS ===================== */}
+        {activeTab === 'changes' && (
+          <div className="space-y-3 animate-in fade-in">
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                <div className="flex items-center gap-1.5">
+                  <FileCode size={14} className="text-[#58a6ff]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
+                    Synthesized Git Patch Diff
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-[#58a6ff]">
+                  {artifacts.repro_test || 'tests/test_repro.py'}
+                </span>
+              </div>
+
+              <div className="rounded border border-[#1b2234] overflow-hidden">
+                <DiffViewer diff={diffContent} />
+              </div>
+            </div>
+
+            {/* Test Evidence Red -> Green */}
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="text-[#3fb950]" />
+                  <span>Deterministic Reproduction Proof (Red $\rightarrow$ Green)</span>
+                </span>
+                <span className="text-[9px] font-mono text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
+                  VERIFIED
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#3e1b23] space-y-1">
+                  <div className="flex items-center gap-1 text-[#ff7b72] font-bold text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#f85149]" />
+                    <span>BEFORE PATCH (Red Test Proof)</span>
+                  </div>
+                  <pre className="text-[#ff7b72] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                    {typeof testEvidence.before === 'string' ? testEvidence.before : JSON.stringify(testEvidence.before, null, 2)}
+                  </pre>
+                </div>
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
+                  <div className="flex items-center gap-1 text-[#3fb950] font-bold text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+                    <span>AFTER PATCH (Green Test Proof)</span>
+                  </div>
+                  <pre className="text-[#3fb950] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                    {typeof testEvidence.after === 'string' ? testEvidence.after : JSON.stringify(testEvidence.after, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== TAB 6: TIMELINE & AUDIT ===================== */}
+        {activeTab === 'timeline' && (
+          <div className="space-y-3 animate-in fade-in">
+            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Radio size={14} className="text-[#58a6ff]" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
+                    Real-Time SSE Event Audit Trail
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-[#6e7681]">
+                  {events.length} events logged
+                </span>
+              </div>
+
+              <div className="space-y-1.5 text-xs font-mono">
                 {events.length === 0 ? (
-                  <div className="text-slate-500">Listening to live SSE stream at /incidents/{incident.id}/events...</div>
+                  <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-[#485263] text-center text-xs">
+                    Listening to live SSE stream for incident events...
+                  </div>
                 ) : (
                   events.map((ev, i) => (
-                    <div key={i} className="flex items-start gap-2 text-slate-300">
-                      <span className="text-indigo-400 flex-shrink-0">[{ev.stage || 'EVENT'}]</span>
-                      <span className="text-slate-400 text-[11px]">{ev.kind}:</span>
-                      <span className="text-slate-200">{typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)}</span>
+                    <div key={i} className="p-2 rounded bg-[#07090f] border border-[#1b2234] flex items-start gap-2">
+                      <span className="px-1 py-0.2 rounded bg-[#121929] text-[#58a6ff] border border-[#1d2d47] text-[9px] font-bold flex-shrink-0">
+                        {ev.stage || 'EVENT'}
+                      </span>
+                      <span className="text-[#8b949e] text-[10px] font-semibold flex-shrink-0">
+                        {ev.kind}:
+                      </span>
+                      <span className="text-[#c9d1d9] text-[11px] break-all">
+                        {typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload)}
+                      </span>
                     </div>
                   ))
                 )}
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* 3. RCA REPORT CARD: Root Cause Summary & Blamed Commit */}
-        <div className="rounded-xl bg-slate-900/80 border border-slate-800 p-4 md:p-5 shadow-lg space-y-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={15} className="text-rose-400" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-rose-300">
-              Root Cause Analysis (RCA) Report
-            </h2>
-          </div>
-
-          <div className="p-3 rounded-lg bg-rose-950/20 border border-rose-500/20 text-xs space-y-1">
-            <span className="text-slate-400 font-mono text-[10px] uppercase">Identified Root Cause:</span>
-            <div className="text-rose-300 font-bold font-mono text-sm">
-              {rootCauseSummary}
-            </div>
-            <div className="text-slate-400 text-xs">
-              Direct dictionary indexing of missing optional key triggered 500 Internal Server Error in FastAPI checkout pipeline.
             </div>
           </div>
-
-          {/* Suspect Culprit Commit Card */}
-          <div className="p-3 rounded-lg bg-black/40 border border-slate-800 space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500 font-mono text-[10px] uppercase tracking-wider">
-                Blamed Culprit Commit
-              </span>
-              <span className="text-amber-400 font-mono text-[11px]">{suspectTime}</span>
-            </div>
-
-            <div className="flex items-center gap-2 font-mono">
-              <GitCommit size={14} className="text-amber-400 flex-shrink-0" />
-              <span className="text-amber-300 font-bold">{suspectHash}</span>
-              <span className="text-slate-400">by {suspectAuthor}</span>
-            </div>
-
-            <p className="text-slate-300 text-xs italic">
-              "{suspectMessage}"
-            </p>
-
-            <div className="flex items-center gap-2 pt-1 border-t border-slate-800 text-[11px] font-mono text-slate-400">
-              <FileCode size={12} className="text-indigo-400" />
-              <span>Suspect Location:</span>
-              <span className="text-indigo-300 font-semibold">{suspectLocation}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 4. CANARY STATUS CARD: Canary 8001 (Fix-Forward) vs Canary 8002 (Rollback) */}
-        <div className="rounded-xl bg-slate-900/80 border border-slate-800 p-4 md:p-5 shadow-lg space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Layers size={15} className="text-indigo-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                Canary Staging Health & AI Verdict
-              </h2>
-            </div>
-            <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
-              Fix-Forward ({ffConfidence}%) vs Rollback ({rbConfidence}%)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Canary 8001: Fix-Forward */}
-            <div className="p-3 rounded-lg bg-gradient-to-b from-indigo-950/30 to-slate-950 border border-indigo-500/30 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Canary 8001 (Fix-Forward)
-                </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700">
-                  200 OK
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Applies deterministic 1-line patch using <code className="text-indigo-300 bg-black/40 px-1 py-0.5 rounded font-mono">order.get("discount", 0.0)</code>.
-              </p>
-              <div className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 size={12} />
-                <span>Deterministic verifier 100% green</span>
-              </div>
-            </div>
-
-            {/* Canary 8002: Rollback */}
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  Canary 8002 (Rollback)
-                </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700">
-                  200 OK
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Reverts suspect commit <code className="text-slate-300 bg-black/40 px-1 py-0.5 rounded font-mono">{suspectHash}</code> back to previous clean baseline.
-              </p>
-              <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
-                <RotateCcw size={12} />
-                <span>Disables new discount feature</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 5. COLLAPSIBLE EVIDENCE ACCORDION */}
-        <div className="rounded-xl bg-slate-900/80 border border-slate-800 divide-y divide-slate-800 overflow-hidden shadow-lg">
-          {/* Accordion 1: Diff Preview (DiffViewer.jsx) */}
-          <div>
-            <button
-              onClick={() => toggleAccordion('diff')}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition"
-            >
-              <div className="flex items-center gap-2.5">
-                <FileCode size={15} className="text-indigo-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Patch Diff Preview
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono text-emerald-400">+1 / -1 lines</span>
-                {openAccordions.diff ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-              </div>
-            </button>
-            {openAccordions.diff && (
-              <div className="p-3 md:p-4 bg-black/40">
-                <DiffViewer diffText={diffContent} />
-              </div>
-            )}
-          </div>
-
-          {/* Accordion 2: PR Review Notes & Test Evidence */}
-          <div>
-            <button
-              onClick={() => toggleAccordion('evidence')}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition"
-            >
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck size={15} className="text-emerald-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Deterministic Test Evidence & PR Notes
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono text-emerald-400">PASSED</span>
-                {openAccordions.evidence ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-              </div>
-            </button>
-            {openAccordions.evidence && (
-              <div className="p-3 md:p-4 bg-black/40 space-y-3 text-xs font-mono">
-                <div className="p-3 rounded-lg bg-rose-950/20 border border-rose-500/20">
-                  <span className="text-rose-400 block font-bold mb-1 text-[11px]">
-                    ❌ Before Patch (Reproduction Test):
-                  </span>
-                  <div className="text-rose-300 whitespace-pre-wrap">{testEvidence.before}</div>
-                </div>
-
-                <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20">
-                  <span className="text-emerald-400 block font-bold mb-1 text-[11px]">
-                    ✅ After Patch (Canary Staging Suite):
-                  </span>
-                  <div className="text-emerald-300 whitespace-pre-wrap">{testEvidence.after}</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Accordion 3: Captured Stack Trace */}
-          <div>
-            <button
-              onClick={() => toggleAccordion('traceback')}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition"
-            >
-              <div className="flex items-center gap-2.5">
-                <Terminal size={15} className="text-rose-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Captured Python Traceback & Service Logs
-                </span>
-              </div>
-              {openAccordions.traceback ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-            </button>
-            {openAccordions.traceback && (
-              <div className="p-3 md:p-4 bg-black/40 space-y-2">
-                <pre className="p-3 rounded-lg bg-black/90 border border-rose-500/30 text-xs font-mono text-rose-300 overflow-x-auto leading-relaxed">
-                  {incident.trace || incident.log_tail || "Traceback (most recent call last):\n  File 'app.py', line 45, in calculate_order\n    discount = order['discount']\nKeyError: 'discount'"}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Inline Mobile Action Buttons (Visible on desktop & mobile within content) */}
-        <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-4 shadow-xl space-y-2.5">
-          <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
-            <span>Human-in-the-Loop Gate</span>
-            <span>Choose Action:</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {/* Action Button 1: Approve & Deploy Fix */}
-            <button
-              onClick={() => onApprove && onApprove(incident.id, 'fix')}
-              disabled={actionLoading || isResolved}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 active:scale-[0.98]"
-            >
-              <Zap size={16} className={actionLoading ? 'animate-spin' : ''} />
-              <span>{actionLoading ? 'Deploying Fix...' : '🚀 Approve & Deploy Fix'}</span>
-            </button>
-
-            {/* Action Button 2: Instant Rollback */}
-            <button
-              onClick={() => onRollback && onRollback(incident.id)}
-              disabled={actionLoading || isResolved}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 active:scale-[0.98]"
-            >
-              <RotateCcw size={16} />
-              <span>Instant Rollback</span>
-            </button>
-
-            {/* Action Button 3: Take Over */}
-            <button
-              onClick={() => onTakeover && onTakeover(incident.id)}
-              disabled={actionLoading || isTakeover}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg bg-slate-800 hover:bg-rose-950/80 hover:text-rose-300 text-slate-300 border border-slate-700 disabled:opacity-50 active:scale-[0.98]"
-            >
-              <UserX size={16} />
-              <span>{isTakeover ? 'Under Manual Takeover' : '🛑 Take Over'}</span>
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* 6. STICKY BOTTOM 1-TAP MOBILE ACTION BAR (Optimized for Phone Browsers) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1322]/95 backdrop-blur-md border-t border-slate-800 p-3 shadow-2xl">
-        <div className="flex items-center gap-2 max-w-lg mx-auto">
-          {/* Deploy Fix Button */}
-          <button
-            onClick={() => onApprove && onApprove(incident.id, 'fix')}
-            disabled={actionLoading || isResolved}
-            className="flex-1 py-3 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 bg-emerald-600 active:bg-emerald-700 text-white shadow-md disabled:opacity-50"
-          >
-            <Zap size={15} />
-            <span className="truncate">Deploy Fix</span>
-          </button>
+      {/* 3. Sticky Flat SRE Resolution Action Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d111a] border-t border-[#1b2234] p-2.5">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#8b949e]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+            <span>Canary 8001 Ready • Watchdog Armed</span>
+          </div>
 
-          {/* Rollback Button */}
-          <button
-            onClick={() => onRollback && onRollback(incident.id)}
-            disabled={actionLoading || isResolved}
-            className="flex-1 py-3 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 bg-amber-600 active:bg-amber-700 text-white shadow-md disabled:opacity-50"
-          >
-            <RotateCcw size={15} />
-            <span className="truncate">Rollback</span>
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => onApprove && onApprove('fix_forward')}
+              disabled={actionLoading || isResolved}
+              className="flex-1 sm:flex-none px-3.5 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white font-mono text-xs font-semibold flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            >
+              <Zap size={13} />
+              <span>{actionLoading ? 'Promoting...' : 'Deploy Fix (8001)'}</span>
+            </button>
 
-          {/* Take Over Button */}
-          <button
-            onClick={() => onTakeover && onTakeover(incident.id)}
-            disabled={actionLoading || isTakeover}
-            className="py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center bg-slate-800 active:bg-rose-950 text-slate-300 border border-slate-700 disabled:opacity-50"
-            title="Manual Takeover"
-          >
-            <UserX size={16} className="text-rose-400" />
-          </button>
+            <button
+              onClick={() => onRollback && onRollback()}
+              disabled={actionLoading || isResolved}
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] font-mono text-xs font-medium flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
+            >
+              <RotateCcw size={12} />
+              <span>Rollback (8002)</span>
+            </button>
+
+            <button
+              onClick={() => onTakeover && onTakeover()}
+              disabled={actionLoading || isResolved}
+              className="px-2.5 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs font-mono flex items-center justify-center gap-1 border border-[#212a3d] transition disabled:opacity-50"
+              title="Pause automation for manual SRE intervention"
+            >
+              <UserX size={12} />
+              <span className="hidden sm:inline">Take Over</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

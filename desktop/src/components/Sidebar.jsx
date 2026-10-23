@@ -1,15 +1,13 @@
 import React from 'react';
 import {
+  LayoutDashboard,
   ShieldAlert,
-  Activity,
-  Settings,
+  Terminal,
   Server,
   GitBranch,
-  Flame,
-  CheckCircle2,
-  Clock,
-  Radio,
-  ExternalLink,
+  Bot,
+  Users,
+  Settings,
   ChevronRight,
   Filter
 } from 'lucide-react';
@@ -27,11 +25,7 @@ export default function Sidebar({
 }) {
   const activeCount = incidents.filter(
     (i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK'
-  ).length;
-
-  const resolvedCount = incidents.filter(
-    (i) => i.status === 'RESOLVED' || i.status === 'DEPLOYED' || i.status === 'ROLLED_BACK'
-  ).length;
+  );
 
   const filteredIncidents = incidents.filter((inc) => {
     if (incidentFilter === 'active') {
@@ -43,197 +37,169 @@ export default function Sidebar({
     return true;
   });
 
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    {
+      id: 'incidents',
+      label: 'Incidents',
+      icon: ShieldAlert,
+      badge: activeCount.length > 0 ? `${activeCount.length}` : null,
+      badgeColor: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+    },
+    { id: 'logs', label: 'Logs Explorer', icon: Terminal },
+    { id: 'services', label: 'Services', icon: Server, statusDot: activeCount.length > 0 ? 'bg-[#d29922]' : 'bg-[#3fb950]' },
+    { id: 'repositories', label: 'Repositories', icon: GitBranch },
+    { id: 'agents', label: 'Agents', icon: Bot, badge: '5', badgeColor: 'bg-[#121929] text-[#58a6ff] border-[#1d2d47]' },
+    { id: 'team', label: 'Team', icon: Users },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
+
   return (
-    <aside className="w-[280px] flex-shrink-0 bg-gh-surface border-r border-gh-border flex flex-col h-full select-none">
-      {/* Brand & Workspace Title */}
-      <div className="h-12 px-4 border-b border-gh-border flex items-center justify-between text-gh-text-muted">
-        <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-sm shadow-indigo-500/30">
+    <aside className="w-[240px] flex-shrink-0 bg-[#0d111a] border-r border-[#1b2234] flex flex-col h-full select-none text-[#c9d1d9]">
+      {/* Brand & Workspace Title - Matte SRE Header */}
+      <div className="h-11 px-3 border-b border-[#1b2234] flex items-center justify-between text-[#8b949e]">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded bg-[#1f293d] border border-[#2e3d5b] flex items-center justify-center text-white text-[10px] font-bold font-mono">
             P
           </div>
-          <div>
-            <div className="text-[13px] font-bold text-gh-text-bright leading-none">ProdPilot</div>
-            <div className="text-[10px] text-gh-text-dim mt-0.5 font-mono">Autonomous SRE</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xs font-semibold text-[#f0f6fc] tracking-tight">ProdPilot</span>
+            <span className="text-[10px] text-[#485263] font-mono">v2.2</span>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-[#07090f] border border-[#1b2234]">
           <span
-            className={`w-2 h-2 rounded-full ${
-              apiConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+            className={`w-1.5 h-1.5 rounded-full ${
+              apiConnected ? 'bg-[#3fb950]' : 'bg-[#f85149]'
             }`}
           />
-          <span className="text-[11px] font-mono text-gh-text-dim">
-            {apiConnected ? 'LIVE' : 'OFFLINE'}
+          <span className="text-[9px] font-mono text-[#8b949e]">
+            {apiConnected ? 'ONLINE' : 'OFFLINE'}
           </span>
         </div>
       </div>
 
-      {/* Streamlined Primary Navigation: Incidents, Telemetry & Logs, Settings */}
-      <div className="p-2 space-y-1 border-b border-gh-border">
-        {/* 1. Incidents */}
-        <button
-          onClick={() => setActiveNav('incidents')}
-          className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
-            activeNav === 'incidents'
-              ? 'bg-gh-subtle text-gh-text-bright border border-gh-blue-border'
-              : 'text-gh-text hover:bg-gh-subtle hover:text-gh-text-bright'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <ShieldAlert
-              size={16}
-              className={activeCount > 0 ? 'text-amber-400 animate-pulse' : 'text-gh-text-muted'}
-            />
-            <span>Incidents</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {activeCount > 0 && (
-              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-red-950/80 text-red-400 border border-red-800 font-mono font-semibold">
-                {activeCount} active
-              </span>
-            )}
-            <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-gh-border text-gh-text-muted font-mono">
-              {incidents.length}
-            </span>
-          </div>
-        </button>
+      {/* 8 Primary Navigation Items */}
+      <div className="p-1.5 space-y-0.5 border-b border-[#1b2234]">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeNav === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveNav(item.id)}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition ${
+                isActive
+                  ? 'bg-[#171f30] text-[#f0f6fc] font-medium border border-[#293652]'
+                  : 'text-[#8b949e] hover:bg-[#121824] hover:text-[#c9d1d9] border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon
+                  size={14}
+                  className={
+                    isActive
+                      ? 'text-[#58a6ff]'
+                      : item.id === 'incidents' && activeCount.length > 0
+                      ? 'text-[#ff7b72]'
+                      : 'text-[#6e7681]'
+                  }
+                />
+                <span>{item.label}</span>
+              </div>
 
-        {/* 2. Telemetry & Logs */}
-        <button
-          onClick={() => setActiveNav('telemetry')}
-          className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
-            activeNav === 'telemetry'
-              ? 'bg-gh-subtle text-gh-text-bright border border-gh-blue-border'
-              : 'text-gh-text hover:bg-gh-subtle hover:text-gh-text-bright'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <Activity size={16} className="text-indigo-400" />
-            <span>Telemetry & Logs</span>
-          </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 font-mono">
-            SSE
-          </span>
-        </button>
-
-        {/* 3. Settings */}
-        <button
-          onClick={() => setActiveNav('settings')}
-          className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
-            activeNav === 'settings'
-              ? 'bg-gh-subtle text-gh-text-bright border border-gh-blue-border'
-              : 'text-gh-text hover:bg-gh-subtle hover:text-gh-text-bright'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <Settings size={16} className="text-gh-text-muted" />
-            <span>Settings</span>
-          </div>
-          <span className="text-[11px] text-gh-text-dim font-mono">Model 1</span>
-        </button>
+              <div className="flex items-center gap-1.5">
+                {item.statusDot && !isActive && (
+                  <span className={`w-1.5 h-1.5 rounded-full ${item.statusDot}`} />
+                )}
+                {item.badge && !isActive && (
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded font-mono border ${item.badgeColor}`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Incident Sub-navigation & List */}
+      {/* Incident Sub-list */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Incident Filter Pills */}
-        <div className="px-3 pt-3 pb-2 flex items-center justify-between border-b border-gh-border/60">
-          <div className="flex items-center gap-1 text-[11px]">
-            <button
-              onClick={() => setIncidentFilter && setIncidentFilter('all')}
-              className={`px-2 py-0.5 rounded ${
-                incidentFilter === 'all'
-                  ? 'bg-gh-border text-gh-text-bright font-semibold'
-                  : 'text-gh-text-dim hover:text-gh-text'
-              }`}
-            >
-              All ({incidents.length})
-            </button>
-            <button
-              onClick={() => setIncidentFilter && setIncidentFilter('active')}
-              className={`px-2 py-0.5 rounded ${
-                incidentFilter === 'active'
-                  ? 'bg-amber-950/60 text-amber-300 font-semibold border border-amber-800/40'
-                  : 'text-gh-text-dim hover:text-amber-400'
-              }`}
-            >
-              Active ({activeCount})
-            </button>
-            <button
-              onClick={() => setIncidentFilter && setIncidentFilter('resolved')}
-              className={`px-2 py-0.5 rounded ${
-                incidentFilter === 'resolved'
-                  ? 'bg-emerald-950/60 text-emerald-300 font-semibold border border-emerald-800/40'
-                  : 'text-gh-text-dim hover:text-emerald-400'
-              }`}
-            >
-              Resolved ({resolvedCount})
-            </button>
+        <div className="px-2.5 pt-2.5 pb-1.5 flex items-center justify-between border-b border-[#1b2234]">
+          <div className="flex items-center gap-1 text-[10px] font-mono text-[#8b949e]">
+            <span className="font-semibold uppercase tracking-wider text-[9px] text-[#6e7681]">
+              INCIDENTS
+            </span>
+            <span>({incidents.length})</span>
+          </div>
+
+          <div className="flex items-center bg-[#07090f] rounded p-0.5 border border-[#1b2234]">
+            {['all', 'active', 'resolved'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setIncidentFilter(f)}
+                className={`px-1.5 py-0.2 rounded text-[9px] font-mono capitalize transition ${
+                  incidentFilter === f
+                    ? 'bg-[#1f293d] text-[#f0f6fc] font-bold'
+                    : 'text-[#6e7681] hover:text-[#c9d1d9]'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Scrollable Incident Feed */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        {/* Scrollable Incident Items */}
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
           {filteredIncidents.length === 0 ? (
-            <div className="py-8 px-4 text-center text-gh-text-dim text-xs">
-              No {incidentFilter !== 'all' ? incidentFilter : ''} incidents found.
+            <div className="p-3 text-center text-[#485263] text-xs font-mono">
+              No {incidentFilter} incidents
             </div>
           ) : (
-            filteredIncidents.map((incident) => {
-              const isSelected = activeIncident?.id === incident.id;
-              const isAwaiting = incident.status === 'AWAITING_APPROVAL';
-              const isResolved =
-                incident.status === 'RESOLVED' ||
-                incident.status === 'DEPLOYED' ||
-                incident.status === 'ROLLED_BACK';
+            filteredIncidents.map((inc) => {
+              const isSelected = activeIncident?.id === inc.id && activeNav === 'incidents';
+              const isPending =
+                inc.status !== 'RESOLVED' &&
+                inc.status !== 'DEPLOYED' &&
+                inc.status !== 'ROLLED_BACK';
 
               return (
                 <button
-                  key={incident.id}
+                  key={inc.id}
                   onClick={() => {
-                    onSelectIncident(incident);
+                    onSelectIncident(inc);
                     setActiveNav('incidents');
                   }}
-                  className={`w-full text-left p-2.5 rounded-lg transition-all border ${
+                  className={`w-full text-left p-2 rounded transition border font-mono text-xs space-y-0.5 block ${
                     isSelected
-                      ? 'bg-gh-subtle text-gh-text-bright border-indigo-500/50 shadow-sm'
-                      : 'text-gh-text border-transparent hover:bg-gh-subtle hover:border-gh-border'
+                      ? 'bg-[#151c2b] border-[#388bfd] text-[#f0f6fc]'
+                      : 'bg-[#090d16] border-[#1b2234] hover:bg-[#111724] text-[#8b949e]'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-1.5 mb-1">
-                    <span className="font-mono text-[11px] font-semibold text-indigo-400 truncate">
-                      {incident.id}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#58a6ff]">
+                      {inc.id}
                     </span>
-                    {isAwaiting && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 font-semibold animate-pulse">
-                        AWAITING
-                      </span>
-                    )}
-                    {isResolved && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-                        RESTORED
-                      </span>
-                    )}
-                    {!isAwaiting && !isResolved && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800">
-                        {incident.status}
-                      </span>
-                    )}
+                    <span
+                      className={`text-[9px] px-1 py-0.2 rounded font-bold uppercase border ${
+                        isPending
+                          ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                          : 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                      }`}
+                    >
+                      {inc.status}
+                    </span>
                   </div>
-
-                  <div className="text-[12px] font-medium text-gh-text-bright truncate">
-                    {incident.suspected_area || incident.title || incident.service}
+                  <div className="text-[11px] text-[#c9d1d9] line-clamp-1 leading-snug">
+                    {inc.title || inc.suspected_area || 'Production Outage'}
                   </div>
-
-                  {incident.suspect_commit && (
-                    <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gh-text-dim">
-                      <GitBranch size={11} className="text-purple-400 flex-shrink-0" />
-                      <span className="truncate font-mono">
-                        {typeof incident.suspect_commit === 'string'
-                          ? incident.suspect_commit.slice(0, 7)
-                          : incident.suspect_commit.hash?.slice(0, 7) || 'fix-commit'}
-                      </span>
-                    </div>
-                  )}
+                  <div className="text-[9px] text-[#485263] flex items-center justify-between pt-0.5">
+                    <span>{inc.service || 'demo-prod'}</span>
+                    <span className="text-[#e3b341]">SEV-1</span>
+                  </div>
                 </button>
               );
             })
@@ -241,18 +207,10 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* Connected Repo & Render Server Footer */}
-      <div className="p-3 border-t border-gh-border bg-gh-subtle/50 text-xs space-y-1.5">
-        <div className="flex items-center justify-between text-gh-text-dim">
-          <span className="font-mono text-[11px]">Target Service</span>
-          <span className="text-gh-text-bright font-mono text-[11px]">demo-prod:8000</span>
-        </div>
-        <div className="flex items-center justify-between text-gh-text-dim">
-          <span className="font-mono text-[11px]">Backend Tunnel</span>
-          <span className="text-indigo-400 font-mono text-[10px] truncate max-w-[130px]" title={apiBaseUrl}>
-            {apiBaseUrl}
-          </span>
-        </div>
+      {/* Footer Info */}
+      <div className="p-2 border-t border-[#1b2234] bg-[#07090f] text-[10px] font-mono text-[#485263] flex items-center justify-between">
+        <span>Model 1</span>
+        <span className="text-[#3fb950]">Tunnel Active</span>
       </div>
     </aside>
   );

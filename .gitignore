@@ -42,3 +42,5 @@ dist-electron/
 # External / Sub-repos
 demo-prod/
 telegram/
+.pids/
+desktop/dist/

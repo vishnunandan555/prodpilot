@@ -33,119 +33,125 @@ export default function SettingsView({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gh-canvas text-gh-text overflow-y-auto p-6 md:p-8">
-      <div className="max-w-2xl w-full mx-auto space-y-6">
+    <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto p-5 md:p-6 font-sans">
+      <div className="max-w-2xl w-full mx-auto space-y-5">
         <div>
-          <h1 className="text-xl font-bold text-gh-text-bright flex items-center gap-2.5">
-            <Settings size={20} className="text-indigo-400" />
-            <span>Platform Settings</span>
-          </h1>
-          <p className="text-xs text-gh-text-dim mt-1">
-            Configure ProdPilot Model 1 topology: Laptop Backend, Cloudflare Tunnel & Render Static Web App.
-          </p>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded bg-[#171f30] border border-[#293652] flex items-center justify-center text-[#58a6ff]">
+              <Settings size={15} />
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
+                Platform Configuration
+              </h1>
+              <p className="text-[11px] text-[#8b949e] font-mono">
+                Model 1 topology: Local Linux Host, Cloudflare Tunnel & Mobile Web Gateway
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Model 1 Architecture Card */}
-        <div className="p-4 rounded-xl bg-gh-surface border border-gh-border space-y-2">
+        <div className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 font-mono">
-              Architecture Model 1
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#58a6ff]">
+              Architecture Topology: Model 1
             </span>
             <span
-              className={`text-[11px] font-mono px-2 py-0.5 rounded ${
+              className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
                 apiConnected
-                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                  : 'bg-rose-950 text-rose-400 border border-rose-800'
+                  ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                  : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
               }`}
             >
-              {apiConnected ? '🟢 Connected' : '🔴 Disconnected'}
+              {apiConnected ? 'ONLINE :8765' : 'OFFLINE'}
             </span>
           </div>
-          <p className="text-xs text-gh-text leading-relaxed">
-            ProdPilot runs the heavy Python SRE agent and verification engine locally on your laptop, exposes port 8765 via Cloudflare Tunnel, and provides a mobile incident interface on Render.
+          <p className="text-xs text-[#8b949e] font-mono leading-relaxed">
+            The Python SRE agent and verification engine execute locally on the Linux workstation, exposing port 8765 via Cloudflare Tunnel, while mobile incident approvals sync instantly via Render.
           </p>
         </div>
 
         {/* Settings Form */}
-        <form onSubmit={handleSave} className="space-y-5">
+        <form onSubmit={handleSave} className="space-y-4">
           {/* 1. Cloudflare Tunnel / Backend API URL */}
-          <div className="p-4 rounded-xl bg-gh-surface border border-gh-border space-y-3">
-            <label className="block text-xs font-bold text-gh-text-bright">
-              Backend API URL (Cloudflare Tunnel)
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
+            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
+              Backend API URL (Cloudflare Tunnel or Local RPC)
             </label>
-            <p className="text-[11px] text-gh-text-dim">
-              Set this to your live Cloudflare Tunnel URL (e.g., <code className="text-indigo-300">https://*.trycloudflare.com</code>) or local backend (<code className="text-indigo-300">http://127.0.0.1:8765</code>).
+            <p className="text-[11px] text-[#8b949e] font-mono">
+              Live Cloudflare Tunnel endpoint (<code className="text-[#58a6ff]">https://*.trycloudflare.com</code>) or local daemon (<code className="text-[#58a6ff]">http://127.0.0.1:8765</code>).
             </p>
             <div className="flex items-center gap-2">
-              <Server size={16} className="text-gh-text-muted flex-shrink-0" />
+              <Server size={15} className="text-[#6e7681] flex-shrink-0" />
               <input
                 type="text"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="https://xyz.trycloudflare.com"
-                className="flex-1 px-3 py-2 bg-gh-inset border border-gh-border rounded-lg text-xs font-mono text-gh-text-bright focus:outline-none focus:border-indigo-500"
+                placeholder="http://127.0.0.1:8765"
+                className="flex-1 px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
             </div>
           </div>
 
           {/* 2. Connected Repository */}
-          <div className="p-4 rounded-xl bg-gh-surface border border-gh-border space-y-3">
-            <label className="block text-xs font-bold text-gh-text-bright">
-              Connected Target Repository
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
+            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
+              Connected Target Service
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-[11px] text-gh-text-dim block mb-1">Service / Repo Name</span>
+                <span className="text-[10px] text-[#8b949e] font-mono block mb-1">Service Identifier</span>
                 <input
                   type="text"
                   value={repoName}
                   onChange={(e) => setRepoName(e.target.value)}
-                  className="w-full px-3 py-2 bg-gh-inset border border-gh-border rounded-lg text-xs font-mono text-gh-text-bright focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
               </div>
               <div>
-                <span className="text-[11px] text-gh-text-dim block mb-1">Target Production Port</span>
+                <span className="text-[10px] text-[#8b949e] font-mono block mb-1">Production Port</span>
                 <input
                   type="text"
                   disabled
                   value="8000 (FastAPI)"
-                  className="w-full px-3 py-2 bg-gh-inset border border-gh-border rounded-lg text-xs font-mono text-gh-text-dim"
+                  className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#6e7681]"
                 />
               </div>
             </div>
           </div>
 
           {/* 3. Render Static Web URL */}
-          <div className="p-4 rounded-xl bg-gh-surface border border-gh-border space-y-3">
-            <label className="block text-xs font-bold text-gh-text-bright">
-              Render Hosted Web URL
+          <div className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2.5">
+            <label className="block text-xs font-semibold text-[#f0f6fc] font-mono">
+              Public Render Hosted Web URL
             </label>
-            <p className="text-[11px] text-gh-text-dim">
-              The public URL for this static frontend on Render, included in mobile Telegram alert links.
+            <p className="text-[11px] text-[#8b949e] font-mono">
+              Public Web URL included in Telegram mobile alert buttons for out-of-band approvals.
             </p>
             <div className="flex items-center gap-2">
-              <Globe size={16} className="text-gh-text-muted flex-shrink-0" />
+              <Globe size={15} className="text-[#6e7681] flex-shrink-0" />
               <input
                 type="text"
                 value={renderWebUrl}
                 onChange={(e) => setRenderWebUrl(e.target.value)}
                 placeholder="https://prodpilot.onrender.com"
-                className="flex-1 px-3 py-2 bg-gh-inset border border-gh-border rounded-lg text-xs font-mono text-gh-text-bright focus:outline-none focus:border-indigo-500"
+                className="flex-1 px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
             </div>
           </div>
 
           {/* Save Button */}
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-gh-text-dim">
-              Changes are immediately applied to active API client & SSE streams.
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[11px] text-[#6e7681] font-mono">
+              Changes apply instantly to active API client & SSE streams.
             </span>
             <button
               type="submit"
-              className="gh-btn-primary px-4 py-2 text-xs flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded text-xs font-medium bg-[#238636] hover:bg-[#2ea043] text-white flex items-center gap-1.5 transition"
             >
-              {saved ? <Check size={14} className="text-emerald-400" /> : <Save size={14} />}
-              <span>{saved ? 'Settings Saved!' : 'Save Settings'}</span>
+              {saved ? <Check size={13} className="text-white" /> : <Save size={13} />}
+              <span>{saved ? 'Saved!' : 'Save Config'}</span>
             </button>
           </div>
         </form>

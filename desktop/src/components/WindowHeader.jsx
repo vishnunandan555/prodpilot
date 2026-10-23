@@ -16,31 +16,31 @@ export default function WindowHeader({
   isRefreshing
 }) {
   return (
-    <header className="h-9 px-3 bg-gh-inset border-b border-gh-border flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20">
+    <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
       {/* Left: Window Identity / Branding */}
       <div className="flex items-center gap-2">
-        <div className="w-3.5 h-3.5 rounded-full bg-gh-border flex items-center justify-center text-[8px] font-bold text-gh-text-bright">
+        <div className="w-4 h-4 rounded bg-[#1f293d] border border-[#2e3d5b] flex items-center justify-center text-[9px] font-bold font-mono text-[#f0f6fc]">
           P
         </div>
-        <span className="font-semibold text-gh-text-bright tracking-tight">ProdPilot</span>
-        <span className="text-gh-text-dim">·</span>
-        <span className="text-gh-text-muted font-mono text-[11px]">Autonomous SRE & Developer Workspace</span>
+        <span className="font-semibold text-[#f0f6fc] tracking-tight">ProdPilot</span>
+        <span className="text-[#485263]">·</span>
+        <span className="text-[#8b949e] font-mono text-[11px]">Autonomous SRE & Developer Workspace</span>
       </div>
 
       {/* Center: Live Demo Quick Action Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 font-mono">
         <button
           onClick={onTriggerCrash}
-          className="gh-btn-danger px-2.5 py-0.5 text-[11px] flex items-center gap-1.5"
+          className="px-2.5 py-0.5 rounded text-[11px] bg-[#211517] hover:bg-[#34181c] text-[#ff7b72] border border-[#4a1c24] flex items-center gap-1.5 transition"
           title="Simulate 500 error on /orders"
         >
-          <Flame size={12} className="text-red-400" />
+          <Flame size={12} className="text-[#ff7b72]" />
           <span>Trigger Crash</span>
         </button>
 
         <button
           onClick={onResetDemo}
-          className="gh-btn-secondary px-2.5 py-0.5 text-[11px] flex items-center gap-1.5"
+          className="px-2.5 py-0.5 rounded text-[11px] bg-[#171f30] hover:bg-[#1f293d] text-[#c9d1d9] border border-[#293652] flex items-center gap-1.5 transition"
           title="Restore clean baseline on port 8000"
         >
           <RotateCcw size={11} className={isRefreshing ? 'animate-spin' : ''} />
@@ -50,27 +50,27 @@ export default function WindowHeader({
 
       {/* Right: Backend API Status & Native Linux Window Controls */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-mono text-gh-text-dim">
+        <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#8b949e]">
           {apiConnected ? (
-            <span className="flex items-center gap-1 text-emerald-400">
+            <span className="flex items-center gap-1 text-[#3fb950] px-1.5 py-0.2 rounded bg-[#0d1e17] border border-[#1b3d2b]">
               <Wifi size={11} /> 8765
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-red-400">
+            <span className="flex items-center gap-1 text-[#ff7b72] px-1.5 py-0.2 rounded bg-[#261317] border border-[#4a1c24]">
               <WifiOff size={11} /> Offline
             </span>
           )}
         </div>
 
         {/* Linux Window Minimizer/Maximizer Icons */}
-        <div className="flex items-center gap-2 text-gh-text-muted pl-2 border-l border-gh-border">
-          <button className="hover:text-gh-text-bright transition-colors" title="Minimize">
+        <div className="flex items-center gap-2 text-[#8b949e] pl-2 border-l border-[#1b2234]">
+          <button className="hover:text-[#f0f6fc] transition-colors" title="Minimize">
             <Minimize2 size={11} />
           </button>
-          <button className="hover:text-gh-text-bright transition-colors" title="Maximize">
+          <button className="hover:text-[#f0f6fc] transition-colors" title="Maximize">
             <Square size={10} />
           </button>
-          <button className="hover:text-red-400 transition-colors" title="Close">
+          <button className="hover:text-[#ff7b72] transition-colors" title="Close">
             <X size={12} />
           </button>
         </div>

@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import WindowHeader from './components/WindowHeader';
 import Sidebar from './components/Sidebar';
+import DashboardView from './components/DashboardView';
 import IncidentDetail from './components/IncidentDetail';
-import TelemetryView from './components/TelemetryView';
+import LogsView from './components/LogsView';
+import ServicesView from './components/ServicesView';
+import RepositoriesView from './components/RepositoriesView';
+import AgentsView from './components/AgentsView';
+import TeamView from './components/TeamView';
 import SettingsView from './components/SettingsView';
 
 // Read API URL from Vite environment variable (Cloudflare Tunnel URL) with localStorage fallback
@@ -62,7 +67,7 @@ tests/test_orders.py::test_health PASSED
 tests/test_orders.py::test_order_calculation PASSED
 tests/test_orders.py::test_post_order_endpoint PASSED
 tests/test_orders.py::test_order_history PASSED
-================ 5 passed in 0.42s ================`
+================ 5 passed in 0.42s ================\n\n100% tests passed. Zero regressions detected.`
     }
   },
   staging: {
@@ -72,13 +77,27 @@ tests/test_orders.py::test_order_history PASSED
   decision: {
     action: 'fix_forward',
     probabilities: { fix_forward: 0.85, rollback: 0.15 },
-    reason: 'Clean 1-line patch with 100% test pass. Suspect commit landed recently.'
+    reason: 'Clean 1-line patch with 100% test pass. Suspect commit landed recently with zero database migrations.'
   }
 };
 
 export default function App() {
   const [apiUrl, setApiUrl] = useState(getInitialApiUrl());
-  const [activeNav, setActiveNav] = useState('incidents'); // 'incidents', 'telemetry', 'settings'
+  // Parse path for /incidents/:id routing
+  const parsePathIncidentId = () => {
+    const path = window.location.pathname;
+    const match = path.match(/\/incidents\/([^\/]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  };
+
+  const getInitialNav = () => {
+    const params = new URLSearchParams(window.location.search);
+    const navParam = params.get('nav');
+    if (navParam) return navParam;
+    return parsePathIncidentId() ? 'incidents' : 'dashboard';
+  };
+
+  const [activeNav, setActiveNav] = useState(getInitialNav());
   const [incidentFilter, setIncidentFilter] = useState('all');
   const [incidents, setIncidents] = useState([FALLBACK_INCIDENT]);
   const [selectedIncident, setSelectedIncident] = useState(FALLBACK_INCIDENT);
@@ -91,13 +110,6 @@ export default function App() {
   const [showMobileList, setShowMobileList] = useState(false);
 
   const eventSourceRef = useRef(null);
-
-  // Parse path for /incidents/:id routing
-  const parsePathIncidentId = () => {
-    const path = window.location.pathname;
-    const match = path.match(/\/incidents\/([^\/]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
-  };
 
   // Responsive screen check
   useEffect(() => {
@@ -173,19 +185,23 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setSelectedIncident(data);
+        if (data.status === 'DEPLOYED' || data.status === 'RESOLVED') {
+          setDeploySuccess(true);
+        }
       }
     } catch (err) {
-      console.error('Failed to fetch incident detail:', err);
+      console.warn('Failed to fetch detailed incident record, using memory state:', err);
     }
   };
 
+  // Polling loop for active incident updates
   useEffect(() => {
     fetchIncidents();
-    const interval = setInterval(fetchIncidents, 3000);
+    const interval = setInterval(fetchIncidents, 4000);
     return () => clearInterval(interval);
   }, [apiUrl]);
 
-  // Subscribe to live SSE events for active incident
+  // SSE Stream Listener for real-time incident updates
   useEffect(() => {
     if (!selectedIncident?.id) return;
 
@@ -194,31 +210,35 @@ export default function App() {
     }
 
     try {
-      const sse = new EventSource(`${apiUrl}/incidents/${selectedIncident.id}/events`);
-      eventSourceRef.current = sse;
+      const sseUrl = `${apiUrl}/incidents/${selectedIncident.id}/events`;
+      const es = new EventSource(sseUrl);
+      eventSourceRef.current = es;
 
-      sse.onmessage = (e) => {
+      es.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(e.data);
+          const parsed = JSON.parse(event.data);
           setEvents((prev) => [...prev, parsed]);
 
-          if (
-            parsed.stage === 'AWAITING_APPROVAL' ||
-            parsed.kind === 'awaiting_approval' ||
-            parsed.kind === 'deployed'
-          ) {
-            fetchIncidentDetail(selectedIncident.id);
+          if (parsed.stage) {
+            setSelectedIncident((curr) => {
+              if (!curr) return curr;
+              return { ...curr, status: parsed.stage };
+            });
           }
-        } catch (err) {
-          console.error('SSE parse error:', err);
+
+          if (parsed.stage === 'DEPLOYED' || parsed.stage === 'RESOLVED') {
+            setDeploySuccess(true);
+          }
+        } catch (e) {
+          // Non-JSON or keepalive comment
         }
       };
 
-      sse.onerror = () => {
-        sse.close();
+      es.onerror = () => {
+        // SSE error, gracefully wait for retry
       };
-    } catch (err) {
-      console.error('SSE connection error:', err);
+    } catch (e) {
+      // EventSource failed to initialize
     }
 
     return () => {
@@ -228,95 +248,62 @@ export default function App() {
     };
   }, [selectedIncident?.id, apiUrl]);
 
-  // Sync URL when selecting an incident
   const handleSelectIncident = (inc) => {
     setSelectedIncident(inc);
+    setEvents([]);
+    setDeploySuccess(inc.status === 'DEPLOYED' || inc.status === 'RESOLVED');
     fetchIncidentDetail(inc.id);
-    if (window.location.pathname !== `/incidents/${inc.id}`) {
-      window.history.pushState(null, '', `/incidents/${inc.id}`);
-    }
-    if (isMobileScreen) {
-      setShowMobileList(false);
+
+    // Update URL bar if in browser mode without reloading page
+    if (window.history.pushState) {
+      window.history.pushState({}, '', `/incidents/${encodeURIComponent(inc.id)}`);
     }
   };
 
-  // 1-Tap Mobile Action 1: [🚀 Approve & Deploy Fix]
-  const handleApprove = async (incidentId, action = 'fix') => {
+  // 1-Tap Mobile Action Approvals
+  const handleApprove = async (actionType = 'fix_forward') => {
+    if (!selectedIncident) return;
     setActionLoading(true);
     try {
-      // First attempt with requested action ('fix'), with fallback to 'fix_forward' if backend expects it
-      let res = await fetch(`${apiUrl}/incidents/${incidentId}/approve`, {
+      const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: action, source: 'mobile_web' }),
+        body: JSON.stringify({ action: actionType }),
       });
-
-      if (!res.ok && res.status === 400 && action === 'fix') {
-        res = await fetch(`${apiUrl}/incidents/${incidentId}/approve`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'fix_forward', source: 'mobile_web' }),
-        });
-      }
-
       if (res.ok) {
+        const result = await res.json();
         setDeploySuccess(true);
-        setTimeout(() => setDeploySuccess(false), 6000);
+        setSelectedIncident((curr) => ({
+          ...curr,
+          status: result.status || 'DEPLOYED',
+        }));
+        setTimeout(fetchIncidents, 1000);
       }
-      setTimeout(() => fetchIncidentDetail(incidentId), 800);
-      setTimeout(fetchIncidents, 1200);
     } catch (err) {
-      console.error('Approval failed:', err);
+      console.error('Approve failed:', err);
     } finally {
       setActionLoading(false);
     }
   };
 
-  // 1-Tap Mobile Action 2: [⏪ Instant Rollback]
-  const handleRollback = async (incidentId) => {
-    setActionLoading(true);
-    try {
-      const res = await fetch(`${apiUrl}/incidents/${incidentId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'rollback', source: 'mobile_web' }),
-      });
-
-      if (res.ok) {
-        setDeploySuccess(true);
-        setTimeout(() => setDeploySuccess(false), 6000);
-      }
-      setTimeout(() => fetchIncidentDetail(incidentId), 800);
-      setTimeout(fetchIncidents, 1200);
-    } catch (err) {
-      console.error('Rollback failed:', err);
-    } finally {
-      setActionLoading(false);
-    }
+  const handleRollback = async () => {
+    return handleApprove('rollback');
   };
 
-  // 1-Tap Mobile Action 3: [🛑 Take Over]
-  const handleTakeover = async (incidentId) => {
+  const handleTakeover = async () => {
+    if (!selectedIncident) return;
     setActionLoading(true);
     try {
-      // Notify backend via reject endpoint and update local status to MANUAL_TAKEOVER
-      await fetch(`${apiUrl}/incidents/${incidentId}/reject`, {
+      const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/takeover`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reason: 'Manual takeover by on-call engineer',
-          source: 'mobile_web',
-        }),
-      }).catch(() => {});
-
-      setSelectedIncident((prev) =>
-        prev ? { ...prev, status: 'MANUAL_TAKEOVER' } : prev
-      );
-      setIncidents((prev) =>
-        prev.map((i) =>
-          i.id === incidentId ? { ...i, status: 'MANUAL_TAKEOVER' } : i
-        )
-      );
+      });
+      if (res.ok) {
+        setSelectedIncident((curr) => ({
+          ...curr,
+          status: 'MANUAL_TAKEOVER',
+        }));
+        setTimeout(fetchIncidents, 1000);
+      }
     } catch (err) {
       console.error('Takeover failed:', err);
     } finally {
@@ -347,10 +334,8 @@ export default function App() {
     setTimeout(fetchIncidents, 1000);
   };
 
-  const isPathIncident = Boolean(parsePathIncidentId());
-
   return (
-    <div className="h-screen w-screen bg-[#070a12] text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+    <div className="h-screen w-screen bg-[#080b11] text-[#c9d1d9] flex flex-col font-sans select-none overflow-hidden">
       {/* Top Window Header (Hidden on small mobile screens to maximize viewable area) */}
       <div className="hidden sm:block flex-shrink-0">
         <WindowHeader
@@ -382,7 +367,18 @@ export default function App() {
         )}
 
         {/* Center Dynamic Views */}
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-gh-canvas min-w-0">
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#080b11] min-w-0">
+          {activeNav === 'dashboard' && (
+            <DashboardView
+              incidents={incidents}
+              onSelectIncident={handleSelectIncident}
+              onNavigate={(nav) => setActiveNav(nav)}
+              onTriggerCrash={handleTriggerCrash}
+              actionLoading={actionLoading}
+              apiConnected={apiConnected}
+            />
+          )}
+
           {activeNav === 'incidents' && (
             <IncidentDetail
               incident={selectedIncident}
@@ -397,13 +393,24 @@ export default function App() {
             />
           )}
 
-          {activeNav === 'telemetry' && (
-            <TelemetryView
-              events={events}
-              incident={selectedIncident}
-              apiConnected={apiConnected}
-              apiBaseUrl={apiUrl}
-            />
+          {(activeNav === 'logs' || activeNav === 'telemetry') && (
+            <LogsView incidents={incidents} activeIncident={selectedIncident} />
+          )}
+
+          {activeNav === 'services' && (
+            <ServicesView apiConnected={apiConnected} />
+          )}
+
+          {activeNav === 'repositories' && (
+            <RepositoriesView />
+          )}
+
+          {activeNav === 'agents' && (
+            <AgentsView />
+          )}
+
+          {activeNav === 'team' && (
+            <TeamView />
           )}
 
           {activeNav === 'settings' && (
