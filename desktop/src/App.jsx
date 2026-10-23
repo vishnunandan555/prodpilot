@@ -365,7 +365,14 @@ export default function App() {
           )}
 
           {(activeNav === 'logs' || activeNav === 'telemetry') && (
-            <LogsView apiUrl={apiUrl} onNavigate={(nav) => setActiveNav(nav)} />
+            <LogsView
+              apiUrl={apiUrl}
+              onNavigate={(nav) => setActiveNav(nav)}
+              onSelectIncident={(inc) => {
+                handleSelectIncident(inc);
+                setActiveNav('incidents');
+              }}
+            />
           )}
 
           {activeNav === 'servers' && (

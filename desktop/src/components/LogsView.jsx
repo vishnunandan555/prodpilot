@@ -13,11 +13,15 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   ChevronDown,
-  Sparkles
+  ChevronUp,
+  Sparkles,
+  Zap,
+  ArrowRight,
+  Bug
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
 
-export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate }) {
+export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate, onSelectIncident }) {
   const [servers, setServers] = useState([]);
   const [selectedServerId, setSelectedServerId] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -30,6 +34,12 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
   const [isSuspended, setIsSuspended] = useState(false);
   const [waking, setWaking] = useState(false);
   const [rateLimitInfo, setRateLimitInfo] = useState(null);
+
+  // Autonomous Triage & Jev Decision states
+  const [triageSummary, setTriageSummary] = useState(null);
+  const [triaging, setTriaging] = useState(false);
+  const [triageAlert, setTriageAlert] = useState(null);
+  const [collapsedTracebacks, setCollapsedTracebacks] = useState({});
 
   // Auto-refresh cadence: 10 seconds default, can be 5, 10, 30, or 0 (off)
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(10);
@@ -132,6 +142,9 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
           if (data.rate_limit) {
             setRateLimitInfo(data.rate_limit);
           }
+          if (data.triage_summary) {
+            setTriageSummary(data.triage_summary);
+          }
         }
       } else {
         setStreamConnected(false);
@@ -161,6 +174,54 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
     } finally {
       setWaking(false);
     }
+  };
+
+  const handleTriggerTriage = async () => {
+    const targetId = selectedServerIdRef.current;
+    if (!targetId) return;
+    setTriaging(true);
+    setTriageAlert(null);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${targetId}/triage-logs`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.ok && (data.incident_created || data.incident)) {
+        setTriageAlert({
+          type: 'success',
+          title: data.incident_created
+            ? 'Autonomous Incident Created & Evaluated by TypeSafe Jev'
+            : 'Recurring Production Incident Logged',
+          message:
+            data.message ||
+            `Incident ${data.incident?.id} evaluated by TypeSafe Jev (${
+              data.decision?.confidence ? Math.round(data.decision.confidence * 100) : 98
+            }% confidence). Dispatched Telegram alert & Antigravity fix synthesis.`,
+          incident: data.incident,
+        });
+      } else {
+        setTriageAlert({
+          type: 'info',
+          title: 'Triage Assessment Complete',
+          message: data.message || 'No unhandled exception or high-severity anomaly detected in recent logs.',
+        });
+      }
+    } catch (err) {
+      setTriageAlert({
+        type: 'error',
+        title: 'Triage Trigger Failed',
+        message: err.message || 'Error communicating with triage endpoint',
+      });
+    } finally {
+      setTriaging(false);
+    }
+  };
+
+  const toggleTraceback = (id) => {
+    setCollapsedTracebacks((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
   // Initial load whenever server selection changes
@@ -322,6 +383,16 @@ export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', onNavigate 
             >
               <Download size={13} />
               <span className="hidden sm:inline">Export</span>
+            </button>
+
+            <button
+              onClick={handleTriggerTriage}
+              disabled={triaging || !selectedServerId}
+              className="px-2.5 py-1.5 rounded-md bg-[#2d1218] hover:bg-[#3d1822] border border-[#ff4444]/40 text-xs font-semibold text-[#ff7b72] hover:text-[#ffa198] flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm"
+              title="Autonomous Triage & TypeSafe Jev Decision Engine"
+            >
+              <Sparkles size={13} className={triaging ? 'animate-spin text-[#ff7b72]' : 'text-[#ff4444]'} />
+              <span>{triaging ? 'Triaging...' : '⚡ Triage with Jev'}</span>
             </button>
 
             <button

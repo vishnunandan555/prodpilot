@@ -9,7 +9,11 @@ Provides REST & SSE endpoints for:
 
 import logging
 import os
+import re
+import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,7 +24,9 @@ from pydantic import BaseModel, Field
 from backend.prodpilot.db import (
     authenticate_user,
     clear_all_incidents,
+    compute_fingerprint,
     connect_server,
+    create_incident_with_fingerprint,
     create_project,
     create_server,
     create_user,
@@ -28,6 +34,7 @@ from backend.prodpilot.db import (
     delete_repo,
     delete_server,
     delete_user,
+    find_incident_by_fingerprint,
     get_active_project,
     get_active_repo,
     get_active_server,
@@ -37,12 +44,14 @@ from backend.prodpilot.db import (
     get_server,
     get_setting,
     get_user_by_id,
+    increment_incident_recurrence,
     list_incidents,
     list_projects,
     list_repos,
     list_servers,
     list_service_logs,
     list_users,
+    log_event,
     set_active_project,
     set_active_repo,
     set_active_server,
@@ -50,12 +59,49 @@ from backend.prodpilot.db import (
     update_server_status,
     update_user_profile,
 )
+from datetime import datetime
 from backend.prodpilot.integrations.github_client import GitHubClient
 from backend.prodpilot.integrations.render_client import RenderClient
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["platform"])
+
+# Global Cloudflare Tunnel state
+_TUNNEL_PROCESS: Optional[subprocess.Popen] = None
+_TUNNEL_URL: Optional[str] = None
+_TUNNEL_LOCK = threading.Lock()
+
+
+def _find_cloudflared() -> Optional[str]:
+    candidates = [
+        shutil.which("cloudflared"),
+        os.path.expanduser("~/.local/bin/cloudflared"),
+        "/usr/local/bin/cloudflared",
+        "/usr/bin/cloudflared",
+    ]
+    for c in candidates:
+        if c and os.path.exists(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def _monitor_tunnel_output(proc: subprocess.Popen):
+    global _TUNNEL_URL
+    url_pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+    try:
+        if proc.stdout:
+            for line in iter(proc.stdout.readline, ""):
+                if not line:
+                    break
+                match = url_pattern.search(line)
+                if match:
+                    found_url = match.group(0)
+                    _TUNNEL_URL = found_url
+                    set_setting("CLOUDFLARE_TUNNEL_URL", found_url)
+                    logger.info(f"Cloudflare Tunnel online at: {found_url}")
+    except Exception as e:
+        logger.warning(f"Error reading tunnel stdout: {e}")
 
 
 # ---------------------------------------------------------
@@ -464,7 +510,160 @@ def get_server_render_logs_endpoint(server_id: str, limit: int = 100) -> Dict[st
     key = get_effective_render_key(server.get("render_api_key"))
     client = RenderClient(api_key=key)
     logs_res = client.get_logs(service_id, limit=limit)
+
+    # Attach triage summary to logs response
+    try:
+        from backend.prodpilot.triage.classifier import classify_logs
+        triage = classify_logs(server.get("name", "production-service"), logs_res.get("logs", []))
+        logs_res["triage_summary"] = {
+            "severity": triage.severity,
+            "is_crash": triage.is_crash,
+            "reason": triage.reason,
+            "suspected_area": triage.suspected_area,
+        }
+    except Exception:
+        pass
+
     return logs_res
+
+
+def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
+    """Analyzes server logs, detects crashes/tracebacks, creates incident, and evaluates with TypeSafe Jev."""
+    server = get_server(server_id)
+    if not server:
+        return {"ok": False, "error": f"Server {server_id} not found"}
+
+    service_id = server.get("render_service_id")
+    if not service_id:
+        return {"ok": False, "error": "No Render Service ID attached"}
+
+    key = get_effective_render_key(server.get("render_api_key"))
+    client = RenderClient(api_key=key)
+    logs_res = client.get_logs(service_id, limit=limit)
+    logs = logs_res.get("logs", [])
+
+    from backend.prodpilot.triage.classifier import classify_logs, Severity
+    triage = classify_logs(server.get("name", "production-service"), logs)
+
+    if triage.severity not in (Severity.HIGH.value, Severity.INFRA.value) and not triage.is_crash:
+        return {
+            "ok": True,
+            "incident_created": False,
+            "severity": triage.severity,
+            "message": "No unhandled crash or high-severity anomaly detected in recent logs.",
+        }
+
+    # High severity or crash detected! Check fingerprint
+    fp = triage.fingerprint or compute_fingerprint(triage.trace or triage.log_tail)
+    existing = find_incident_by_fingerprint(fp)
+    if existing:
+        inc = increment_incident_recurrence(existing["id"])
+        return {
+            "ok": True,
+            "incident_created": False,
+            "status": "recurrent_incident",
+            "incident": inc,
+            "message": f"Recurring incident detected (Fingerprint {fp[:8]}...)",
+        }
+
+    # Create new Incident
+    now_iso = datetime.utcnow().isoformat()
+    incident_id = f"inc-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{os.urandom(2).hex()}"
+    trace_text = triage.trace or triage.log_tail
+    suspect_area = triage.suspected_area or server.get("name")
+
+    created = create_incident_with_fingerprint(
+        incident_id=incident_id,
+        service=server.get("name", "production-service"),
+        detected_at=now_iso,
+        status="OPEN",
+        severity=triage.severity,
+        health_url=server.get("health_url"),
+        trace=trace_text,
+        log_tail=triage.log_tail,
+        suspected_area=suspect_area,
+        root_cause_report=f"Autonomous Watchdog detected: {triage.reason}",
+        recovery_action="TRIAGE_AUTO",
+        fingerprint=fp,
+    )
+
+    # Invoke TypeSafe Jev Decision Engine on OpenRouter
+    from backend.prodpilot.decide.jev import decide_jev
+    decision = decide_jev(
+        incident=created,
+        staging_status={"fix_forward": {"health": True}, "rollback": {"health": True}},
+        patch_diff=None,
+        run_id=f"run-{incident_id}",
+    )
+
+    # Send Telegram alert
+    try:
+        tg_token = get_setting("TELEGRAM_BOT_TOKEN")
+        tg_chat = get_setting("TELEGRAM_ALLOWED_CHAT_ID")
+        if tg_token and tg_chat:
+            tunnel = get_setting("CLOUDFLARE_TUNNEL_URL") or "http://127.0.0.1:5173"
+            rec = decision.get("recommendation", "fix_forward")
+            conf = int(decision.get("confidence", 0.95) * 100)
+            msg_text = (
+                f"🚨 *PRODPILOT INCIDENT ALERT*\n\n"
+                f"*Incident:* `{incident_id}`\n"
+                f"*Service:* `{server.get('name')}`\n"
+                f"*Severity:* `{triage.severity}`\n"
+                f"*Error:* {triage.reason}\n\n"
+                f"🧠 *TypeSafe Jev Recommendation:*\n"
+                f"Action: `{rec}` ({conf}% confidence)\n"
+                f"Reason: {decision.get('reason')}\n\n"
+                f"👉 [Open Mobile Incident Dashboard]({tunnel}/incidents/{incident_id})"
+            )
+            httpx.post(
+                f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                json={
+                    "chat_id": tg_chat,
+                    "text": msg_text,
+                    "parse_mode": "Markdown",
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [{"text": f"🚀 Approve {rec.upper()}", "url": f"{tunnel}/incidents/{incident_id}"}]
+                        ]
+                    }
+                },
+                timeout=5.0,
+            )
+    except Exception as e:
+        logger.warning(f"Telegram notification note: {e}")
+
+    # Dispatch Twilio Voice alert
+    try:
+        from backend.prodpilot.integrations.twilio_client import dispatch_incident_voice_drill
+        dispatch_incident_voice_drill(created)
+    except Exception as e:
+        logger.warning(f"Twilio voice dispatch note: {e}")
+
+    # Launch background autonomous fix pipeline via Antigravity SDK
+    try:
+        from backend.prodpilot.pipeline.orchestrator import process_incident
+        threading.Thread(target=process_incident, args=(created,), daemon=True).start()
+    except Exception as e:
+        logger.warning(f"Pipeline launch note: {e}")
+
+    return {
+        "ok": True,
+        "incident_created": True,
+        "incident": created,
+        "triage": {
+            "severity": triage.severity,
+            "reason": triage.reason,
+            "suspected_area": suspect_area,
+            "is_crash": triage.is_crash,
+            "fingerprint": fp,
+        },
+        "decision": decision,
+    }
+
+
+@router.post("/servers/{server_id}/triage-logs")
+def triage_server_logs_endpoint(server_id: str, limit: int = 60) -> Dict[str, Any]:
+    return run_server_log_triage(server_id, limit=limit)
 
 
 # ---------------------------------------------------------
@@ -602,9 +801,14 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
     )
 
     # 6. Cloudflare Tunnel Gateway
-    tunnel_url = get_setting("CLOUDFLARE_TUNNEL_URL") or os.environ.get("CLOUDFLARE_TUNNEL_URL")
-    tunnel_status = "ONLINE" if tunnel_url else "STANDBY"
-    tunnel_activity = f"Routing mobile triage requests from {tunnel_url}" if tunnel_url else "Standby (Local daemon active on port 8765)"
+    is_tunnel_running = _TUNNEL_PROCESS is not None and _TUNNEL_PROCESS.poll() is None
+    tunnel_url = _TUNNEL_URL if is_tunnel_running else None
+    tunnel_status = "ONLINE" if is_tunnel_running else "STANDBY"
+    tunnel_activity = (
+        f"Live ingress active at {tunnel_url}"
+        if is_tunnel_running and tunnel_url
+        else "Standby - Tunnel is offline (Local daemon active on port 8765)"
+    )
 
     services = [
         {
@@ -670,6 +874,8 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
             "status": tunnel_status,
             "activity": tunnel_activity,
             "configured": bool(tunnel_url),
+            "tunnel_url": tunnel_url,
+            "is_running": is_tunnel_running,
             "latency_ms": 18.0 if tunnel_url else None,
             "config_hint": "CLOUDFLARE_TUNNEL_URL in Settings",
         },
@@ -919,6 +1125,108 @@ def ping_platform_service_endpoint(service_id: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------
+# 5B. CLOUDFLARE TUNNEL 1-CLICK LIFECYCLE
+# ---------------------------------------------------------
+
+@router.get("/tunnel/status")
+def get_tunnel_status() -> Dict[str, Any]:
+    global _TUNNEL_PROCESS, _TUNNEL_URL
+    with _TUNNEL_LOCK:
+        is_running = _TUNNEL_PROCESS is not None and _TUNNEL_PROCESS.poll() is None
+        if not is_running:
+            _TUNNEL_PROCESS = None
+        current_url = _TUNNEL_URL if is_running else (get_setting("CLOUDFLARE_TUNNEL_URL") or None)
+        return {
+            "ok": True,
+            "running": is_running,
+            "url": current_url,
+            "status": "ONLINE" if is_running else "STANDBY",
+        }
+
+
+@router.post("/tunnel/start")
+def start_tunnel_endpoint() -> Dict[str, Any]:
+    global _TUNNEL_PROCESS, _TUNNEL_URL
+    with _TUNNEL_LOCK:
+        if _TUNNEL_PROCESS is not None and _TUNNEL_PROCESS.poll() is None:
+            return {
+                "ok": True,
+                "running": True,
+                "url": _TUNNEL_URL,
+                "status": "ONLINE",
+                "message": f"Tunnel is already active at {_TUNNEL_URL}",
+            }
+
+        bin_path = _find_cloudflared()
+        if not bin_path:
+            raise HTTPException(
+                status_code=400,
+                detail="cloudflared binary not found. Please ensure cloudflared is installed on the host system.",
+            )
+
+        try:
+            proc = subprocess.Popen(
+                [bin_path, "tunnel", "--url", "http://127.0.0.1:8765"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            _TUNNEL_PROCESS = proc
+            _TUNNEL_URL = None
+
+            t = threading.Thread(target=_monitor_tunnel_output, args=(proc,), daemon=True)
+            t.start()
+
+            # Wait up to 6 seconds for tunnel url to be announced
+            start_wait = time.time()
+            while time.time() - start_wait < 6:
+                if _TUNNEL_URL:
+                    break
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.3)
+
+            return {
+                "ok": True,
+                "running": True,
+                "url": _TUNNEL_URL,
+                "status": "ONLINE" if _TUNNEL_URL else "STARTING",
+                "message": f"Cloudflare Tunnel active at {_TUNNEL_URL}"
+                if _TUNNEL_URL
+                else "Tunnel process launched, acquiring public URL...",
+            }
+        except Exception as e:
+            logger.error(f"Failed to start cloudflared tunnel: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tunnel/stop")
+def stop_tunnel_endpoint() -> Dict[str, Any]:
+    global _TUNNEL_PROCESS, _TUNNEL_URL
+    with _TUNNEL_LOCK:
+        if _TUNNEL_PROCESS is not None:
+            try:
+                _TUNNEL_PROCESS.terminate()
+                _TUNNEL_PROCESS.wait(timeout=2)
+            except Exception:
+                try:
+                    _TUNNEL_PROCESS.kill()
+                except Exception:
+                    pass
+            _TUNNEL_PROCESS = None
+
+        _TUNNEL_URL = None
+        set_setting("CLOUDFLARE_TUNNEL_URL", "")
+        return {
+            "ok": True,
+            "running": False,
+            "status": "STANDBY",
+            "message": "Cloudflare Tunnel stopped. System operating in local-only mode.",
+        }
+
+
+# ---------------------------------------------------------
 # 6. SERVICE LOGS, TEAM USERS & SYSTEM RESET
 # ---------------------------------------------------------
 
@@ -1038,7 +1346,10 @@ def legacy_active_commits_endpoint() -> Dict[str, Any]:
 # ---------------------------------------------------------
 
 def get_effective_public_url(req: Optional[Request] = None) -> str:
-    """Returns the live public HTTPS URL reachable by Twilio."""
+    """Returns the live public HTTPS URL reachable by Twilio or webhooks."""
+    global _TUNNEL_URL
+    if _TUNNEL_URL:
+        return _TUNNEL_URL.rstrip("/")
     if req:
         proto = req.headers.get("x-forwarded-proto", "https")
         host = req.headers.get("host")
@@ -1047,7 +1358,7 @@ def get_effective_public_url(req: Optional[Request] = None) -> str:
     url = (get_setting("CLOUDFLARE_TUNNEL_URL") or os.environ.get("CLOUDFLARE_TUNNEL_URL") or "").rstrip("/")
     if url:
         return url
-    return "https://proudly-lakes-assumption-collaboration.trycloudflare.com"
+    return "http://127.0.0.1:8765"
 
 
 @router.api_route("/voice/twiml", methods=["GET", "POST"])

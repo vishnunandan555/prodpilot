@@ -18,8 +18,11 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,6 +67,27 @@ from backend.prodpilot.ingest.router import router as ingest_router
 
 app.include_router(connect_router)
 app.include_router(ingest_router)
+
+# Autonomous Watchdog Daemon Loop (every 12s)
+@app.on_event("startup")
+async def startup_watchdog_event():
+    async def autonomous_render_watchdog_loop():
+        logger.info("🔭 Starting Autonomous Render Log Watcher & Triage loop (every 12s)...")
+        await asyncio.sleep(4)
+        while True:
+            try:
+                from backend.prodpilot.db import get_active_server
+                from backend.prodpilot.api.connect_router import run_server_log_triage
+                active_srv = get_active_server()
+                if active_srv and active_srv.get("render_service_id"):
+                    res = run_server_log_triage(active_srv["id"], limit=50)
+                    if res.get("incident_created"):
+                        logger.info(f"🚨 Autonomous Watchdog created incident: {res.get('incident', {}).get('id')}")
+            except Exception as e:
+                logger.debug(f"Watchdog tick note: {e}")
+            await asyncio.sleep(12)
+
+    asyncio.create_task(autonomous_render_watchdog_loop())
 
 # Shared in-memory staging manager or deploy adapter
 deploy_adapter = DeployAdapter(prod_port=int(os.environ.get("PROD_PORT", 8000)))

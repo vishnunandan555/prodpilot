@@ -34,6 +34,24 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
   const [loading, setLoading] = useState(false);
   const [pingingId, setPingingId] = useState(null);
   const [pingResults, setPingResults] = useState({});
+  const [tunnelLoading, setTunnelLoading] = useState(false);
+
+  const handleToggleTunnel = async (isCurrentlyOnline) => {
+    setTunnelLoading(true);
+    try {
+      const endpoint = isCurrentlyOnline ? `${apiUrl}/tunnel/stop` : `${apiUrl}/tunnel/start`;
+      const res = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || 'Failed to update tunnel state');
+      }
+      await fetchServices();
+    } catch (err) {
+      alert(`Tunnel error: ${err.message}`);
+    } finally {
+      setTunnelLoading(false);
+    }
+  };
 
   const fetchServices = async () => {
     setLoading(true);
@@ -212,6 +230,25 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
                     </p>
                   </div>
 
+                  {/* Public Tunnel Active URL Strip */}
+                  {svc.id === 'tunnel' && svc.tunnel_url && (
+                    <div className="mt-2.5 p-2 rounded-lg bg-[#070b12] border border-[#1b2b45] flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-1.5 truncate text-[#79c0ff]">
+                        <Globe size={13} className="text-[#58a6ff] shrink-0" />
+                        <span className="truncate">{svc.tunnel_url}</span>
+                      </div>
+                      <a
+                        href={svc.tunnel_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 text-[#8b949e] hover:text-[#58a6ff] transition shrink-0"
+                        title="Open Public Tunnel in Browser"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
+                  )}
+
                   {/* Ping Test Result Toast / Pill */}
                   {pingRes && (
                     <div
@@ -252,6 +289,22 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
                       >
                         <PhoneCall size={11} className={callingPhone ? 'animate-bounce text-[#3fb950]' : ''} />
                         <span>{callingPhone ? 'Calling...' : 'Call Phone'}</span>
+                      </button>
+                    )}
+
+                    {svc.id === 'tunnel' && (
+                      <button
+                        onClick={() => handleToggleTunnel(isOnline)}
+                        disabled={tunnelLoading}
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1.5 transition disabled:opacity-50 ${
+                          isOnline
+                            ? 'bg-[#261317] hover:bg-[#381a20] text-[#ff7b72] border border-[#4a1c24]'
+                            : 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-sm'
+                        }`}
+                        title={isOnline ? 'Stop running tunnel' : 'Create quick Cloudflare Tunnel to expose local daemon'}
+                      >
+                        <Globe size={11} className={tunnelLoading ? 'animate-spin' : ''} />
+                        <span>{tunnelLoading ? 'Updating Tunnel...' : isOnline ? 'Stop Tunnel' : 'Create Public Tunnel'}</span>
                       </button>
                     )}
 

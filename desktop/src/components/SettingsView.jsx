@@ -18,7 +18,8 @@ import {
   Mail,
   Camera,
   Upload,
-  UserCheck
+  UserCheck,
+  Globe
 } from 'lucide-react';
 import TwilioCallModal from './TwilioCallModal';
 
@@ -94,6 +95,29 @@ export default function SettingsView({
   const [renderStatus, setRenderStatus] = useState(null);
   const [testingTwilio, setTestingTwilio] = useState(false);
   const [twilioStatus, setTwilioStatus] = useState(null);
+  const [tunnelActionLoading, setTunnelActionLoading] = useState(false);
+
+  const handleToggleTunnel = async () => {
+    setTunnelActionLoading(true);
+    const isCurrentlyOnline = !!settings.cloudflare_tunnel_url;
+    try {
+      const endpoint = isCurrentlyOnline ? `${apiBaseUrl}/tunnel/stop` : `${apiBaseUrl}/tunnel/start`;
+      const res = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || 'Failed to update tunnel state');
+      } else {
+        setSettings((prev) => ({
+          ...prev,
+          cloudflare_tunnel_url: data.url || ''
+        }));
+      }
+    } catch (err) {
+      alert(`Tunnel error: ${err.message}`);
+    } finally {
+      setTunnelActionLoading(false);
+    }
+  };
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -801,13 +825,36 @@ export default function SettingsView({
 
             {/* 5. Cloudflare Tunnel URL */}
             <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-[#f0f6fc]">
-                  Cloudflare Tunnel Public Base URL
-                </label>
-                <p className="text-xs text-[#8b949e] mt-0.5">
-                  Public HTTPS ingress URL for Telegram webhooks and external incident push callbacks.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-[#f0f6fc] flex items-center gap-2">
+                    <Globe size={14} className="text-[#58a6ff]" />
+                    <span>Cloudflare Tunnel Public Base URL</span>
+                  </label>
+                  <p className="text-xs text-[#8b949e] mt-0.5">
+                    Public HTTPS ingress URL for mobile access and external incident push callbacks.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleToggleTunnel}
+                  disabled={tunnelActionLoading}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 shrink-0 ${
+                    settings.cloudflare_tunnel_url
+                      ? 'bg-[#261317] hover:bg-[#381a20] text-[#ff7b72] border border-[#4a1c24]'
+                      : 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-sm'
+                  }`}
+                >
+                  <Globe size={12} className={tunnelActionLoading ? 'animate-spin' : ''} />
+                  <span>
+                    {tunnelActionLoading
+                      ? 'Updating Tunnel...'
+                      : settings.cloudflare_tunnel_url
+                      ? 'Stop Tunnel'
+                      : 'Create Public Tunnel'}
+                  </span>
+                </button>
               </div>
 
               <input

@@ -231,9 +231,67 @@ class RenderClient:
 
                     if logs_res.status_code == 200:
                         raw_logs = logs_res.json().get("logs", [])
+                        
+                        def is_new_log_boundary(s: str) -> bool:
+                            return (
+                                s.startswith("INFO:")
+                                or s.startswith("DEBUG:")
+                                or s.startswith("WARNING:")
+                                or s.startswith("[2026-")
+                                or s.startswith("==>")
+                                or s.startswith("HEAD ")
+                                or s.startswith("GET ")
+                                or s.startswith("POST ")
+                                or s.startswith("PUT ")
+                                or s.startswith("DELETE ")
+                            )
+
+                        def is_traceback_start(s: str) -> bool:
+                            s_low = s.lower()
+                            return (
+                                s.startswith("Traceback (most recent call last):")
+                                or s.startswith("--- Logging error ---")
+                                or s.startswith('File "')
+                                or "fatal application crash:" in s_low
+                                or "zerodivisionerror" in s_low
+                                or "during handling of the above exception" in s_low
+                                or "call stack:" in s_low
+                            )
+
+                        tb_buffer = []
+                        tb_start_item = None
+
+                        def flush_tb():
+                            nonlocal tb_buffer, tb_start_item
+                            if not tb_buffer or not tb_start_item:
+                                tb_buffer = []
+                                tb_start_item = None
+                                return
+                            
+                            combined_text = "\n".join(tb_buffer)
+                            err_summary = "Application Exception"
+                            err_m = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|Exception|Error):[^\n]+)", combined_text)
+                            if err_m:
+                                err_summary = err_m.group(1).strip()
+                            elif "FATAL APPLICATION CRASH" in combined_text:
+                                crash_m = re.search(r"FATAL APPLICATION CRASH:[^\n']+", combined_text)
+                                if crash_m:
+                                    err_summary = crash_m.group(0).strip()
+
+                            logs.append({
+                                "id": tb_start_item.get("id"),
+                                "timestamp": tb_start_item.get("timestamp", ""),
+                                "level": "ERROR",
+                                "message": combined_text,
+                                "service": svc_name,
+                                "is_traceback": True,
+                                "error_summary": err_summary,
+                            })
+                            tb_buffer = []
+                            tb_start_item = None
+
                         for item in raw_logs:
                             raw_msg = item.get("message", "")
-                            # Strip ANSI formatting codes
                             clean_msg = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]', '', raw_msg).strip()
                             if not clean_msg:
                                 continue
@@ -241,21 +299,35 @@ class RenderClient:
                             labels = item.get("labels", [])
                             raw_lvl = next((l.get("value") for l in labels if l.get("name") == "level"), "INFO").upper()
 
-                            msg_lower = clean_msg.lower()
-                            if raw_lvl in ("CRITICAL", "ERROR") or "zerodivisionerror" in msg_lower or "fatal" in msg_lower or "traceback" in msg_lower:
-                                lvl = "ERROR"
-                            elif raw_lvl in ("WARN", "WARNING") or "warning" in msg_lower:
-                                lvl = "WARN"
+                            if tb_buffer:
+                                if is_new_log_boundary(clean_msg):
+                                    flush_tb()
+                                    logs.append({
+                                        "id": item.get("id"),
+                                        "timestamp": item.get("timestamp", ""),
+                                        "level": raw_lvl,
+                                        "message": clean_msg,
+                                        "service": svc_name,
+                                        "is_traceback": False,
+                                    })
+                                else:
+                                    tb_buffer.append(clean_msg)
                             else:
-                                lvl = "INFO"
+                                if is_traceback_start(clean_msg):
+                                    tb_buffer.append(clean_msg)
+                                    tb_start_item = item
+                                else:
+                                    logs.append({
+                                        "id": item.get("id"),
+                                        "timestamp": item.get("timestamp", ""),
+                                        "level": raw_lvl,
+                                        "message": clean_msg,
+                                        "service": svc_name,
+                                        "is_traceback": False,
+                                    })
 
-                            logs.append({
-                                "id": item.get("id"),
-                                "timestamp": item.get("timestamp", ""),
-                                "level": lvl,
-                                "message": clean_msg,
-                                "service": svc_name,
-                            })
+                        if tb_buffer:
+                            flush_tb()
 
                 # Sort logs by timestamp descending (newest first)
                 logs.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
