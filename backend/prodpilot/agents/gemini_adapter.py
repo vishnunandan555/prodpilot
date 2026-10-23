@@ -139,16 +139,29 @@ class GeminiAdapter:
                     },
                 })
 
+        def emit_llm_call(model: str, message: str, prompt: Optional[str] = None, response: Optional[str] = None):
+            if on_event:
+                on_event({
+                    "stage": stage,
+                    "kind": "llm_call",
+                    "payload": {
+                        "model": model,
+                        "prompt": prompt or message,
+                        "response": response or message,
+                        "message": message,
+                    },
+                })
+
         logger.info(f"GeminiAdapter starting in {workdir} for stage {stage}")
 
         try:
             # Check stage: FIX takes precedence when in FIX stage
             if stage == "FIX" or "fix" in task.lower() and "reproduce" not in task.lower():
-                return self._handle_fix_task(toolbox, task, workdir, emit_tool_call, context)
+                return self._handle_fix_task(toolbox, task, workdir, emit_tool_call, emit_llm_call, context)
             elif stage == "REPRODUCE" or "repro" in task.lower():
-                return self._handle_repro_task(toolbox, task, workdir, emit_tool_call, context)
+                return self._handle_repro_task(toolbox, task, workdir, emit_tool_call, emit_llm_call, context)
             else:
-                return self._handle_fix_task(toolbox, task, workdir, emit_tool_call, context)
+                return self._handle_fix_task(toolbox, task, workdir, emit_tool_call, emit_llm_call, context)
 
         except Exception as e:
             logger.exception(f"Error in GeminiAdapter: {e}")
@@ -165,9 +178,15 @@ class GeminiAdapter:
         task: str,
         workdir: str,
         emit_tool: Callable[[str, Dict[str, Any], str], None],
+        emit_llm: Callable[[str, str, Optional[str], Optional[str]], None],
         context: Dict[str, Any],
     ) -> AgentResult:
         """Inspects codebase and writes tests/test_repro.py that reproduces the bug."""
+        emit_llm(
+            self.model,
+            f"Calling LLM {self.model}: Synthesizing deterministic reproduction test for incident...",
+            prompt=f"Task: {task}\nContext: {context}",
+        )
         emit_tool("list_dir", {"path": "."}, "Scanned workspace root to understand repository layout")
         ls_out = toolbox.list_dir(".")
 
@@ -191,6 +210,12 @@ class GeminiAdapter:
                   f"Wrote minimal reproduction test to {repro_path}")
         toolbox.write_file(repro_path, repro_test_code)
 
+        emit_llm(
+            self.model,
+            f"LLM {self.model} output generated: synthesized minimal reproduction test in {repro_path} ({len(repro_test_code)} bytes)",
+            response=repro_test_code,
+        )
+
         diff = self._capture_diff(workdir)
         return {
             "diff": diff,
@@ -205,9 +230,15 @@ class GeminiAdapter:
         task: str,
         workdir: str,
         emit_tool: Callable[[str, Dict[str, Any], str], None],
+        emit_llm: Callable[[str, str, Optional[str], Optional[str]], None],
         context: Dict[str, Any],
     ) -> AgentResult:
         """Inspects failure and applies patch to fix the bug safely."""
+        emit_llm(
+            self.model,
+            f"Calling LLM {self.model}: Synthesizing defensive remediation patch...",
+            prompt=f"Task: {task}\nContext: {context}",
+        )
         suspect_file = context.get("suspect_file", "app.py")
         error_type = context.get("error_type", "KeyError")
         key_name = context.get("key_name", "discount")
@@ -253,6 +284,12 @@ class GeminiAdapter:
             summary = f"Patched {target_file}: replaced direct key access with safe dict.get"
         else:
             summary = f"No direct match found in {target_file}, attempted fallback patch"
+
+        emit_llm(
+            self.model,
+            f"LLM {self.model} output generated: {summary}",
+            response=summary,
+        )
 
         diff = self._capture_diff(workdir)
         return {

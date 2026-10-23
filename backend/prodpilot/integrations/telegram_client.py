@@ -69,17 +69,23 @@ def _send_telegram(text: str, reply_markup: Optional[Dict[str, Any]] = None, par
                 fallback_resp = client.post(url, json=payload)
                 success = fallback_resp.status_code == 200
 
-            # Log to platform master console stream
+            # Log full message sent to platform master console stream
             try:
-                first_lines = [l.strip() for l in text.splitlines() if l.strip()]
-                preview = " ".join(first_lines[:2]) if first_lines else text[:100]
-                preview = re.sub(r"<[^>]+>", "", preview).strip()
-                status_str = "Dispatched notification to SRE chat" if success else "Failed to dispatch notification to SRE chat"
+                clean_full_text = re.sub(r"<[^>]+>", "", text).strip()
+                status_str = f"Dispatched SRE notification to Telegram (chat: {chat_id})" if success else f"Failed to dispatch Telegram message (chat: {chat_id})"
                 with get_db() as conn:
+                    now_ts = datetime.utcnow().isoformat()
                     conn.execute(
                         "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
-                        ("TELEGRAM", "INFO" if success else "WARN", f"{status_str}: {preview}", datetime.utcnow().isoformat())
+                        ("TELEGRAM", "INFO" if success else "WARN", f"{status_str}:", now_ts)
                     )
+                    for line in clean_full_text.splitlines():
+                        trimmed = line.strip()
+                        if trimmed:
+                            conn.execute(
+                                "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                                ("TELEGRAM", "MSG", f"  > {trimmed}", now_ts)
+                            )
             except Exception:
                 pass
 

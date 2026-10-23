@@ -13,6 +13,7 @@ import {
 export default function MasterLogsView({ apiUrl }) {
   const [consoleLines, setConsoleLines] = useState([]);
   const [plainText, setPlainText] = useState('');
+  const [viewMode, setViewMode] = useState('console'); // 'console' | 'raw'
   const [isLoading, setIsLoading] = useState(true);
   const [isStreaming, setIsStreaming] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -144,6 +145,30 @@ export default function MasterLogsView({ apiUrl }) {
 
         {/* Console Controls */}
         <div className="flex items-center gap-2 text-xs">
+          {/* Mode Switch: Console vs Raw Text */}
+          <div className="flex items-center bg-[#161f30] rounded p-0.5 border border-[#26354d]">
+            <button
+              onClick={() => setViewMode('console')}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono transition ${
+                viewMode === 'console'
+                  ? 'bg-[#1f2b42] text-[#58a6ff] font-semibold'
+                  : 'text-[#8b949e] hover:text-[#c9d1d9]'
+              }`}
+            >
+              Console
+            </button>
+            <button
+              onClick={() => setViewMode('raw')}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono transition ${
+                viewMode === 'raw'
+                  ? 'bg-[#1f2b42] text-[#58a6ff] font-semibold'
+                  : 'text-[#8b949e] hover:text-[#c9d1d9]'
+              }`}
+            >
+              Raw Text
+            </button>
+          </div>
+
           {/* Grep Search */}
           <div className="relative">
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6e7681]" />
@@ -152,7 +177,7 @@ export default function MasterLogsView({ apiUrl }) {
               placeholder="grep / filter console..."
               value={filterQuery}
               onChange={(e) => setFilterQuery(e.target.value)}
-              className="w-48 pl-7 pr-2 py-1 bg-[#161f30] border border-[#26354d] rounded text-[11px] text-[#f0f6fc] placeholder-[#6e7681] focus:outline-none focus:border-[#58a6ff] transition font-mono"
+              className="w-44 pl-7 pr-2 py-1 bg-[#161f30] border border-[#26354d] rounded text-[11px] text-[#f0f6fc] placeholder-[#6e7681] focus:outline-none focus:border-[#58a6ff] transition font-mono"
             />
           </div>
 
@@ -210,6 +235,13 @@ export default function MasterLogsView({ apiUrl }) {
         ) : filteredLines.length === 0 ? (
           <div className="text-[#6e7681] italic py-4">
             {filterQuery ? `No console lines matching "${filterQuery}"` : 'No logs recorded yet.'}
+          </div>
+        ) : viewMode === 'raw' ? (
+          <div className="p-1">
+            <pre className="font-mono text-[11px] leading-relaxed text-[#e6edf3] whitespace-pre-wrap select-text">
+              {filteredLines.map((l) => l.raw).join('\n')}
+            </pre>
+            <div ref={consoleEndRef} />
           </div>
         ) : (
           <div className="space-y-0.5">

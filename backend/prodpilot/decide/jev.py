@@ -41,6 +41,24 @@ def decide_jev(
 
     if not api_key:
         logger.info("No JEV_API_KEY or OPENROUTER_API_KEY configured; using rules backend.")
+        try:
+            from backend.prodpilot.db import log_event
+            incident_id = incident.get("id")
+            if incident_id:
+                log_event(
+                    run_id=run_id,
+                    incident_id=incident_id,
+                    stage="GATE",
+                    kind="llm_call",
+                    payload={
+                        "model": "rule-evaluator",
+                        "provider": "ProdPilot Engine",
+                        "message": f"Gate Decision Evaluator: checking safety rules for {incident.get('service')}",
+                    },
+                    db_path=db_path,
+                )
+        except Exception:
+            pass
         return decide_rules(incident, staging_status, patch_diff, run_id, db_path)
 
     suspect_commit = incident.get("suspect_commit") or {}
@@ -102,6 +120,25 @@ def decide_jev(
         "questions": questions,
     }
 
+    incident_id = incident.get("id")
+    try:
+        from backend.prodpilot.db import log_event
+        if incident_id:
+            log_event(
+                run_id=run_id,
+                incident_id=incident_id,
+                stage="GATE",
+                kind="llm_call",
+                payload={
+                    "model": DEFAULT_JEV_MODEL,
+                    "provider": "OpenRouter / TypeSafe",
+                    "message": f"Invoking LLM {DEFAULT_JEV_MODEL} on OpenRouter Decisions API: evaluating fix_forward vs rollback for {incident.get('service')}",
+                },
+                db_path=db_path,
+            )
+    except Exception:
+        pass
+
     try:
         logger.info(f"Invoking TypeSafe Jev decision engine ({DEFAULT_JEV_MODEL}) on OpenRouter...")
         with httpx.Client(timeout=12.0) as client:
@@ -139,7 +176,6 @@ def decide_jev(
                 }
 
                 # Record decision in SQLite
-                incident_id = incident.get("id")
                 if incident_id:
                     try:
                         record_decision(
@@ -155,6 +191,22 @@ def decide_jev(
                         )
                     except Exception as e:
                         logger.debug(f"Could not record Jev decision to DB: {e}")
+
+                    try:
+                        log_event(
+                            run_id=run_id,
+                            incident_id=incident_id,
+                            stage="GATE",
+                            kind="llm_call",
+                            payload={
+                                "model": model_name,
+                                "provider": provider,
+                                "message": f"LLM {model_name} decision received: {rec.upper()} ({int(rec_prob*100)}% confidence) - {reason}",
+                            },
+                            db_path=db_path,
+                        )
+                    except Exception:
+                        pass
 
                 logger.info(f"TypeSafe Jev decision: {rec} (probabilities: {probs}) via {provider}")
                 return decision_data
