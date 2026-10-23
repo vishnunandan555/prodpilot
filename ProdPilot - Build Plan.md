@@ -101,7 +101,21 @@
 
 ---
 
-## 4. Phase 5: Rehearsals, Seeded Bugs & Demo Freeze (1:30 AM – 3:30 AM)
+## 4. UI Review & Alignment (Current Milestone)
+
+**Focus**: Reviewing and aligning the platform UI architecture across Desktop (Electron) and Web/Mobile (Render) before entering final demo hardening.
+
+- [x] Streamlined navigation: purged dead Copilot views (`SessionView`, `IssuesView`, `AutomationsView`, `CustomizeView`).
+- [ ] Align on core platform views:
+  1. **Incidents & Operations**: Active incidents, severity badges, live investigation timeline, and mobile resolution buttons.
+  2. **Live Telemetry & Logs**: Real-time log stream from Render/Local forwarder with error filtering.
+  3. **Repository & Issue Intelligence**: View all repository issues, commit timeline, and PR correlation.
+  4. **Team & Service Context**: Multi-service / microservice selector and on-call team roster.
+  5. **Platform Settings & Access**: Connected Repo (GitHub PAT), Connected Server (Render API Key / URL), and Cloudflare Tunnel status.
+
+---
+
+## 5. Phase 5: Rehearsals, Seeded Bugs & Demo Freeze (1:30 AM – 3:30 AM)
 
 - [ ] **3 Consecutive Clean Runs**:
   - Trigger crash $\rightarrow$ immediate detection on laptop $\rightarrow$ phone alerts with Render link $\rightarrow$ repro test on laptop $\rightarrow$ fix verified $\rightarrow$ mobile approval on phone $\rightarrow$ healthy production.
