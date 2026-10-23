@@ -19,8 +19,8 @@ export default function AuthModal({
   apiUrl = 'http://127.0.0.1:8765'
 }) {
   const [tab, setTab] = useState('login'); // 'login' or 'signup'
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -199,7 +199,7 @@ export default function AuthModal({
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="username"
                 className="w-full pl-8 pr-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
               />
             </div>

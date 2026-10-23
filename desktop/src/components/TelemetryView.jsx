@@ -22,17 +22,7 @@ export default function TelemetryView({
   const [isPaused, setIsPaused] = useState(false);
   const [levelFilter, setLevelFilter] = useState('ALL');
 
-  const defaultLogs = incident?.log_tail || `2026-10-23 15:32:50 [INFO] Starting demo-prod on port 8000
-2026-10-23 15:32:51 [INFO] Connected to SQLite database
-2026-10-23 15:32:52 [INFO] Healthcheck probe received: 200 OK
-2026-10-23 15:32:53 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}
-2026-10-23 15:32:53 [ERROR] KeyError: 'discount' in /orders (app.py:45)
-2026-10-23 15:32:54 [WARN] Healthcheck probe failed: 500 Internal Server Error
-2026-10-23 15:32:55 [WARN] Healthcheck probe failed: 500 Internal Server Error
-2026-10-23 15:32:56 [INFO] ProdPilot Watchdog detected 2 consecutive 500 probes. Triggering incident remediation.
-2026-10-23 15:32:57 [INFO] Staged fix-forward on port 8001 (Canary 1)
-2026-10-23 15:32:58 [INFO] Staged rollback on port 8002 (Canary 2)
-2026-10-23 15:32:59 [INFO] Awaiting human approval via Telegram & Render web dashboard.`;
+  const defaultLogs = incident?.log_tail || 'Waiting for live telemetry stream from connected services...';
 
   const handleCopyLogs = () => {
     navigator.clipboard.writeText(defaultLogs);

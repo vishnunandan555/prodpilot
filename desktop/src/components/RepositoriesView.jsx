@@ -21,10 +21,12 @@ import {
   Server
 } from 'lucide-react';
 
-export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
+export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765', activeIncident = null }) {
   const [repos, setRepos] = useState([]);
   const [activeRepo, setActiveRepo] = useState(null);
+  const [commits, setCommits] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [commitsLoading, setCommitsLoading] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
 
   // Form states
@@ -53,8 +55,24 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
     }
   };
 
+  const fetchCommits = async () => {
+    setCommitsLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/repos/active/commits`);
+      if (res.ok) {
+        const data = await res.json();
+        setCommits(data.commits || []);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch active commits:', err);
+    } finally {
+      setCommitsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchRepos();
+    fetchCommits();
   }, [apiUrl]);
 
   const handleConnectRepo = async (e) => {
@@ -87,6 +105,7 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
         setShowConnectModal(false);
         setConnectSuccess(null);
         fetchRepos();
+        fetchCommits();
       }, 1000);
     } catch (err) {
       setConnectError(err.message || 'Failed to connect repository');
@@ -99,6 +118,7 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
     try {
       await fetch(`${apiUrl}/repos/${repoId}/activate`, { method: 'POST' });
       fetchRepos();
+      fetchCommits();
     } catch (err) {
       console.error('Failed to activate repo:', err);
     }
@@ -108,47 +128,15 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
     try {
       await fetch(`${apiUrl}/repos/${repoId}`, { method: 'DELETE' });
       fetchRepos();
+      fetchCommits();
     } catch (err) {
       console.error('Failed to delete repo:', err);
     }
   };
 
-  const recentCommits = [
-    {
-      hash: 'a1b2c3d',
-      author: 'Vishnu Nandan',
-      time: '15m ago',
-      message: 'feat: add discount support to order checkout',
-      isSuspect: true,
-      branch: 'main',
-      blame: 'app.py:45',
-      impact: 'KeyError: discount'
-    },
-    {
-      hash: 'c9e8a1f',
-      author: 'Vishnu Nandan',
-      time: '2 hours ago',
-      message: 'refactor: extract order tax calculation to separate utility',
-      isSuspect: false,
-      branch: 'main',
-      blame: 'tax.py:12',
-      impact: null
-    },
-    {
-      hash: 'f4d3b2e',
-      author: 'Devfolio Bot',
-      time: '5 hours ago',
-      message: 'chore: update production requirements.txt for FastAPI 0.110',
-      isSuspect: false,
-      branch: 'main',
-      blame: 'requirements.txt',
-      impact: null
-    }
-  ];
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
-      {/* Matte SRE Header */}
+      {/* Header */}
       <div className="border-b border-[#1b2234] bg-[#0d111a] px-5 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -179,11 +167,14 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
               <span>Connect Repository</span>
             </button>
             <button
-              onClick={fetchRepos}
+              onClick={() => {
+                fetchRepos();
+                fetchCommits();
+              }}
               className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
               title="Refresh repositories"
             >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={loading || commitsLoading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
@@ -208,7 +199,7 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
               </p>
               <button
                 onClick={() => setShowConnectModal(true)}
-                className="mt-2 px-3 py-1.5 rounded bg-[#238636] text-white text-xs font-mono inline-flex items-center gap-1.5"
+                className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
               >
                 <Plus size={13} />
                 <span>Connect Codebase Now</span>
@@ -292,32 +283,42 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
           )}
         </div>
 
-        {/* Active Automated PR Panel */}
-        <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] border-l-4 border-l-[#58a6ff] p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#121929] text-[#58a6ff] border border-[#1d2d47]">
-                ACTIVE FIX PULL REQUEST #12
-              </span>
-              <span className="text-[11px] font-mono text-[#8b949e]">
-                branch: <code className="text-[#f0f6fc]">prodpilot-fix-inc-20261023-001</code>
+        {/* Active Automated PR Panel (Only show if active incident has patch or remediation PR) */}
+        {activeIncident && activeIncident.brief?.summary ? (
+          <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] border-l-4 border-l-[#58a6ff] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#121929] text-[#58a6ff] border border-[#1d2d47]">
+                  ACTIVE REMEDIATION PR
+                </span>
+                <span className="text-[11px] font-mono text-[#8b949e]">
+                  incident: <code className="text-[#f0f6fc]">{activeIncident.id}</code>
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-[#3fb950] bg-[#0d1e17] border border-[#1b3d2b] px-2 py-0.5 rounded flex items-center gap-1.5">
+                <CheckCircle2 size={12} />
+                <span>{activeIncident.status}</span>
               </span>
             </div>
-            <span className="text-[11px] font-mono text-[#3fb950] bg-[#0d1e17] border border-[#1b3d2b] px-2 py-0.5 rounded flex items-center gap-1.5">
-              <CheckCircle2 size={12} />
-              <span>Canary 8001 Verified</span>
-            </span>
-          </div>
 
-          <div>
-            <h3 className="text-xs font-semibold text-[#f0f6fc] font-mono">
-              fix: safely access discount key with .get('discount', 0.0) in calculate_order
-            </h3>
-            <p className="text-[11px] text-[#8b949e] font-mono mt-1">
-              Target: <code className="text-[#c9d1d9]">main</code> • Target Repo: <code className="text-[#58a6ff]">{activeRepo?.name || 'demo-prod'}</code>
-            </p>
+            <div>
+              <h3 className="text-xs font-semibold text-[#f0f6fc] font-mono">
+                {activeIncident.brief.summary}
+              </h3>
+              <p className="text-[11px] text-[#8b949e] font-mono mt-1">
+                Target Repo: <code className="text-[#58a6ff]">{activeRepo?.name || 'Connected Target'}</code> • Worktree Verified
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 flex items-center justify-between text-xs font-mono text-[#6e7681]">
+            <div className="flex items-center gap-2">
+              <GitPullRequest size={14} className="text-[#6e7681]" />
+              <span>No active remediation pull request. Codebase main branch is clean.</span>
+            </div>
+            <span className="text-[#3fb950]">HEALTHY</span>
+          </div>
+        )}
 
         {/* Commit History with Blame Correlation Table */}
         <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
@@ -325,61 +326,64 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
             <div className="flex items-center gap-2">
               <GitCommit size={14} className="text-[#58a6ff]" />
               <h2 className="text-xs font-semibold text-[#f0f6fc] font-mono uppercase tracking-wider">
-                Production Git Blame Timeline
+                Production Git Commit History & Blame Timeline ({commits.length})
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-[#6e7681]">Tracking upstream / main</span>
+            <span className="text-[10px] font-mono text-[#6e7681]">
+              {activeRepo ? `Target: ${activeRepo.name} (live git log)` : 'No active repo'}
+            </span>
           </div>
 
           <div className="space-y-2">
-            {recentCommits.map((c) => (
-              <div
-                key={c.hash}
-                className={`p-3 rounded border font-mono transition ${
-                  c.isSuspect
-                    ? 'bg-[#160d10] border-[#da3633]'
-                    : 'bg-[#07090f] border-[#1b2234] hover:border-[#293652]'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs font-bold ${c.isSuspect ? 'text-[#ff7b72]' : 'text-[#58a6ff]'}`}>
-                        {c.hash}
-                      </span>
-                      {c.isSuspect && (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[#261317] text-[#ff7b72] border border-[#4a1c24] flex items-center gap-1">
-                          <AlertTriangle size={10} />
-                          <span>BLAMED IN OUTAGE</span>
+            {commits.length === 0 ? (
+              <div className="p-6 text-center text-xs font-mono text-[#6e7681]">
+                {activeRepo
+                  ? 'No git commits found in the active repository.'
+                  : 'Connect a repository above to stream live git commits and enable automated git blame.'}
+              </div>
+            ) : (
+              commits.map((c) => (
+                <div
+                  key={c.hash}
+                  className={`p-3 rounded border font-mono transition ${
+                    c.isSuspect
+                      ? 'bg-[#160d10] border-[#da3633]'
+                      : 'bg-[#07090f] border-[#1b2234] hover:border-[#293652]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-bold ${c.isSuspect ? 'text-[#ff7b72]' : 'text-[#58a6ff]'}`}>
+                          {c.hash}
                         </span>
-                      )}
-                      <span className="text-xs text-[#8b949e] flex items-center gap-1">
-                        <User size={11} className="text-[#6e7681]" />
-                        {c.author}
-                      </span>
-                      <span className="text-xs text-[#6e7681]">
-                        ({c.time})
-                      </span>
-                    </div>
-                    <p className={`text-xs ${c.isSuspect ? 'text-[#f0f6fc] font-semibold' : 'text-[#c9d1d9]'}`}>
-                      {c.message}
-                    </p>
-                    {c.impact && (
-                      <p className="text-[11px] text-[#ff7b72]">
-                        Root cause vector: <code className="text-[#ff7b72]">{c.impact}</code>
+                        {c.isSuspect && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[#261317] text-[#ff7b72] border border-[#4a1c24] flex items-center gap-1">
+                            <AlertTriangle size={10} />
+                            <span>BLAMED IN OUTAGE</span>
+                          </span>
+                        )}
+                        <span className="text-xs text-[#8b949e] flex items-center gap-1">
+                          <User size={11} className="text-[#6e7681]" />
+                          {c.author}
+                        </span>
+                        <span className="text-xs text-[#6e7681]">
+                          ({c.time})
+                        </span>
+                      </div>
+                      <p className={`text-xs ${c.isSuspect ? 'text-[#f0f6fc] font-semibold' : 'text-[#c9d1d9]'}`}>
+                        {c.message}
                       </p>
-                    )}
-                  </div>
-
-                  <div className="text-right flex-shrink-0">
-                    <span className="text-[11px] bg-[#171f30] px-2 py-0.5 rounded text-[#c9d1d9] border border-[#293652] flex items-center gap-1">
-                      <FileCode size={11} className="text-[#58a6ff]" />
-                      <span>{c.blame}</span>
-                    </span>
+                      {c.impact && (
+                        <p className="text-[11px] text-[#ff7b72]">
+                          Root cause vector: <code className="text-[#ff7b72]">{c.impact}</code>
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -474,21 +478,20 @@ export default function RepositoriesView({ apiUrl = 'http://127.0.0.1:8765' }) {
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowConnectModal(false)}
-                  className="px-3 py-1.5 rounded bg-[#171f30] text-[#c9d1d9] text-xs font-mono hover:bg-[#1f293d]"
+                  className="px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={connectLoading}
-                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium flex items-center gap-1.5"
+                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {connectLoading ? <RefreshCw size={13} className="animate-spin" /> : <Check size={13} />}
-                  <span>{connectLoading ? 'Validating Git...' : 'Connect & Activate'}</span>
+                  {connectLoading ? 'Connecting & Verifying...' : 'Connect & Activate'}
                 </button>
               </div>
             </form>

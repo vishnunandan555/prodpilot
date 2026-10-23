@@ -31,6 +31,9 @@ from backend.prodpilot.db import (
     set_active_repo,
     set_active_server,
     update_server_status,
+    list_service_logs,
+    list_users,
+    clear_all_incidents,
 )
 
 logger = logging.getLogger(__name__)
@@ -364,3 +367,96 @@ def activate_server_endpoint(server_id: str) -> Dict[str, Any]:
 def delete_server_endpoint(server_id: str) -> Dict[str, Any]:
     delete_server(server_id)
     return {"status": "deleted", "server_id": server_id}
+
+
+# ---------------------------------------------------------
+# 4. REAL COMMITS & CODEBASE INSPECTION
+# ---------------------------------------------------------
+
+@router.get("/repos/active/commits")
+def get_active_repo_commits() -> Dict[str, Any]:
+    active = get_active_repo()
+    if not active:
+        return {"repo": None, "commits": []}
+
+    local_path = active.get("local_path")
+    if not local_path or not os.path.exists(local_path):
+        return {"repo": active, "commits": []}
+
+    try:
+        res = subprocess.run(
+            ["git", "log", "-n", "25", "--pretty=format:%h||%an||%ar||%s"],
+            cwd=local_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if res.returncode != 0:
+            return {"repo": active, "commits": [], "error": res.stderr}
+
+        commits = []
+        for line in res.stdout.strip().splitlines():
+            parts = line.split("||", 3)
+            if len(parts) == 4:
+                commits.append({
+                    "hash": parts[0],
+                    "author": parts[1],
+                    "time": parts[2],
+                    "message": parts[3],
+                    "isSuspect": False,
+                })
+        return {"repo": active, "commits": commits}
+    except Exception as e:
+        logger.warning(f"Failed to fetch git log from {local_path}: {e}")
+        return {"repo": active, "commits": [], "error": str(e)}
+
+
+# ---------------------------------------------------------
+# 5. REAL LOGS & TEAM RESCUERS
+# ---------------------------------------------------------
+
+@router.get("/logs")
+def get_service_logs_endpoint(
+    service: Optional[str] = None,
+    level: Optional[str] = None,
+    limit: int = 150,
+) -> Dict[str, Any]:
+    logs = list_service_logs(service=service, level=level, limit=limit)
+    return {"logs": logs, "count": len(logs)}
+
+
+@router.get("/users")
+def get_team_users_endpoint() -> Dict[str, Any]:
+    users = list_users()
+    return {"users": users, "count": len(users)}
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: Optional[str] = "sre123"
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = "sre"
+
+
+@router.post("/users")
+def create_team_user_endpoint(body: CreateUserRequest) -> Dict[str, Any]:
+    user = create_user(
+        username=body.username.strip(),
+        password=body.password or "sre123",
+        email=body.email,
+        full_name=body.full_name,
+        role=body.role or "sre",
+    )
+    return {"status": "created", "user": user}
+
+
+# ---------------------------------------------------------
+# 6. SYSTEM RESET & WIPE MOCK DATA
+# ---------------------------------------------------------
+
+@router.post("/incidents/clear")
+def clear_incidents_endpoint() -> Dict[str, Any]:
+    clear_all_incidents()
+    return {"status": "cleared", "message": "All mock incidents and telemetry wiped completely"}
+

@@ -19,6 +19,7 @@ from backend.prodpilot.db import (
     find_incident_by_fingerprint,
     increment_incident_recurrence,
     log_event,
+    insert_service_log,
 )
 from backend.prodpilot.triage.classifier import Severity, classify_logs
 from backend.prodpilot.triage.low_severity import handle_low_severity
@@ -54,6 +55,22 @@ def ingest_logs_endpoint(payload: IngestPayload) -> Dict[str, Any]:
             raw_logs.append(entry.model_dump() if hasattr(entry, "model_dump") else entry.dict())
         else:
             raw_logs.append(entry)
+
+    # Persist raw logs to service_logs for real log viewer
+    for item in raw_logs:
+        lvl = "INFO"
+        msg = str(item)
+        if isinstance(item, dict):
+            lvl = item.get("level", "INFO")
+            msg = item.get("message", str(item))
+        elif "ERROR" in msg or "Traceback" in msg or " 500 " in msg:
+            lvl = "ERROR"
+        elif "WARN" in msg:
+            lvl = "WARN"
+        try:
+            insert_service_log(service=payload.service, level=lvl, message=msg)
+        except Exception:
+            pass
 
     # 1. Classify severity
     triage = classify_logs(service=payload.service, logs=raw_logs)

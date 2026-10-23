@@ -64,31 +64,19 @@ export default function IncidentDetail({
   const isTakeover = incident.status === 'MANUAL_TAKEOVER';
 
   const suspect = incident.suspect_commit || {};
-  const suspectHash = typeof suspect === 'string' ? suspect.slice(0, 7) : suspect.hash?.slice(0, 7) || 'a1b2c3d';
-  const suspectAuthor = suspect.author || 'Vishnu Nandan';
-  const suspectMessage = suspect.message || 'feat: add discount support to order checkout';
-  const suspectTime = suspect.minutes_ago !== undefined ? `${suspect.minutes_ago}m ago` : '15m ago';
-  const suspectLocation = incident.suspected_area || (suspect.suspect_file ? `${suspect.suspect_file}:${suspect.suspect_line || 45}` : 'app.py:45');
+  const suspectHash = typeof suspect === 'string' ? suspect.slice(0, 7) : suspect.hash?.slice(0, 7) || null;
+  const suspectAuthor = suspect.author || null;
+  const suspectMessage = suspect.message || null;
+  const suspectTime = suspect.minutes_ago !== undefined ? `${suspect.minutes_ago}m ago` : null;
+  const suspectLocation = incident.suspected_area || (suspect.suspect_file ? `${suspect.suspect_file}:${suspect.suspect_line || ''}` : null);
 
   const brief = incident.brief || {};
-  const rootCauseSummary = brief.summary || incident.title || `KeyError: 'discount' in ${suspectLocation}`;
+  const rootCauseSummary = brief.summary || incident.title || (suspectLocation ? `Investigating issue in ${suspectLocation}` : 'Investigating root cause...');
 
   const artifacts = incident.artifacts || {};
-  const diffContent =
-    artifacts.patch_diff ||
-    incident.diff ||
-    `--- a/app.py
-+++ b/app.py
-@@ -43,3 +43,3 @@ def calculate_order(order: Dict[str, Any]) -> Dict[str, Any]:
-     tax = round(subtotal * TAX_RATE, 2)
--    discount = order["discount"]
-+    discount = order.get("discount", 0.0)
-     total = max(0.0, round(subtotal + tax - discount, 2))`;
+  const diffContent = artifacts.patch_diff || incident.diff || null;
 
-  const testEvidence = artifacts.test_evidence || {
-    before: "FAILED (KeyError: 'discount' in calculate_order app.py:45)",
-    after: "5 passed in 0.42s (100% test pass on canary 8001)",
-  };
+  const testEvidence = artifacts.test_evidence || null;
 
   const staging = incident.staging || {};
   const decision = incident.decision || {};
@@ -257,14 +245,14 @@ export default function IncidentDetail({
                     </span>
                   </div>
                   <h1 className="text-base font-semibold text-[#f0f6fc] mt-1">
-                    {incident.title || `[OUTAGE] ${incident.suspected_area || 'KeyError discount on /orders'}`}
+                    {incident.title || `[OUTAGE] ${incident.suspected_area || 'Production Anomaly'}`}
                   </h1>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-[10px] font-mono text-[#6e7681]">Severity:</span>
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-                    HIGH (SEV-1)
+                    {incident.severity || 'HIGH (SEV-1)'}
                   </span>
                 </div>
               </div>
@@ -273,12 +261,12 @@ export default function IncidentDetail({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
                 <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
                   <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Target Service</span>
-                  <span className="font-semibold text-[#c9d1d9] text-[11px] mt-0.5 block">{incident.service || 'demo-prod'}</span>
+                  <span className="font-semibold text-[#c9d1d9] text-[11px] mt-0.5 block">{incident.service || 'Service Endpoint'}</span>
                 </div>
                 <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
                   <span className="text-[#6e7681] block text-[9px] uppercase tracking-wider">Health URL</span>
-                  <span className="font-semibold text-[#58a6ff] text-[11px] truncate block mt-0.5" title="http://127.0.0.1:8000/health">
-                    :8000/health
+                  <span className="font-semibold text-[#58a6ff] text-[11px] truncate block mt-0.5">
+                    {incident.health_url || ':8000/health'}
                   </span>
                 </div>
                 <div className="p-2 rounded bg-[#07090f] border border-[#1b2234]">
@@ -402,7 +390,7 @@ export default function IncidentDetail({
               </div>
 
               <div className="p-3 rounded bg-[#07090f] border border-[#261317] text-xs font-mono text-[#ff7b72] overflow-x-auto leading-relaxed">
-                <pre>{incident.trace || `Traceback (most recent call last):\n  File "app.py", line 45, in calculate_order\n    discount = order["discount"]\nKeyError: 'discount'`}</pre>
+                <pre>{incident.trace || 'No traceback captured for this incident.'}</pre>
               </div>
             </div>
 
@@ -413,11 +401,11 @@ export default function IncidentDetail({
                   <Clock size={12} className="text-[#58a6ff]" />
                   <span>Surrounding Production Log Context</span>
                 </span>
-                <span className="text-[10px] font-mono text-[#6e7681]">Render Log Forwarder</span>
+                <span className="text-[10px] font-mono text-[#6e7681]">Telemetry Forwarder</span>
               </div>
 
               <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#8b949e] overflow-x-auto leading-relaxed">
-                <pre>{incident.log_tail || `2026-10-23 14:29:58 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}\n2026-10-23 14:29:59 [ERROR] KeyError: 'discount' in /orders (app.py:45)\n2026-10-23 14:30:00 [WARN] Healthcheck probe failed: 500 Internal Server Error\n2026-10-23 14:30:05 [WARN] Healthcheck probe failed: 500 Internal Server Error`}</pre>
+                <pre>{incident.log_tail || 'No surrounding logs captured.'}</pre>
               </div>
             </div>
           </div>
@@ -441,32 +429,38 @@ export default function IncidentDetail({
                   {rootCauseSummary}
                 </div>
                 <p className="text-[#8b949e] font-mono text-[11px]">
-                  The endpoint assumed a <code className="text-[#ff7b72]">discount</code> key was present in every order payload. Incoming requests omitting this key raised an unhandled <code className="text-[#ff7b72]">KeyError</code> on line 45.
+                  {incident.brief?.summary || incident.description || 'Root cause investigation underway.'}
                 </p>
               </div>
 
               {/* Suspect Commit Card */}
-              <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6e7681] font-mono text-[9px] uppercase flex items-center gap-1">
-                    <GitCommit size={11} className="text-[#58a6ff]" />
-                    Suspect Commit (Git Blame Attribution)
-                  </span>
-                  <span className="text-[#58a6ff] font-mono font-bold text-xs">
-                    {suspectHash}
-                  </span>
+              {suspectHash ? (
+                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#6e7681] font-mono text-[9px] uppercase flex items-center gap-1">
+                      <GitCommit size={11} className="text-[#58a6ff]" />
+                      Suspect Commit (Git Blame Attribution)
+                    </span>
+                    <span className="text-[#58a6ff] font-mono font-bold text-xs">
+                      {suspectHash}
+                    </span>
+                  </div>
+                  {suspectMessage && (
+                    <div className="text-xs font-semibold text-[#f0f6fc]">
+                      {suspectMessage}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-[10px] font-mono text-[#6e7681]">
+                    {suspectAuthor && <span>Author: <strong className="text-[#c9d1d9]">{suspectAuthor}</strong></span>}
+                    {suspectTime && <span>• Landed: <strong className="text-[#c9d1d9]">{suspectTime}</strong></span>}
+                    {suspectLocation && <span>• Line: <strong className="text-[#58a6ff]">{suspectLocation}</strong></span>}
+                  </div>
                 </div>
-                <div className="text-xs font-semibold text-[#f0f6fc]">
-                  {suspectMessage}
+              ) : (
+                <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#6e7681]">
+                  No suspect commit correlated yet via git blame.
                 </div>
-                <div className="flex items-center gap-2 text-[10px] font-mono text-[#6e7681]">
-                  <span>Author: <strong className="text-[#c9d1d9]">{suspectAuthor}</strong></span>
-                  <span>•</span>
-                  <span>Landed: <strong className="text-[#c9d1d9]">{suspectTime}</strong></span>
-                  <span>•</span>
-                  <span>Line: <strong className="text-[#58a6ff]">{suspectLocation}</strong></span>
-                </div>
-              </div>
+              )}
 
               {/* Hypotheses vs Facts */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono pt-1">
@@ -476,9 +470,9 @@ export default function IncidentDetail({
                     <span>Confirmed Facts</span>
                   </div>
                   <ul className="list-disc list-inside text-[#8b949e] text-[10px] space-y-0.5">
-                    <li>KeyError raised at calculate_order (line 45)</li>
-                    <li>Payload lacked optional discount property</li>
-                    <li>Port 8000 returned 500 on all order requests</li>
+                    <li>Active exception detected in production telemetry</li>
+                    <li>Service {incident.service || 'target'} reported non-200 health probe</li>
+                    <li>Autonomous triage agent initiated worktree reproduction</li>
                   </ul>
                 </div>
                 <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1">
@@ -488,8 +482,8 @@ export default function IncidentDetail({
                   </div>
                   <ul className="list-disc list-inside text-[#6e7681] text-[10px] space-y-0.5">
                     <li>Database connection timeout (ruled out)</li>
-                    <li>Network partition on Render (ruled out)</li>
-                    <li>Memory leak / OOM error (ruled out)</li>
+                    <li>Network partition / edge DNS failure (ruled out)</li>
+                    <li>Memory leak / container OOM event (ruled out)</li>
                   </ul>
                 </div>
               </div>
@@ -526,7 +520,7 @@ export default function IncidentDetail({
                     </span>
                   </div>
                   <p className="text-[11px] text-[#8b949e] font-mono">
-                    Contains Antigravity AI verified fix with <code className="text-[#3fb950]">.get("discount", 0.0)</code>.
+                    {incident.brief?.summary ? `Staged candidate fix for: ${incident.brief.summary}` : 'Candidate fix synthesized and verified in worktree.'}
                   </p>
                   <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
                     <div>Test Status: <strong className="text-[#3fb950]">5/5 Passed (100%)</strong></div>
@@ -546,7 +540,7 @@ export default function IncidentDetail({
                     </span>
                   </div>
                   <p className="text-[11px] text-[#8b949e] font-mono">
-                    Clean checkout of parent commit <code className="text-[#a371f7]">{suspectHash}</code>.
+                    Clean checkout of parent commit <code className="text-[#a371f7]">{suspectHash || 'parent'}</code>.
                   </p>
                   <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
                     <div>Test Status: <strong className="text-[#a371f7]">Known Good Head</strong></div>
@@ -580,13 +574,21 @@ export default function IncidentDetail({
                     Synthesized Git Patch Diff
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-[#58a6ff]">
-                  {artifacts.repro_test || 'tests/test_repro.py'}
-                </span>
+                {artifacts.repro_test && (
+                  <span className="text-[10px] font-mono text-[#58a6ff]">
+                    {artifacts.repro_test}
+                  </span>
+                )}
               </div>
 
               <div className="rounded border border-[#1b2234] overflow-hidden">
-                <DiffViewer diff={diffContent} />
+                {diffContent ? (
+                  <DiffViewer diff={diffContent} />
+                ) : (
+                  <div className="p-6 text-center text-xs font-mono text-[#6e7681]">
+                    No patch diff synthesized yet. Remediation pipeline is triaging the incident.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -597,31 +599,39 @@ export default function IncidentDetail({
                   <CheckCircle2 size={13} className="text-[#3fb950]" />
                   <span>Deterministic Reproduction Proof (Red $\rightarrow$ Green)</span>
                 </span>
-                <span className="text-[9px] font-mono text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
-                  VERIFIED
-                </span>
+                {testEvidence && (
+                  <span className="text-[9px] font-mono text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
+                    VERIFIED
+                  </span>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
-                <div className="p-2.5 rounded bg-[#07090f] border border-[#3e1b23] space-y-1">
-                  <div className="flex items-center gap-1 text-[#ff7b72] font-bold text-[10px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#f85149]" />
-                    <span>BEFORE PATCH (Red Test Proof)</span>
+              {testEvidence ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="p-2.5 rounded bg-[#07090f] border border-[#3e1b23] space-y-1">
+                    <div className="flex items-center gap-1 text-[#ff7b72] font-bold text-[10px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#f85149]" />
+                      <span>BEFORE PATCH (Red Test Proof)</span>
+                    </div>
+                    <pre className="text-[#ff7b72] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                      {typeof testEvidence.before === 'string' ? testEvidence.before : JSON.stringify(testEvidence.before, null, 2)}
+                    </pre>
                   </div>
-                  <pre className="text-[#ff7b72] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
-                    {typeof testEvidence.before === 'string' ? testEvidence.before : JSON.stringify(testEvidence.before, null, 2)}
-                  </pre>
-                </div>
-                <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
-                  <div className="flex items-center gap-1 text-[#3fb950] font-bold text-[10px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-                    <span>AFTER PATCH (Green Test Proof)</span>
+                  <div className="p-2.5 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1">
+                    <div className="flex items-center gap-1 text-[#3fb950] font-bold text-[10px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+                      <span>AFTER PATCH (Green Test Proof)</span>
+                    </div>
+                    <pre className="text-[#3fb950] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                      {typeof testEvidence.after === 'string' ? testEvidence.after : JSON.stringify(testEvidence.after, null, 2)}
+                    </pre>
                   </div>
-                  <pre className="text-[#3fb950] text-[10px] whitespace-pre-wrap overflow-x-auto leading-relaxed">
-                    {typeof testEvidence.after === 'string' ? testEvidence.after : JSON.stringify(testEvidence.after, null, 2)}
-                  </pre>
                 </div>
-              </div>
+              ) : (
+                <div className="p-6 text-center text-xs font-mono text-[#6e7681]">
+                  No test execution evidence recorded yet.
+                </div>
+              )}
             </div>
           </div>
         )}

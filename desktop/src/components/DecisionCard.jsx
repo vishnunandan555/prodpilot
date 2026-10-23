@@ -30,7 +30,7 @@ export default function DecisionCard({
 
   const recommendation = decision?.recommendation || 'fix_forward';
   const probabilities = decision?.probabilities || { fix_forward: 0.85, rollback: 0.15 };
-  const reason = decision?.reason || 'Clean 1-line patch in app.py passing full test suite. Suspect commit landed recently.';
+  const reason = decision?.reason || 'Candidate remediation evaluated and verified in isolated sandbox.';
 
   const fixProbPercent = Math.round((probabilities.fix_forward || 0.85) * 100);
   const rollbackProbPercent = Math.round((probabilities.rollback || 0.15) * 100);
@@ -218,7 +218,7 @@ export default function DecisionCard({
           >
             <input
               type="text"
-              placeholder="Guide agent (e.g. Use dict.get('discount', 0) instead of try/except)..."
+              placeholder="Guide agent (e.g. adjust error handling, verify edge case)..."
               value={followupText}
               onChange={(e) => setFollowupText(e.target.value)}
               className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-indigo-500"

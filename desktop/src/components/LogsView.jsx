@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Terminal,
   Search,
@@ -15,43 +15,49 @@ import {
   ChevronDown
 } from 'lucide-react';
 
-export default function LogsView({ incidents = [], activeIncident = null }) {
+export default function LogsView({ apiUrl = 'http://127.0.0.1:8765', incidents = [], activeIncident = null }) {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [filterLevel, setFilterLevel] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceFilter, setServiceFilter] = useState('ALL');
-  const [autoScroll, setAutoScroll] = useState(true);
 
-  const sampleLogs = [
-    { id: 1, time: '14:29:40', level: 'INFO', service: 'demo-prod', message: 'Worker 4: Booted process pid=99287 on port 8000' },
-    { id: 2, time: '14:29:45', level: 'INFO', service: 'demo-prod', message: 'GET /health status=200 duration=0.8ms user_agent="ProdPilot-Watcher/1.0"' },
-    { id: 3, time: '14:29:50', level: 'INFO', service: 'demo-prod', message: 'GET /orders status=200 duration=2.1ms user_agent="Mozilla/5.0"' },
-    { id: 4, time: '14:29:55', level: 'INFO', service: 'demo-prod', message: 'GET /health status=200 duration=0.7ms user_agent="ProdPilot-Watcher/1.0"' },
-    { id: 5, time: '14:29:58', level: 'INFO', service: 'demo-prod', message: 'POST /orders payload={"items": [{"id": "p1", "qty": 2, "price": 25.0}]}' },
-    { id: 6, time: '14:29:59', level: 'ERROR', service: 'demo-prod', message: "KeyError: 'discount' in /orders (app.py:45 calculate_order)" },
-    { id: 7, time: '14:29:59', level: 'ERROR', service: 'demo-prod', message: 'Traceback: File "app.py", line 45, in calculate_order: discount = order["discount"]' },
-    { id: 8, time: '14:30:00', level: 'WARN', service: 'demo-prod', message: 'Healthcheck probe failed: 500 Internal Server Error (retrying in 5s)' },
-    { id: 9, time: '14:30:01', level: 'INFO', service: 'prodpilot-core', message: 'FastRuleFilter: Classified log anomaly as SEV-1 HIGH. Fingerprint=e7f82b... Recurrence=1' },
-    { id: 10, time: '14:30:02', level: 'INFO', service: 'prodpilot-core', message: 'TelegramNotifier: Immediate alert card dispatched to @prodpilotbot with Render web link' },
-    { id: 11, time: '14:30:03', level: 'INFO', service: 'antigravity-agent', message: 'GitBlameAnalyzer: Suspect commit identified a1b2c3d ("feat: add discount support") author="Vishnu Nandan"' },
-    { id: 12, time: '14:30:05', level: 'INFO', service: 'antigravity-agent', message: 'Worktree isolation created at /tmp/prodpilot-worktree-inc-001. Synthesizing test_repro.py' },
-    { id: 13, time: '14:30:08', level: 'INFO', service: 'antigravity-agent', message: 'Reproduction test verified RED (KeyError). Patch applied. Verification GREEN (5 passed).' },
-    { id: 14, time: '14:30:10', level: 'INFO', service: 'prodpilot-core', message: 'CanaryStaging: Fix-forward Canary running on Port 8001 (Health: 200 OK)' },
-    { id: 15, time: '14:30:11', level: 'INFO', service: 'prodpilot-core', message: 'CanaryStaging: Rollback Canary running on Port 8002 (Health: 200 OK)' },
-    { id: 16, time: '14:30:12', level: 'WARN', service: 'orchestrator', message: 'Incident transitioned to AWAITING_APPROVAL. Developer decision required.' }
-  ];
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/logs`);
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.logs || []);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch real logs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filteredLogs = sampleLogs.filter((log) => {
-    if (filterLevel !== 'ALL' && log.level !== filterLevel) return false;
+  useEffect(() => {
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 3000);
+    return () => clearInterval(interval);
+  }, [apiUrl]);
+
+  const filteredLogs = logs.filter((log) => {
+    if (filterLevel !== 'ALL' && log.level?.toUpperCase() !== filterLevel) return false;
     if (serviceFilter !== 'ALL' && log.service !== serviceFilter) return false;
     if (searchTerm.trim() !== '') {
       const q = searchTerm.toLowerCase();
-      return log.message.toLowerCase().includes(q) || log.service.toLowerCase().includes(q);
+      return (
+        (log.message || '').toLowerCase().includes(q) ||
+        (log.service || '').toLowerCase().includes(q)
+      );
     }
     return true;
   });
 
   const getLevelStyle = (level) => {
-    switch (level) {
+    switch (level?.toUpperCase()) {
       case 'ERROR':
         return 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]';
       case 'WARN':
@@ -63,6 +69,18 @@ export default function LogsView({ incidents = [], activeIncident = null }) {
     }
   };
 
+  const servicesList = Array.from(new Set(logs.map((l) => l.service).filter(Boolean)));
+
+  const handleExport = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(filteredLogs, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `prodpilot-logs-${Date.now()}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-hidden font-sans">
       {/* Top Header & Search Controls */}
@@ -72,22 +90,30 @@ export default function LogsView({ incidents = [], activeIncident = null }) {
             <Terminal size={15} className="text-[#58a6ff]" />
             <div>
               <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                Live Telemetry & Logs Explorer
+                Live Telemetry & Ingest Logs
               </h1>
               <p className="text-[11px] text-[#6e7681] font-mono">
-                Real-time log tailing from Render Log API and Local Forwarder
+                Real-time log tailing from POST /ingest and connected services
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {}}
-              className="px-2 py-1 rounded bg-[#161b26] hover:bg-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1 border border-[#212a3d] transition"
+              onClick={handleExport}
+              disabled={filteredLogs.length === 0}
+              className="px-2 py-1 rounded bg-[#161b26] hover:bg-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1 border border-[#212a3d] transition disabled:opacity-50"
               title="Export filtered logs as JSON"
             >
               <Download size={12} />
               <span>Export</span>
+            </button>
+            <button
+              onClick={fetchLogs}
+              className="p-1 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] transition"
+              title="Refresh log stream"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </button>
             <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-[10px] font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
@@ -120,8 +146,8 @@ export default function LogsView({ incidents = [], activeIncident = null }) {
                   onClick={() => setFilterLevel(lvl)}
                   className={`px-2 py-0.5 rounded text-[10px] font-semibold transition ${
                     filterLevel === lvl
-                      ? 'bg-[#1f293d] text-[#f0f6fc] border border-[#2e3d5b]'
-                      : 'text-[#6e7681] hover:text-[#c9d1d9] border border-transparent'
+                      ? 'bg-[#1b2234] text-[#f0f6fc]'
+                      : 'text-[#6e7681] hover:text-[#c9d1d9]'
                   }`}
                 >
                   {lvl}
@@ -129,54 +155,57 @@ export default function LogsView({ incidents = [], activeIncident = null }) {
               ))}
             </div>
 
-            {/* Service selector */}
-            <select
-              value={serviceFilter}
-              onChange={(e) => setServiceFilter(e.target.value)}
-              className="px-2 py-1 rounded bg-[#07090f] border border-[#1b2234] text-xs text-[#8b949e] font-mono focus:outline-none"
-            >
-              <option value="ALL">All Services</option>
-              <option value="demo-prod">demo-prod (8000)</option>
-              <option value="prodpilot-core">prodpilot-core (8765)</option>
-              <option value="antigravity-agent">antigravity-agent</option>
-              <option value="orchestrator">orchestrator</option>
-            </select>
+            {/* Service filter */}
+            {servicesList.length > 0 && (
+              <select
+                value={serviceFilter}
+                onChange={(e) => setServiceFilter(e.target.value)}
+                className="px-2 py-1 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#c9d1d9] focus:outline-none"
+              >
+                <option value="ALL">All Services</option>
+                {servicesList.map((svc) => (
+                  <option key={svc} value={svc}>
+                    {svc}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Log Feed Table (High Density Datadog Style) */}
-      <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-0.5 bg-[#080b11]">
+      {/* Log Feed */}
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1 bg-[#080b11]">
         {filteredLogs.length === 0 ? (
-          <div className="p-6 text-center text-[#485263]">
-            No logs match the current filter or search criteria.
+          <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[#6e7681] space-y-2">
+            <Terminal size={32} className="text-[#30363d]" />
+            <p className="text-xs font-semibold text-[#8b949e]">No Telemetry Logs Recorded Yet</p>
+            <p className="text-[11px] text-[#6e7681] max-w-md">
+              ProdPilot is listening for incoming logs at <code className="text-[#58a6ff]">POST {apiUrl}/ingest</code>. Once your backend service or ChunkStream streams logs, they will appear here in real time.
+            </p>
           </div>
         ) : (
-          filteredLogs.map((log) => (
+          filteredLogs.map((log, index) => (
             <div
-              key={log.id}
-              className={`p-1.5 rounded flex items-start gap-2.5 transition hover:bg-[#0d121c] ${
-                log.level === 'ERROR'
-                  ? 'bg-[#140b0e] border-l-2 border-[#da3633]'
-                  : log.level === 'WARN'
-                  ? 'bg-[#120f08] border-l-2 border-[#d29922]'
-                  : 'bg-transparent'
-              }`}
+              key={log.id || index}
+              className="flex items-start gap-3 p-1.5 rounded hover:bg-[#0d111a] transition border border-transparent hover:border-[#1b2234]"
             >
-              <span className="text-[#485263] text-[10px] flex-shrink-0 select-none">
-                {log.time}
+              <span className="text-[#485263] text-[11px] flex-shrink-0 select-none">
+                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LOG'}
               </span>
               <span
-                className={`px-1 py-0.2 rounded text-[9px] font-bold border flex-shrink-0 select-none ${getLevelStyle(
+                className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border flex-shrink-0 ${getLevelStyle(
                   log.level
                 )}`}
               >
-                {log.level}
+                {log.level || 'INFO'}
               </span>
-              <span className="text-[#58a6ff] text-[10px] flex-shrink-0 select-none">
-                [{log.service}]
-              </span>
-              <span className="text-[#c9d1d9] text-[11px] break-all leading-normal">
+              {log.service && (
+                <span className="text-[#8b949e] text-[11px] flex-shrink-0 font-semibold">
+                  [{log.service}]
+                </span>
+              )}
+              <span className="text-[#c9d1d9] text-[11px] break-all flex-1">
                 {log.message}
               </span>
             </div>
@@ -184,24 +213,10 @@ export default function LogsView({ incidents = [], activeIncident = null }) {
         )}
       </div>
 
-      {/* Log Stream Footer */}
-      <div className="border-t border-[#1b2234] bg-[#0d111a] px-4 py-2 flex items-center justify-between text-[11px] font-mono text-[#6e7681] flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <span>{filteredLogs.length} events</span>
-          <span>•</span>
-          <span>Tail: /tmp/demo-prod.log</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={(e) => setAutoScroll(e.target.checked)}
-              className="rounded bg-[#07090f] border-[#1b2234] text-[#388bfd] focus:ring-0"
-            />
-            <span className="text-[#8b949e]">Auto-scroll live</span>
-          </label>
-        </div>
+      {/* Footer Info */}
+      <div className="border-t border-[#1b2234] bg-[#0d111a] px-4 py-1.5 flex items-center justify-between text-[10px] font-mono text-[#6e7681] flex-shrink-0">
+        <span>Showing {filteredLogs.length} of {logs.length} entries</span>
+        <span>Telemetry buffer: SQLite `service_logs`</span>
       </div>
     </div>
   );

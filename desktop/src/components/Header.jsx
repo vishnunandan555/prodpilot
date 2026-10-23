@@ -116,7 +116,7 @@ export default function Header({
           <button
             onClick={handleCrashClick}
             disabled={triggeringCrash}
-            title="Send bad order without discount key to crash demo-prod"
+            title="Trigger test exception in target service"
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all font-semibold disabled:opacity-50 shadow-sm shadow-rose-950"
           >
             <Flame className="w-3.5 h-3.5 text-rose-400 animate-pulse" />

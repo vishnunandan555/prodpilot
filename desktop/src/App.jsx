@@ -22,66 +22,6 @@ const getInitialApiUrl = () => {
 
 const PROD_BASE_URL = 'http://127.0.0.1:8000';
 
-const FALLBACK_INCIDENT = {
-  id: 'inc-20261023-001',
-  service: 'demo-prod',
-  status: 'AWAITING_APPROVAL',
-  suspected_area: 'KeyError discount on /orders',
-  title: '[INCIDENT] Fix discount KeyError on /orders',
-  detected_at: '2026-10-23T14:30:00Z',
-  health_url: 'http://127.0.0.1:8000/health',
-  trace: `Traceback (most recent call last):
-  File "app.py", line 45, in calculate_order
-    discount = order["discount"]
-KeyError: 'discount'`,
-  log_tail: `2026-10-23 14:29:58 [INFO] Incoming POST /orders payload={'items': [{'id': 'p1', 'qty': 2, 'price': 25.0}]}
-2026-10-23 14:29:59 [ERROR] KeyError: 'discount' in /orders (app.py:45)
-2026-10-23 14:30:00 [WARN] Healthcheck probe failed: 500 Internal Server Error
-2026-10-23 14:30:05 [WARN] Healthcheck probe failed: 500 Internal Server Error`,
-  suspect_commit: {
-    hash: 'a1b2c3d',
-    author: 'Vishnu Nandan',
-    message: 'feat: add discount support to order checkout',
-    suspect_file: 'app.py',
-    suspect_line: 45,
-    minutes_ago: 15
-  },
-  brief: {
-    summary: "KeyError: 'discount' in calculate_order endpoint",
-    suspected_area: 'app.py:45',
-    introduced_by: 'a1b2c3d'
-  },
-  artifacts: {
-    repro_test: 'tests/test_repro.py',
-    patch_diff: `--- a/app.py
-+++ b/app.py
-@@ -43,3 +43,3 @@ def calculate_order(order: Dict[str, Any]) -> Dict[str, Any]:
-     tax = round(subtotal * TAX_RATE, 2)
--    discount = order["discount"]
-+    discount = order.get("discount", 0.0)
-     total = max(0.0, round(subtotal + tax - discount, 2))`,
-    test_evidence: {
-      before: `tests/test_repro.py::test_order_without_discount FAILED
-KeyError: 'discount' in calculate_order (app.py:45)`,
-      after: `tests/test_repro.py::test_order_without_discount PASSED
-tests/test_orders.py::test_health PASSED
-tests/test_orders.py::test_order_calculation PASSED
-tests/test_orders.py::test_post_order_endpoint PASSED
-tests/test_orders.py::test_order_history PASSED
-================ 5 passed in 0.42s ================\n\n100% tests passed. Zero regressions detected.`
-    }
-  },
-  staging: {
-    fix_forward: { port: 8001, health: true },
-    rollback: { port: 8002, health: true }
-  },
-  decision: {
-    action: 'fix_forward',
-    probabilities: { fix_forward: 0.85, rollback: 0.15 },
-    reason: 'Clean 1-line patch with 100% test pass. Suspect commit landed recently with zero database migrations.'
-  }
-};
-
 export default function App() {
   const [apiUrl, setApiUrl] = useState(getInitialApiUrl());
   // Parse path for /incidents/:id routing
@@ -100,24 +40,31 @@ export default function App() {
 
   const [activeNav, setActiveNav] = useState(getInitialNav());
   const [incidentFilter, setIncidentFilter] = useState('all');
-  const [incidents, setIncidents] = useState([FALLBACK_INCIDENT]);
-  const [selectedIncident, setSelectedIncident] = useState(FALLBACK_INCIDENT);
+  const [incidents, setIncidents] = useState([]);
+  const [selectedIncident, setSelectedIncident] = useState(null);
   const [events, setEvents] = useState([]);
   const [apiConnected, setApiConnected] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(false);
+  const [showMobileList, setShowMobileList] = useState(false);
+
+  // Real Platform Topology State
+  const [connectedServers, setConnectedServers] = useState([]);
+  const [activeRepo, setActiveRepo] = useState(null);
+
+  // Authentication: starts from scratch if no operator session
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const stored = localStorage.getItem('prodpilot_user');
-      return stored ? JSON.parse(stored) : { id: 'usr-admin', username: 'admin', role: 'admin', full_name: 'SRE Administrator' };
+      return stored ? JSON.parse(stored) : null;
     } catch {
-      return { id: 'usr-admin', username: 'admin', role: 'admin', full_name: 'SRE Administrator' };
+      return null;
     }
   });
   const [token, setToken] = useState(() => localStorage.getItem('prodpilot_token') || '');
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(() => !localStorage.getItem('prodpilot_user'));
 
   const handleLoginSuccess = (user, tokenStr) => {
     setCurrentUser(user);
@@ -405,6 +352,7 @@ export default function App() {
               onTriggerCrash={handleTriggerCrash}
               actionLoading={actionLoading}
               apiConnected={apiConnected}
+              apiUrl={apiUrl}
             />
           )}
 
@@ -423,7 +371,7 @@ export default function App() {
           )}
 
           {(activeNav === 'logs' || activeNav === 'telemetry') && (
-            <LogsView incidents={incidents} activeIncident={selectedIncident} />
+            <LogsView apiUrl={apiUrl} incidents={incidents} activeIncident={selectedIncident} />
           )}
 
           {activeNav === 'services' && (
@@ -431,15 +379,15 @@ export default function App() {
           )}
 
           {activeNav === 'repositories' && (
-            <RepositoriesView apiUrl={apiUrl} />
+            <RepositoriesView apiUrl={apiUrl} activeIncident={selectedIncident} />
           )}
 
           {activeNav === 'agents' && (
-            <AgentsView />
+            <AgentsView incidents={incidents} />
           )}
 
           {activeNav === 'team' && (
-            <TeamView />
+            <TeamView apiUrl={apiUrl} currentUser={currentUser} />
           )}
 
           {activeNav === 'settings' && (

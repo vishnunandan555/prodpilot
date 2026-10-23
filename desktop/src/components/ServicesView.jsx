@@ -16,7 +16,8 @@ import {
   Check,
   Clock,
   Wifi,
-  WifiOff
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 
 export default function ServicesView({ apiConnected = true, apiUrl = 'http://127.0.0.1:8765' }) {
@@ -124,46 +125,9 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
     }
   };
 
-  // Staging and core service defaults
-  const stagingServices = [
-    {
-      id: 'canary-fix',
-      name: 'canary-fix-forward (Remediation)',
-      port: 8001,
-      env: 'Staging Canary',
-      status: 'HEALTHY',
-      healthUrl: 'http://127.0.0.1:8001/health',
-      uptime: '100%',
-      p99: '9.8ms',
-      description: 'Patched target with Antigravity fix. 100% tests pass.',
-    },
-    {
-      id: 'canary-rollback',
-      name: 'canary-rollback (Reversion)',
-      port: 8002,
-      env: 'Staging Canary',
-      status: 'HEALTHY',
-      healthUrl: 'http://127.0.0.1:8002/health',
-      uptime: '100%',
-      p99: '11.0ms',
-      description: 'Known-good build staged for zero-downtime instant rollback.',
-    },
-    {
-      id: 'prodpilot-core',
-      name: 'prodpilot-core (Local Daemon)',
-      port: 8765,
-      env: 'Control Plane',
-      status: apiConnected ? 'HEALTHY' : 'OFFLINE',
-      healthUrl: 'http://127.0.0.1:8765/health',
-      uptime: '100%',
-      p99: '1.2ms',
-      description: 'FastAPI local daemon orchestrating SSE streams and worktree sandbox.',
-    }
-  ];
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
-      {/* Matte SRE Header */}
+      {/* Header */}
       <div className="border-b border-[#1b2234] bg-[#0d111a] px-5 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -173,10 +137,10 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  Monitored Services & Staging Canaries
+                  Monitored Services & Endpoints
                 </h1>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
-                  {servers.length + stagingServices.length} SERVICES
+                  {servers.length} TARGETS
                 </span>
               </div>
               <p className="text-[11px] text-[#8b949e] font-mono">
@@ -198,48 +162,73 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
               className="p-1 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#8b949e] hover:text-[#f0f6fc] transition"
               title="Refresh servers"
             >
-              <RotateCcw size={13} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="p-5 max-w-5xl w-full mx-auto space-y-5">
-        {/* Connected Production Servers */}
-        <div className="space-y-3">
+      <div className="p-5 max-w-5xl w-full mx-auto space-y-4">
+        {/* Core Control Plane Orchestrator (Live Daemon) */}
+        <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+              <h2 className="text-xs font-semibold text-[#f0f6fc] font-mono uppercase tracking-wider">
+                ProdPilot Control Plane
+              </h2>
+            </div>
+            <span className="text-[10px] font-mono text-[#58a6ff]">DAEMON CORE</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+            <div>
+              <p className="text-[#f0f6fc] font-semibold">FastAPI Background Engine & Ingest API</p>
+              <p className="text-[11px] text-[#6e7681] mt-0.5">
+                URL: <code className="text-[#58a6ff]">{apiUrl}</code> • SSE Stream Active • SQLite Database Synced
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${apiConnected ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]' : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'}`}>
+                {apiConnected ? '200 OK CONNECTED' : 'OFFLINE'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* User-Connected Target Servers */}
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
-              Connected Target Servers
+              Connected Target Services ({servers.length})
             </h2>
-            <span className="text-[10px] font-mono text-[#6e7681]">Active server monitored for 5xx errors</span>
+            <span className="text-[10px] font-mono text-[#6e7681]">Actively probed for latency and 5xx errors</span>
           </div>
 
           {servers.length === 0 ? (
-            <div className="p-6 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
+            <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-2">
               <Server size={24} className="mx-auto text-[#6e7681]" />
-              <p className="text-xs font-mono text-[#c9d1d9]">No custom server registered yet</p>
-              <p className="text-[11px] font-mono text-[#8b949e]">
-                Connect your test server (e.g. chunkstream on :8000) to monitor live health & latency.
+              <p className="text-xs font-mono text-[#c9d1d9]">No target servers connected yet</p>
+              <p className="text-[11px] font-mono text-[#8b949e] max-w-md mx-auto">
+                Connect your backend microservice (e.g. ChunkStream on port 8000, Render edge deployment, or FastAPI service) to begin live health probing.
               </p>
               <button
                 onClick={() => setShowConnectModal(true)}
-                className="mt-2 px-3 py-1.5 rounded bg-[#238636] text-white text-xs font-mono inline-flex items-center gap-1.5"
+                className="mt-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono inline-flex items-center gap-1.5 transition"
               >
                 <Plus size={13} />
-                <span>Connect Server Now</span>
+                <span>Connect Server</span>
               </button>
             </div>
           ) : (
-            servers.map((s) => {
-              const isPinging = pingingId === s.id;
-              const isActive = s.is_active === 1 || activeServer?.id === s.id;
-              const isHealthy = s.status === 'HEALTHY';
-              const isDegraded = s.status === 'DEGRADED';
-              const isOffline = s.status === 'OFFLINE' || s.status === 'UNKNOWN';
+            servers.map((srv) => {
+              const isActive = srv.is_active === 1 || activeServer?.id === srv.id;
+              const isHealthy = srv.status === 'HEALTHY';
+              const isError = srv.status === 'ERROR';
 
               return (
                 <div
-                  key={s.id}
+                  key={srv.id}
                   className={`p-3.5 rounded-lg bg-[#0d111a] border transition space-y-2.5 ${
                     isActive
                       ? 'border-[#388bfd] border-l-4 border-l-[#58a6ff]'
@@ -250,139 +239,78 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                     <div className="flex items-center gap-2.5">
                       <span
                         className={`w-2.5 h-2.5 rounded-full ${
-                          isHealthy
-                            ? 'bg-[#3fb950]'
-                            : isDegraded
-                            ? 'bg-[#d29922]'
-                            : 'bg-[#ff7b72]'
+                          isHealthy ? 'bg-[#3fb950]' : isError ? 'bg-[#f85149]' : 'bg-[#8b949e]'
                         }`}
                       />
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{s.name}</h3>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#171f30] text-[#c9d1d9] border border-[#293652]">
-                            Port {s.port}
+                          <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{srv.name}</h3>
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234]">
+                            Port {srv.port}
                           </span>
                           {isActive && (
                             <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-bold">
-                              ACTIVE TARGET
+                              PRIMARY TARGET
                             </span>
                           )}
                         </div>
                         <p className="text-[11px] font-mono text-[#8b949e] mt-0.5">
-                          Health URL: <code className="text-[#58a6ff]">{s.health_url}</code>
+                          Probe URL: <code className="text-[#58a6ff]">{srv.health_url}</code>
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs font-mono">
                       <button
-                        onClick={() => handlePing(s.id)}
-                        disabled={isPinging}
-                        className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#c9d1d9] text-[11px] flex items-center gap-1 transition"
+                        onClick={() => handlePing(srv.id)}
+                        disabled={pingingId === srv.id}
+                        className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-[11px] flex items-center gap-1 disabled:opacity-50"
                       >
-                        <RotateCcw size={10} className={isPinging ? 'animate-spin' : ''} />
-                        <span>Probe</span>
+                        <RefreshCw size={10} className={pingingId === srv.id ? 'animate-spin' : ''} />
+                        <span>Ping</span>
                       </button>
-
                       {!isActive && (
                         <button
-                          onClick={() => handleActivateServer(s.id)}
-                          className="px-2 py-0.5 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-[11px]"
+                          onClick={() => handleActivateServer(srv.id)}
+                          className="px-2 py-0.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-[#c9d1d9] text-[11px]"
                         >
-                          Set Active
+                          Set Primary
                         </button>
                       )}
-
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                          isHealthy
-                            ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                            : isDegraded
-                            ? 'bg-[#2b200d] text-[#e3b341] border-[#543e11]'
-                            : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                        }`}
-                      >
-                        {s.status}
-                      </span>
-
                       <button
-                        onClick={() => handleDeleteServer(s.id)}
+                        onClick={() => handleDeleteServer(srv.id)}
                         className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] transition"
-                        title="Delete server"
+                        title="Disconnect server"
                       >
                         <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono pt-0.5 text-[#8b949e]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono pt-1 text-[#8b949e]">
                     <div>
-                      <span className="text-[#6e7681] block text-[10px]">HOST</span>
-                      <span className="text-[#c9d1d9]">{s.host || '127.0.0.1'}</span>
+                      <span className="text-[#6e7681] block text-[10px]">STATUS</span>
+                      <span className={`font-semibold ${isHealthy ? 'text-[#3fb950]' : isError ? 'text-[#ff7b72]' : 'text-[#8b949e]'}`}>
+                        {srv.status || 'UNKNOWN'}
+                      </span>
                     </div>
                     <div>
                       <span className="text-[#6e7681] block text-[10px]">LATENCY</span>
-                      <span className="text-[#3fb950]">{s.latency_ms ? `${s.latency_ms}ms` : '--'}</span>
+                      <span className="text-[#c9d1d9]">{srv.latency_ms !== null ? `${srv.latency_ms}ms` : '--'}</span>
                     </div>
                     <div>
-                      <span className="text-[#6e7681] block text-[10px]">LAST CHECKED</span>
-                      <span className="text-[#c9d1d9] truncate block">{s.last_checked_at ? s.last_checked_at.slice(11, 19) : 'Just now'}</span>
+                      <span className="text-[#6e7681] block text-[10px]">HOST</span>
+                      <span className="text-[#c9d1d9]">{srv.host || '127.0.0.1'}</span>
                     </div>
                     <div>
                       <span className="text-[#6e7681] block text-[10px]">WATCHDOG</span>
-                      <span className="text-[#58a6ff]">10s Circuit Breaker</span>
+                      <span className="text-[#3fb950]">Active (10s revert)</span>
                     </div>
                   </div>
                 </div>
               );
             })
           )}
-        </div>
-
-        {/* Staging Canaries & Local Control Plane */}
-        <div className="space-y-3">
-          <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#8b949e]">
-            Canary Ports & Autonomous Infrastructure
-          </h2>
-
-          <div className="space-y-2.5">
-            {stagingServices.map((cs) => (
-              <div
-                key={cs.id}
-                className="p-3.5 rounded-lg bg-[#0d111a] border border-[#1b2234] space-y-2 hover:border-[#293652] transition"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1b2234] pb-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#3fb950]" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">{cs.name}</h3>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#171f30] text-[#c9d1d9] border border-[#293652]">
-                          Port {cs.port}
-                        </span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234]">
-                          {cs.env}
-                        </span>
-                      </div>
-                      <p className="text-[11px] font-mono text-[#8b949e] mt-0.5">{cs.description}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-xs font-mono">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b]">
-                      {cs.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
-                  <span>Probe URL: <code className="text-[#58a6ff]">{cs.healthUrl}</code></span>
-                  <span>Latency: <strong className="text-[#f0f6fc]">{cs.p99}</strong></span>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -393,7 +321,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
             <div className="bg-[#07090f] px-5 py-4 border-b border-[#1b2234] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Server size={16} className="text-[#58a6ff]" />
-                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Connect Target Microservice / Server</h3>
+                <h3 className="text-xs font-bold text-[#f0f6fc] font-mono">Connect Production Server / Microservice</h3>
               </div>
               <button onClick={() => setShowConnectModal(false)} className="text-[#6e7681] hover:text-[#f0f6fc]">
                 ✕
@@ -416,7 +344,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
               )}
 
               <div>
-                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Service Identifier</label>
+                <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Service Name</label>
                 <input
                   type="text"
                   required
@@ -429,7 +357,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Host / Bind Address</label>
+                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Host / Domain</label>
                   <input
                     type="text"
                     value={host}
@@ -439,7 +367,7 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Production Port</label>
+                  <label className="block text-[11px] font-mono text-[#8b949e] mb-1">Port</label>
                   <input
                     type="number"
                     value={port}
@@ -461,25 +389,24 @@ export default function ServicesView({ apiConnected = true, apiUrl = 'http://127
                   className="w-full px-3 py-1.5 bg-[#07090f] border border-[#1b2234] rounded text-xs font-mono text-[#f0f6fc] focus:outline-none focus:border-[#58a6ff]"
                 />
                 <span className="text-[10px] font-mono text-[#6e7681] mt-0.5 block">
-                  ProdPilot will immediately send an HTTP GET probe to verify status.
+                  ProdPilot will probe this endpoint every 5s for HTTP 200 responses.
                 </span>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowConnectModal(false)}
-                  className="px-3 py-1.5 rounded bg-[#171f30] text-[#c9d1d9] text-xs font-mono hover:bg-[#1f293d]"
+                  className="px-3 py-1.5 rounded bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={connectLoading}
-                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium flex items-center gap-1.5"
+                  className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {connectLoading ? <RotateCcw size={13} className="animate-spin" /> : <Check size={13} />}
-                  <span>{connectLoading ? 'Testing Probe...' : 'Connect & Probe Server'}</span>
+                  {connectLoading ? 'Probing Target...' : 'Connect & Probe'}
                 </button>
               </div>
             </form>

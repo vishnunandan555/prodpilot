@@ -166,6 +166,17 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
             except Exception:
                 pass
 
+        # 5. Service Logs table (for real ingested telemetry)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS service_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service TEXT NOT NULL,
+            level TEXT DEFAULT 'INFO',
+            message TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
         conn.commit()
     except Exception as e:
         logger.debug(f"Migration error: {e}")
@@ -746,7 +757,62 @@ def get_active_server(db_path: Optional[str] = None) -> Optional[Dict[str, Any]]
         if not row:
             cur.execute("SELECT * FROM servers ORDER BY created_at DESC LIMIT 1")
             row = cur.fetchone()
-        return dict(row) if row else None
+def list_users(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, email, full_name, role, created_at FROM users ORDER BY created_at ASC")
+        return [dict(r) for r in cur.fetchall()]
+
+
+# --- Service Telemetry Logs ---
+
+def insert_service_log(
+    service: str,
+    level: str,
+    message: str,
+    db_path: Optional[str] = None,
+) -> None:
+    with get_db(db_path) as conn:
+        conn.execute(
+            "INSERT INTO service_logs (service, level, message) VALUES (?, ?, ?)",
+            (service, level.upper(), message)
+        )
+
+
+def list_service_logs(
+    service: Optional[str] = None,
+    level: Optional[str] = None,
+    limit: int = 150,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    query = "SELECT id, service, level, message, timestamp FROM service_logs WHERE 1=1"
+    params = []
+    if service and service != "ALL":
+        query += " AND service = ?"
+        params.append(service)
+    if level and level != "ALL":
+        query += " AND level = ?"
+        params.append(level.upper())
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute(query, tuple(params))
+        rows = [dict(r) for r in cur.fetchall()]
+        return list(reversed(rows))
+
+
+def clear_all_incidents(db_path: Optional[str] = None) -> None:
+    """Wipes all incidents, runs, artifacts, decisions, approvals, and logs."""
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM run_events")
+        conn.execute("DELETE FROM artifacts")
+        conn.execute("DELETE FROM decisions")
+        conn.execute("DELETE FROM approvals")
+        conn.execute("DELETE FROM runs")
+        conn.execute("DELETE FROM incidents")
+        conn.execute("DELETE FROM service_logs")
 
 
 # Hook to automatically mount the ingest router whenever FastAPI is initialized
