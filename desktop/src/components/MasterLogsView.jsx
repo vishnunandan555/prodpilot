@@ -27,7 +27,7 @@ export default function MasterLogsView({ apiUrl }) {
   const fetchMasterLogs = async (isManual = false) => {
     if (isManual) setIsLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/platform/master-logs?limit=300`);
+      const res = await fetch(`${apiUrl}/platform/master-logs?limit=500`);
       if (res.ok) {
         const data = await res.json();
         setConsoleLines(data.console_lines || []);
@@ -95,6 +95,10 @@ export default function MasterLogsView({ apiUrl }) {
         return 'text-[#3fb950] font-semibold';
       case 'TOOL':
         return 'text-[#a371f7] font-semibold';
+      case 'LLM':
+        return 'text-[#d2a8ff] font-bold';
+      case 'MSG':
+        return 'text-[#39c5bb] font-semibold';
       case 'PR':
         return 'text-[#58a6ff] font-semibold';
       case 'JEV':
@@ -107,6 +111,8 @@ export default function MasterLogsView({ apiUrl }) {
   const getTagColor = (tag) => {
     const t = (tag || '').trim().toUpperCase();
     if (t.includes('WATCHDOG')) return 'text-[#ff7b72]';
+    if (t.includes('GEMINI') || t.includes('ANTIGRAV') || t.includes('LLM')) return 'text-[#d2a8ff] font-semibold';
+    if (t.includes('TELEGRAM') || t.includes('MSG')) return 'text-[#39c5bb] font-semibold';
     if (t.includes('AGENT')) return 'text-[#d2a8ff]';
     if (t.includes('VERIFIER')) return 'text-[#7ee787]';
     if (t.includes('GITHUB')) return 'text-[#79c0ff]';
