@@ -25,7 +25,7 @@ from backend.prodpilot.db import (
     update_incident_brief,
     update_incident_status,
 )
-from backend.prodpilot.decide.rules import decide
+from backend.prodpilot.decide.jev import decide_jev as decide
 from backend.prodpilot.pipeline.brief import create_brief
 from backend.prodpilot.pipeline.repro_runner import run_repro_pipeline
 
