@@ -17,7 +17,9 @@ import {
   formatIncidentId,
   formatStatusLabel,
   getStatusBadgeStyle,
-  formatRelativeTime
+  formatRelativeTime,
+  isIncidentActive,
+  isIncidentInactive
 } from '../utils/formatters';
 
 export default function Sidebar({
@@ -27,22 +29,20 @@ export default function Sidebar({
   activeIncident,
   onSelectIncident,
   apiConnected,
-  incidentFilter = 'all',
+  incidentFilter = 'active',
   setIncidentFilter,
   isRefreshing = false,
   onDeleteIncident,
   onClearIncidents
 }) {
-  const activeCount = incidents.filter(
-    (i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK'
-  );
+  const activeCount = incidents.filter((i) => isIncidentActive(i.status));
 
   const filteredIncidents = incidents.filter((inc) => {
     if (incidentFilter === 'active') {
-      return inc.status !== 'RESOLVED' && inc.status !== 'DEPLOYED' && inc.status !== 'ROLLED_BACK';
+      return isIncidentActive(inc.status);
     }
     if (incidentFilter === 'resolved') {
-      return inc.status === 'RESOLVED' || inc.status === 'DEPLOYED' || inc.status === 'ROLLED_BACK';
+      return isIncidentInactive(inc.status);
     }
     return true;
   });
@@ -119,7 +119,9 @@ export default function Sidebar({
             <span className="font-semibold uppercase tracking-wider text-[10px] text-[#6e7681]">
               Incidents
             </span>
-            <span className="text-[11px] font-mono">({incidents.length})</span>
+            <span className="text-[11px] font-mono">
+              ({incidentFilter === 'active' ? activeCount.length : filteredIncidents.length})
+            </span>
             {incidents.length > 0 && onClearIncidents && (
               <button
                 type="button"
@@ -167,10 +169,7 @@ export default function Sidebar({
           ) : (
             filteredIncidents.map((inc) => {
               const isSelected = activeIncident?.id === inc.id && activeNav === 'incidents';
-              const isResolved =
-                inc.status === 'RESOLVED' ||
-                inc.status === 'DEPLOYED' ||
-                inc.status === 'ROLLED_BACK';
+              const isResolved = isIncidentInactive(inc.status);
 
               return (
                 <div

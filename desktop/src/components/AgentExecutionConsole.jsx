@@ -50,7 +50,7 @@ export default function AgentExecutionConsole({
   const isAwaiting = status === 'AWAITING_APPROVAL';
   const isFixing = status === 'FIXING';
   const isInvestigating = status === 'INVESTIGATING' || status === 'UNDERSTAND' || status === 'DETECTED';
-  const isResolved = status === 'DEPLOYED' || status === 'RESOLVED' || status === 'ROLLED_BACK';
+  const isResolved = status === 'DEPLOYED' || status === 'RESOLVED' || status === 'ROLLED_BACK' || status === 'MANUAL_TAKEOVER' || status === 'DISMISSED';
   const isTakeover = status === 'MANUAL_TAKEOVER';
 
   // Build unified, chronological list of all agent actions

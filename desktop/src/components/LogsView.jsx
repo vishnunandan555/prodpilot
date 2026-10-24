@@ -20,7 +20,7 @@ import {
   Bug
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
-import { formatIncidentId } from '../utils/formatters';
+import { formatIncidentId, isIncidentActive, isIncidentInactive } from '../utils/formatters';
 
 export default function LogsView({
   apiUrl = 'http://127.0.0.1:8765',
@@ -113,7 +113,7 @@ export default function LogsView({
       (i.service === currentServer?.name ||
         i.service === 'chunkstream' ||
         (currentServer && i.service?.toLowerCase().includes(currentServer.name?.toLowerCase()))) &&
-      !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK'].includes(i.status)
+      isIncidentActive(i.status)
   );
 
   const resolvedIncident = incidents.find(
@@ -121,7 +121,7 @@ export default function LogsView({
       (i.service === currentServer?.name ||
         i.service === 'chunkstream' ||
         (currentServer && i.service?.toLowerCase().includes(currentServer.name?.toLowerCase()))) &&
-      ['RESOLVED', 'DEPLOYED'].includes(i.status)
+      isIncidentInactive(i.status)
   );
 
   const matchingIncident = activeIncident;

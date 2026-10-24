@@ -65,9 +65,9 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
 
   const agents = fleetData?.agents || [
     {
-      id: 'watchdog',
-      name: 'Telemetry Watchdog Worker',
-      type: 'Ingestion & Health Probing',
+      id: 'watcher',
+      name: 'Watcher',
+      type: 'Telemetry & Health Probing',
       status: 'STANDBY',
       status_detail: 'Standby — Connect a server in Production Servers tab to activate watchdog probes',
       current_target: 'No production server connected',
@@ -78,9 +78,9 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       icon: 'Activity'
     },
     {
-      id: 'triage',
-      name: 'Triage & Classification Worker',
-      type: 'Exception Normalization & Severity Scoring',
+      id: 'triager',
+      name: 'Triager',
+      type: 'Crash Normalization & Severity Scoring',
       status: 'READY',
       status_detail: 'SHA-256 stack trace fingerprinter & rule evaluation engine',
       current_target: 'Decision Policy Engine',
@@ -91,8 +91,8 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       icon: 'Filter'
     },
     {
-      id: 'investigation',
-      name: 'Code Investigation & Blame Worker',
+      id: 'inspector',
+      name: 'Inspector',
       type: 'Git Blame & Syntax Tree Correlation',
       status: 'STANDBY',
       status_detail: 'Standby — Link a repository in Projects tab to enable blame correlation',
@@ -104,9 +104,9 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       icon: 'GitBranch'
     },
     {
-      id: 'patch_sandbox',
-      name: 'Patch Synthesis & Worktree Worker',
-      type: 'Automated Code Repair & Testing',
+      id: 'fixer',
+      name: 'Fixer',
+      type: 'Autonomous Code Repair & Patch Synthesis',
       status: 'READY',
       status_detail: 'Isolated Git Worktree sandbox (/worktrees). 1-attempt anti-loop guard.',
       current_target: 'Isolated Git Worktree',
@@ -117,9 +117,9 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       icon: 'Cpu'
     },
     {
-      id: 'canary_verifier',
-      name: 'Canary Verification & Gate Worker',
-      type: 'Staging Validation & Decision Scoring',
+      id: 'validator',
+      name: 'Validator',
+      type: 'Canary Staging & Safety Gatekeeper',
       status: 'READY',
       status_detail: 'Isolated container runtime. Port pool: localhost:8001-8010. Threshold: 85%.',
       current_target: 'Ephemeral Canary Port Pool',
@@ -130,9 +130,9 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       icon: 'ShieldCheck'
     },
     {
-      id: 'oncall_dispatcher',
-      name: 'On-Call Notification & Escalation Worker',
-      type: 'Interactive Notifications & Phone Escalation',
+      id: 'dispatcher',
+      name: 'Dispatcher',
+      type: 'On-Call Alerts & Voice Escalation',
       status: 'ONLINE',
       status_detail: 'Telegram bot @prodpilotbot 1-tap decision buttons + Twilio voice emergency escalation tree',
       current_target: 'Telegram (@prodpilotbot) + Twilio Voice',

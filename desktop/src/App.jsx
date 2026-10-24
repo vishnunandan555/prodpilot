@@ -14,6 +14,7 @@ import MasterLogsView from './components/MasterLogsView';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
 import { GlobalProgressBar } from './components/LoadingSkeleton';
+import { isIncidentActive } from './utils/formatters';
 
 // Read API URL from Vite environment variable (Cloudflare Tunnel URL) with localStorage fallback
 const getInitialApiUrl = () => {
@@ -43,7 +44,7 @@ export default function App() {
   };
 
   const [activeNav, setActiveNav] = useState(getInitialNav());
-  const [incidentFilter, setIncidentFilter] = useState('all');
+  const [incidentFilter, setIncidentFilter] = useState('active');
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [events, setEvents] = useState([]);
@@ -177,7 +178,7 @@ export default function App() {
             if (currentSelected && data.some((i) => i.id === currentSelected.id)) {
               target = data.find((i) => i.id === currentSelected.id);
             } else {
-              target = data.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || data[0];
+              target = data.find((i) => isIncidentActive(i.status)) || data[0];
             }
             if (target && window.history.replaceState) {
               window.history.replaceState({}, '', `/incidents/${encodeURIComponent(target.id)}`);
@@ -187,7 +188,7 @@ export default function App() {
           }
 
           if (target) {
-            const isActiveState = !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(target.status);
+            const isActiveState = isIncidentActive(target.status);
             if (!currentSelected || currentSelected.id !== target.id) {
               setSelectedIncident(target);
               fetchIncidentDetail(target.id);
@@ -521,7 +522,7 @@ export default function App() {
         setIncidents((prev) => {
           const remaining = prev.filter((i) => i.id !== incidentId);
           if (selectedIncident?.id === incidentId) {
-            const nextSelected = remaining.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || (remaining.length > 0 ? remaining[0] : null);
+            const nextSelected = remaining.find((i) => isIncidentActive(i.status)) || (remaining.length > 0 ? remaining[0] : null);
             setSelectedIncident(nextSelected);
             if (nextSelected) {
               fetchIncidentDetail(nextSelected.id);
@@ -613,7 +614,7 @@ export default function App() {
             setActiveNav={(nav) => {
               setActiveNav(nav);
               if (nav === 'incidents' && !selectedIncident && incidents.length > 0) {
-                const target = incidents.find((i) => !['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED'].includes(i.status)) || incidents[0];
+                const target = incidents.find((i) => isIncidentActive(i.status)) || incidents[0];
                 if (target) {
                   handleSelectIncident(target);
                 }

@@ -1149,9 +1149,9 @@ def get_agents_endpoint() -> Dict[str, Any]:
 
     agents = [
         {
-            "id": "watchdog",
-            "name": "Production Telemetry & Watchdog Agent",
-            "type": "Ingestion & Health Probing",
+            "id": "watcher",
+            "name": "Watcher",
+            "type": "Telemetry & Health Probing",
             "status": watchdog_status,
             "status_detail": watchdog_detail,
             "current_target": watchdog_target,
@@ -1165,8 +1165,8 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "icon": "Activity"
         },
         {
-            "id": "triage",
-            "name": "Triage & Fingerprint Agent",
+            "id": "triager",
+            "name": "Triager",
             "type": "Crash Normalization & Severity Scoring",
             "status": triage_status,
             "status_detail": triage_detail,
@@ -1178,8 +1178,8 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "icon": "Filter"
         },
         {
-            "id": "investigation",
-            "name": "AST Code Investigation & Blame Agent",
+            "id": "inspector",
+            "name": "Inspector",
             "type": "Git Blame & Syntax Tree Correlation",
             "status": inv_status,
             "status_detail": inv_detail,
@@ -1191,9 +1191,9 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "icon": "GitBranch"
         },
         {
-            "id": "patch_sandbox",
-            "name": "Patch Synthesis & Worktree Sandbox Agent",
-            "type": "Autonomous Code Repair",
+            "id": "fixer",
+            "name": "Fixer",
+            "type": "Autonomous Code Repair & Patch Synthesis",
             "status": patch_status,
             "status_detail": patch_detail,
             "current_target": "Isolated Git Worktree",
@@ -1204,9 +1204,9 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "icon": "Cpu"
         },
         {
-            "id": "canary_verifier",
-            "name": "Canary Verification & Gatekeeper Agent",
-            "type": "Staging Validation & Decision Scoring",
+            "id": "validator",
+            "name": "Validator",
+            "type": "Canary Staging & Safety Gatekeeper",
             "status": canary_status,
             "status_detail": canary_detail,
             "current_target": "Ephemeral Canary Port Pool",
@@ -1217,9 +1217,9 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "icon": "ShieldCheck"
         },
         {
-            "id": "oncall_dispatcher",
-            "name": "On-Call Dispatcher & Voice Escalation Agent",
-            "type": "Interactive Notifications & Phone Escalation",
+            "id": "dispatcher",
+            "name": "Dispatcher",
+            "type": "On-Call Alerts & Voice Escalation",
             "status": dispatch_status,
             "status_detail": dispatch_detail,
             "current_target": "Telegram (@prodpilotbot) + Twilio Voice",

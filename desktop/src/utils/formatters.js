@@ -2,6 +2,18 @@
  * Clean formatting utilities for SRE Console
  */
 
+export const INACTIVE_STATUSES = ['RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'MANUAL_TAKEOVER', 'DISMISSED'];
+
+export function isIncidentActive(status) {
+  if (!status) return false;
+  return !INACTIVE_STATUSES.includes(status.toUpperCase());
+}
+
+export function isIncidentInactive(status) {
+  if (!status) return false;
+  return INACTIVE_STATUSES.includes(status.toUpperCase());
+}
+
 export function formatIncidentId(id) {
   if (!id) return '';
   // Convert 'inc-20261023205121-e768' into '#e768'

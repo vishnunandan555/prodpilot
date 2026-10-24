@@ -40,7 +40,8 @@ import {
   formatDate,
   formatRelativeTime,
   formatStatusLabel,
-  getStatusBadgeStyle
+  getStatusBadgeStyle,
+  isIncidentInactive
 } from '../utils/formatters';
 
 export default function IncidentDetail({
@@ -152,10 +153,7 @@ export default function IncidentDetail({
     );
   }
 
-  const isResolved =
-    incident.status === 'DEPLOYED' ||
-    incident.status === 'RESOLVED' ||
-    incident.status === 'ROLLED_BACK';
+  const isResolved = isIncidentInactive(incident.status);
   const isAwaiting = incident.status === 'AWAITING_APPROVAL';
   const isTakeover = incident.status === 'MANUAL_TAKEOVER';
 
@@ -418,7 +416,38 @@ export default function IncidentDetail({
 
       <div className="flex-1 max-w-4xl w-full mx-auto p-4 space-y-4">
         {/* Production Restored Banner */}
-        {(deploySuccess || isResolved) && !dismissRestoredBanner && (
+        {isTakeover && !dismissRestoredBanner && (
+          <div className="p-3.5 rounded-lg bg-[#161b26] border border-[#212a3d] flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <UserX className="w-5 h-5 text-[#a5d6ff] flex-shrink-0" />
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs font-semibold text-[#f0f6fc]">
+                    Manual Takeover Active
+                  </h3>
+                  <span className="text-[11px] text-[#a5d6ff] font-mono px-1.5 py-0.2 rounded bg-[#1c2436] border border-[#2e3b56]">
+                    Autonomous Loop Disengaged
+                  </span>
+                  <span className="text-[11px] text-[#79c0ff] font-mono px-1.5 py-0.2 rounded bg-[#161f30] border border-[#263550]">
+                    Canaries Retained (:8001 / :8002)
+                  </span>
+                </div>
+                <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
+                  An on-call engineer has assumed manual control of this incident. Autonomous remediation is inactive and will not overwrite local states.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissRestoredBanner(true)}
+              className="text-[#8b949e] hover:text-[#c9d1d9] p-1 rounded hover:bg-[#212a3d] transition shrink-0"
+              title="Dismiss banner"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {(deploySuccess || (isResolved && !isTakeover)) && !dismissRestoredBanner && (
           <div className="p-3.5 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-[#3fb950] flex-shrink-0" />
@@ -621,7 +650,9 @@ export default function IncidentDetail({
                 <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
                   <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Resolution Mode</span>
                   <span className="font-semibold text-xs mt-1 block truncate">
-                    {isResolved ? (
+                    {isTakeover ? (
+                      <span className="text-[#a5d6ff]">Manual Takeover</span>
+                    ) : isResolved ? (
                       incident.status === 'ROLLED_BACK' ? (
                         <span className="text-[#e3b341]">Automated Rollback</span>
                       ) : (
@@ -639,7 +670,11 @@ export default function IncidentDetail({
                 <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234]">
                   <span className="text-[#6e7681] block text-[10px] uppercase font-semibold tracking-wider">Production State</span>
                   <span className="font-semibold text-xs mt-1 block truncate">
-                    {isResolved ? (
+                    {isTakeover ? (
+                      <span className="text-[#a5d6ff] flex items-center gap-1">
+                        <UserX size={12} /> Operator Control
+                      </span>
+                    ) : isResolved ? (
                       <span className="text-[#3fb950] flex items-center gap-1">
                         <CheckCircle2 size={12} /> Restored (200 OK)
                       </span>
@@ -994,37 +1029,55 @@ export default function IncidentDetail({
               </div>
 
               {/* Action Approval Controls */}
-              <div className="pt-2 border-t border-[#1b2234] flex flex-wrap items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction('fix_forward')}
-                  disabled={actionLoading}
-                  className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
-                >
-                  <Zap size={14} />
-                  <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy Hotfix (:8000)'}</span>
-                </button>
+              {isTakeover ? (
+                <div className="pt-2 border-t border-[#1b2234] flex items-center justify-between p-3 rounded-lg bg-[#161b26] border border-[#212a3d]">
+                  <div className="flex items-center gap-2 text-xs text-[#c9d1d9]">
+                    <UserX size={15} className="text-[#a5d6ff]" />
+                    <span><strong>Manual Takeover Active:</strong> SRE operator has assumed manual control. Autonomous remediation is inactive.</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#8b949e]">Canaries (:8001/:8002) retained</span>
+                </div>
+              ) : isResolved ? (
+                <div className="pt-2 border-t border-[#1b2234] flex items-center justify-between p-3 rounded-lg bg-[#0d1e17] border border-[#1b3d2b]">
+                  <div className="flex items-center gap-2 text-xs text-[#3fb950]">
+                    <CheckCircle2 size={15} />
+                    <span><strong>Remediation Completed:</strong> Incident resolved and production state restored.</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#8b949e]">Port 8000 Healthy</span>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-[#1b2234] flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction('fix_forward')}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    <Zap size={14} />
+                    <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy Hotfix (:8000)'}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction('rollback')}
-                  disabled={actionLoading}
-                  className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium rounded-lg border border-[#212a3d] transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                >
-                  <RotateCcw size={13} className="text-[#d29922]" />
-                  <span>Rollback to Prior Commit...</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction('rollback')}
+                    disabled={actionLoading}
+                    className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium rounded-lg border border-[#212a3d] transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <RotateCcw size={13} className="text-[#d29922]" />
+                    <span>Rollback to Prior Commit...</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => onTakeover && onTakeover()}
-                  disabled={actionLoading}
-                  className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                  <UserX size={13} />
-                  <span>Manual Takeover</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => onTakeover && onTakeover()}
+                    disabled={actionLoading}
+                    className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <UserX size={13} />
+                    <span>Manual Takeover</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Live Autonomous SRE Agent Cognitive Trajectory & Execution Console */}

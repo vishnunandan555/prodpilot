@@ -22,7 +22,7 @@ import {
   Radio
 } from 'lucide-react';
 import { StatCardsSkeleton, ListItemSkeleton } from './LoadingSkeleton';
-import { formatIncidentId, formatStatusLabel, getStatusBadgeStyle } from '../utils/formatters';
+import { formatIncidentId, formatStatusLabel, getStatusBadgeStyle, isIncidentActive, isIncidentInactive } from '../utils/formatters';
 
 export default function DashboardView({
   incidents = [],
@@ -90,12 +90,8 @@ export default function DashboardView({
     return () => clearInterval(interval);
   }, [apiUrl]);
 
-  const activeIncidents = incidents.filter(
-    (i) => i.status !== 'RESOLVED' && i.status !== 'DEPLOYED' && i.status !== 'ROLLED_BACK'
-  );
-  const resolvedIncidents = incidents.filter(
-    (i) => i.status === 'RESOLVED' || i.status === 'DEPLOYED' || i.status === 'ROLLED_BACK'
-  );
+  const activeIncidents = incidents.filter((i) => isIncidentActive(i.status));
+  const resolvedIncidents = incidents.filter((i) => isIncidentInactive(i.status));
 
   const isDegraded = activeIncidents.length > 0;
   const primaryActive = activeIncidents[0] || null;
