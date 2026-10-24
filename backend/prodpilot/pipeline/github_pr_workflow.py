@@ -420,7 +420,8 @@ def execute_github_pr_lifecycle(
 
     active = get_active_repo(db_path=db_path) or {}
     base_branch = active.get("default_branch") or "main"
-    branch_name = f"prodpilot/{'fix' if action == 'fix_forward' else 'revert'}-{incident_id[:8]}"
+    unique_suffix = re.sub(r"[^a-zA-Z0-9_-]", "", incident_id.replace("inc-", ""))
+    branch_name = f"prodpilot/{'fix' if action == 'fix_forward' else 'revert'}-{unique_suffix}"
     worktree_path = None
     pr_number = None
     pr_url = None
@@ -445,7 +446,7 @@ def execute_github_pr_lifecycle(
             str(repo_dir), commit=base_ref, prefix=f"prodpilot-pr-{incident_id[:8]}-",
         )
         branch = subprocess.run(
-            ["git", "switch", "-c", branch_name],
+            ["git", "switch", "-C", branch_name],
             cwd=worktree_path, capture_output=True, text=True,
         )
         if branch.returncode != 0:
@@ -495,10 +496,10 @@ def execute_github_pr_lifecycle(
             return {"ok": False, "error": f"Could not commit remediation: {commit.stderr.strip()}"}
 
         # Push branch using authenticated URL with installation token
-        push_cmd = ["git", "push", "-u", "origin", branch_name]
+        push_cmd = ["git", "push", "-u", "--force", "origin", branch_name]
         if token and repo_slug:
             auth_remote = f"https://x-access-token:{token}@github.com/{repo_slug}.git"
-            push_cmd = ["git", "push", "-u", auth_remote, branch_name]
+            push_cmd = ["git", "push", "-u", "--force", auth_remote, branch_name]
 
         push = subprocess.run(
             push_cmd,
