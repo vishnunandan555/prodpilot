@@ -42,3 +42,41 @@ def test_create_brief():
     assert brief["key_name"] == "discount"
     assert brief["suspect_file"] == "app.py"
     assert brief["suspect_line"] == 45
+
+
+def test_extract_traceback_with_variable_type_annotation_does_not_break():
+    """Ensures source lines with colons (like type annotations) are not mistaken for error types."""
+    trace = """Traceback (most recent call last):
+  File "main.py", line 224, in request_lifecycle_middleware
+    response: Response = await call_next(request)
+  File "transfer.py", line 189, in get_transfer_telemetry_summary
+    elapsed = max(time.time() - telemetry["start_time"], 0.001)
+TypeError: 'NoneType' object is not subscriptable"""
+    info = extract_traceback_info(trace)
+    assert info["error_type"] == "TypeError"
+    assert "NoneType" in info["error_message"]
+    assert info["file"] == "transfer.py"
+    assert info["line"] == 189
+    assert info["func"] == "get_transfer_telemetry_summary"
+
+
+def test_classifier_prioritizes_application_crash_over_logging_crash():
+    from backend.prodpilot.triage.classifier import classify_logs
+    logs = [
+        "Traceback (most recent call last):",
+        "File \"/opt/render/project/src/app/main.py\", line 224, in request_lifecycle_middleware",
+        "response: Response = await call_next(request)",
+        "File \"/opt/render/project/src/app/transfer.py\", line 189, in get_transfer_telemetry_summary",
+        "elapsed = max(time.time() - telemetry[\"start_time\"], 0.001)",
+        "TypeError: 'NoneType' object is not subscriptable",
+        "During handling of the above exception, another exception occurred:",
+        "Traceback (most recent call last):",
+        "File \"/opt/render/project/src/app/logging_config.py\", line 56, in emit",
+        "AttributeError: 'BufferLogHandler' object has no attribute 'formatException'",
+    ]
+    triage = classify_logs("chunkstream", logs)
+    assert triage.severity == "HIGH"
+    assert triage.suspected_area == "transfer.py:get_transfer_telemetry_summary"
+    assert "TypeError" in triage.trace
+    assert "NoneType" in triage.trace
+

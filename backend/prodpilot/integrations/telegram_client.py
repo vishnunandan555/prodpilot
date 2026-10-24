@@ -140,6 +140,19 @@ def generate_natural_incident_explanation(
             "(`int(time.time() - last_ts)`), rounding to 0. Dividing chunk bytes by 0 triggered an unhandled ZeroDivisionError "
             "which caused an immediate application crash."
         )
+    if "TypeError" in combined:
+        if "NoneType" in combined and "not subscriptable" in combined:
+            return (
+                "A TypeError occurred when accessing a subscript key or index on an object that was None. "
+                "The requested transfer telemetry or session data was not initialized before telemetry calculations."
+            )
+        return (
+            "A TypeError occurred due to invalid argument types or subscript access on an unexpected data structure."
+        )
+    if "AttributeError" in combined:
+        return (
+            "An AttributeError occurred attempting to access a method or property not defined on the target instance."
+        )
 
     # Use brief summary or hypothesis if available
     if brief:

@@ -52,8 +52,15 @@ RE_5XX = re.compile(
     re.IGNORECASE,
 )
 
+# Real exception class name in Python (e.g., TypeError, ZeroDivisionError, package.module.CustomError)
+EXC_CLASS_REGEX = (
+    r"(?:[a-zA-Z_][a-zA-Z0-9_]*\.)*"
+    r"([A-Z][a-zA-Z0-9_]*(?:Error|Exception|Exit|Interrupt|Warning|Fault)"
+    r"|StopIteration|KeyboardInterrupt|SystemExit|GeneratorExit)"
+)
+
 RE_TRACEBACK = re.compile(
-    r"(Traceback \(most recent call last\):[\s\S]*?(?:^[a-zA-Z_]\w*(?:Error|Exception|Exit|Interrupt|Fault|Warning)?:[^\n]*))",
+    r"(Traceback \(most recent call last\):[\s\S]*?^\s*" + EXC_CLASS_REGEX + r"(?::\s*[^\n]*)?)",
     re.MULTILINE,
 )
 
@@ -90,13 +97,37 @@ RE_CLIENT_DISCONNECT = re.compile(
 
 RE_SUSPECT_AREA = re.compile(r'File "([^"]+)", line \d+, in (\w+)')
 
+IGNORED_FRAME_SUBSTRINGS = (
+    "logging/__init__.py",
+    "logging_config.py",
+    "site-packages/uvicorn",
+    "site-packages/starlette",
+    "site-packages/fastapi",
+    "/lib/python",
+    "/lib64/python",
+)
 
-def extract_suspected_area(trace: Optional[str]) -> Optional[str]:
-    if not trace:
+
+def extract_suspected_area(trace: Optional[str], fallback_text: Optional[str] = None) -> Optional[str]:
+    if not trace and not fallback_text:
         return None
-    matches = RE_SUSPECT_AREA.findall(trace)
+    matches = RE_SUSPECT_AREA.findall(trace or "")
     if matches:
-        # Pick the last file & function in the traceback (closest to crash)
+        # Prioritize innermost application frame (not logging or framework internals)
+        for last_file, last_func in reversed(matches):
+            if not any(ign in last_file for ign in IGNORED_FRAME_SUBSTRINGS):
+                filename = last_file.split("/")[-1]
+                return f"{filename}:{last_func}"
+
+    # If all frames in trace were ignored or trace had no frames, check fallback_text
+    if fallback_text:
+        fb_matches = RE_SUSPECT_AREA.findall(fallback_text)
+        for last_file, last_func in reversed(fb_matches):
+            if not any(ign in last_file for ign in IGNORED_FRAME_SUBSTRINGS):
+                filename = last_file.split("/")[-1]
+                return f"{filename}:{last_func}"
+
+    if matches:
         last_file, last_func = matches[-1]
         filename = last_file.split("/")[-1]
         return f"{filename}:{last_func}"
@@ -145,8 +176,16 @@ def classify_logs(
     full_tail = "\n".join(log_lines[-20:])
 
     # Extract traceback if present
-    trace_match = RE_TRACEBACK.search(combined_text)
-    extracted_trace = trace_match.group(1).strip() if trace_match else None
+    matches = [m.group(1).strip() for m in RE_TRACEBACK.finditer(combined_text)]
+    extracted_trace = None
+    if matches:
+        # If multiple tracebacks exist (e.g. app exception vs secondary logging handler crash),
+        # prioritize the one touching user application code
+        app_matches = [
+            m for m in matches 
+            if not any(ign in m for ign in ("logging_config.py", "logging/__init__.py"))
+        ]
+        extracted_trace = app_matches[0] if app_matches else matches[-1]
 
     if not extracted_trace:
         # Check for standalone exception like KeyError: 'discount'
@@ -154,7 +193,7 @@ def classify_logs(
         if exc_match:
             extracted_trace = exc_match.group(1).strip()
 
-    suspected_area = extract_suspected_area(extracted_trace) or service
+    suspected_area = extract_suspected_area(extracted_trace, fallback_text=combined_text) or service
 
     # 0. CLIENT DISCONNECTION FILTER: normal client refreshes or disconnects are LOW severity
     client_disconnect_match = RE_CLIENT_DISCONNECT.search(combined_text)

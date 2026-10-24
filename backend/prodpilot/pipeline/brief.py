@@ -69,14 +69,17 @@ def extract_traceback_info(trace: Optional[str]) -> Dict[str, Any]:
                     error_message = msg
                     break
 
-    # If still Unknown, fallback to splitting the last line if it has ':'
+    # If still Unknown, check if the last line contains an explicit Python exception class
+    re_valid_exc_class = re.compile(
+        r"^(?:[a-zA-Z_][a-zA-Z0-9_]*\.)*([A-Z][a-zA-Z0-9_]*(?:Error|Exception|Exit|Interrupt|Warning|Fault)|StopIteration|KeyboardInterrupt|SystemExit|GeneratorExit)$"
+    )
     if error_type == "Unknown" and lines:
         error_line = lines[-1].strip()
         if ":" in error_line:
             parts = error_line.split(":", 1)
             candidate = parts[0].strip()
-            if candidate not in ("Arguments", "Message"):
-                error_type = candidate
+            if re_valid_exc_class.match(candidate):
+                error_type = candidate.split(".")[-1]
                 error_message = parts[1].strip()
 
     # Find target frame, prioritizing user/application code over logging/framework internals
@@ -158,10 +161,16 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
 
     tb_info = extract_traceback_info(trace)
 
-    # If traceback error_type is Unknown, check root_cause_report for hints
+    # If trace was truncated or yielded Unknown, check log_tail for full exception traceback
+    if (tb_info["error_type"] == "Unknown" or not tb_info.get("file")) and log_tail:
+        tb_fallback = extract_traceback_info(log_tail)
+        if tb_fallback.get("error_type") != "Unknown":
+            tb_info = tb_fallback
+
+    # If traceback error_type is still Unknown, check root_cause_report for hints
     rc_report = incident.get("root_cause_report") or ""
     if tb_info["error_type"] == "Unknown" and rc_report:
-        for err_candidate in ("ZeroDivisionError", "KeyError", "ValueError", "TypeError", "TimeoutError"):
+        for err_candidate in ("ZeroDivisionError", "KeyError", "ValueError", "TypeError", "AttributeError", "TimeoutError"):
             if err_candidate in rc_report:
                 tb_info["error_type"] = err_candidate
                 break
