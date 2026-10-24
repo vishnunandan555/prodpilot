@@ -215,11 +215,44 @@ export function getIncidentLifecycleProgress(incident) {
   const inc = typeof incident === 'string' ? { status: incident } : incident;
   const status = (inc.status || '').toUpperCase();
   const severity = (inc.severity || '').toUpperCase();
-  const isWaitingForDev = isLowSeverityIncident(inc) && status !== 'RESOLVED' && status !== 'DEPLOYED';
   const isTakeover = status === 'MANUAL_TAKEOVER';
   const isAwaiting = status === 'AWAITING_APPROVAL' || status === 'GATE' || status === 'DECIDE';
   const isResolved = status === 'DEPLOYED' || status === 'RESOLVED' || status === 'CLOSED' || status === 'ROLLED_BACK';
-  const isFailed = status === 'FAILED' || status === 'ERROR';
+  const isFailed = status === 'FAILED' || status === 'ERROR' || status === 'CRASHED';
+
+  const events = Array.isArray(inc.events) ? inc.events : [];
+  const eventStages = events.map(e => (e.stage || e.action || '').toUpperCase());
+
+  const hasFixProgress =
+    status === 'FIX' ||
+    status === 'FIXING' ||
+    status === 'FIXED' ||
+    status === 'PATCH' ||
+    eventStages.includes('FIX') ||
+    eventStages.includes('FIXING') ||
+    eventStages.includes('PATCH');
+
+  const hasReproProgress =
+    status === 'REPRODUCE' ||
+    status === 'REPRODUCING' ||
+    status === 'REPRODUCED' ||
+    eventStages.includes('REPRODUCE') ||
+    eventStages.includes('REPRODUCING') ||
+    Boolean(inc.has_repro || inc.artifacts?.repro_test || inc.repro_test);
+
+  const hasCanaryProgress =
+    status === 'CANARY_TESTING' ||
+    status === 'STAGE' ||
+    status === 'STAGED' ||
+    status === 'VERIFY' ||
+    status === 'VERIFIED' ||
+    eventStages.includes('CANARY_TESTING') ||
+    eventStages.includes('VERIFY') ||
+    Boolean(
+      inc.has_staging ||
+      typeof inc.staging?.fix_forward?.health === 'boolean' ||
+      typeof inc.staging?.rollback?.health === 'boolean'
+    );
 
   const hasDiff = Boolean(
     inc.has_diff ||
@@ -230,16 +263,7 @@ export function getIncidentLifecycleProgress(incident) {
     inc.github_pr_number ||
     inc.pr_number
   );
-  const hasStaging = Boolean(
-    inc.has_staging ||
-    typeof inc.staging?.fix_forward?.health === 'boolean' ||
-    typeof inc.staging?.rollback?.health === 'boolean'
-  );
-  const hasRepro = Boolean(
-    inc.has_repro ||
-    inc.artifacts?.repro_test ||
-    inc.repro_test
-  );
+
   const hasSuspect = Boolean(
     inc.suspect_commit ||
     inc.suspect_author ||
@@ -248,29 +272,35 @@ export function getIncidentLifecycleProgress(incident) {
     inc.brief?.introduced_by
   );
 
+  const isActivelyRemediating =
+    hasFixProgress ||
+    hasReproProgress ||
+    hasCanaryProgress ||
+    hasDiff ||
+    isAwaiting;
+
+  const isWaitingForDev =
+    (status === 'WAITING_FOR_DEVELOPER' || (isLowSeverityIncident(inc) && !isActivelyRemediating)) &&
+    !isResolved &&
+    !isTakeover;
+
   let currentIdx = 0;
   if (isResolved) {
     currentIdx = 6;
-  } else if (isWaitingForDev) {
-    // Low-severity incident: autonomous remediation is deferred after root cause analysis.
-    // It remains in Stage 2 (Analysis / Root Cause Report Complete) awaiting manual developer review.
-    currentIdx = (hasSuspect || status === 'ANALYZING' || status === 'TRIAGED' || inc.root_cause_report || inc.summary) ? 1 : 0;
   } else if (isTakeover || isAwaiting) {
     currentIdx = 5;
   } else if (isFailed) {
     currentIdx = 3;
-  } else if (hasStaging || (hasDiff && (status === 'FIXING' || status === 'CANARY_TESTING' || status === 'STAGE' || status === 'STAGED' || status === 'INVESTIGATING'))) {
+  } else if (hasCanaryProgress || (hasDiff && (status === 'STAGE' || status === 'STAGED' || status === 'VERIFY' || status === 'VERIFIED'))) {
     currentIdx = 4;
-  } else if (status === 'CANARY_TESTING' || status === 'STAGE' || status === 'STAGED' || status === 'VERIFY' || status === 'VERIFIED') {
-    currentIdx = 4;
-  } else if (status === 'FIXING' || status === 'FIXED') {
+  } else if (hasFixProgress || hasDiff) {
     currentIdx = 3;
-  } else if (status === 'REPRODUCE' || status === 'REPRODUCED' || hasRepro) {
+  } else if (hasReproProgress) {
     currentIdx = 2;
+  } else if (isWaitingForDev) {
+    currentIdx = 1;
   } else if (status === 'ANALYZING' || status === 'UNDERSTAND' || status === 'TRIAGED' || hasSuspect) {
     currentIdx = 1;
-  } else if (status === 'OPEN' || status === 'DETECTED' || status === 'INVESTIGATING') {
-    currentIdx = hasSuspect ? 1 : 0;
   } else {
     currentIdx = 0;
   }

@@ -217,9 +217,39 @@ export default function IncidentDetail({
 
   const isTakeover = incident.status === 'MANUAL_TAKEOVER';
   const isFailed = incident.status === 'FAILED' || incident.status === 'ERROR' || incident.status === 'CRASHED';
-  const isAwaiting = incident.status === 'AWAITING_APPROVAL';
+  const isAwaiting = incident.status === 'AWAITING_APPROVAL' || incident.status === 'GATE' || incident.status === 'DECIDE';
   const isResolved = (incident.status === 'DEPLOYED' || incident.status === 'RESOLVED' || incident.status === 'ROLLED_BACK') && !isTakeover;
-  const isWaitingForDev = incident.status === 'WAITING_FOR_DEVELOPER' || (incident.severity === 'LOW' && !isResolved && !isTakeover);
+
+  const eventsList = Array.isArray(events) ? events : (Array.isArray(incident.events) ? incident.events : []);
+  const eventStages = eventsList.map((e) => (e.stage || e.action || '').toUpperCase());
+  const isActivelyRemediating =
+    [
+      'FIX',
+      'FIXING',
+      'FIXED',
+      'PATCH',
+      'REPRODUCE',
+      'REPRODUCING',
+      'REPRODUCED',
+      'CANARY_TESTING',
+      'STAGE',
+      'STAGED',
+      'VERIFY',
+      'VERIFIED',
+      'AWAITING_APPROVAL',
+      'GATE',
+      'DECIDE',
+    ].includes((incident.status || '').toUpperCase()) ||
+    eventStages.includes('FIX') ||
+    eventStages.includes('FIXING') ||
+    eventStages.includes('PATCH') ||
+    eventStages.includes('REPRODUCE') ||
+    Boolean(incident.artifacts?.patch_diff || incident.diff);
+
+  const isWaitingForDev =
+    (incident.status === 'WAITING_FOR_DEVELOPER' || (incident.severity === 'LOW' && !isActivelyRemediating)) &&
+    !isResolved &&
+    !isTakeover;
 
   const suspect = incident.suspect_commit || {};
   const suspectHash = typeof suspect === 'string' ? suspect.slice(0, 7) : suspect.hash?.slice(0, 7) || null;
@@ -973,7 +1003,7 @@ export default function IncidentDetail({
                     const isLast = idx === STAGES_LIST.length - 1;
                     const isStageTakeover = isTakeover && idx === 5;
                     const isStageFailed = isFailed && idx === currentStageIdx;
-                    const isStandbyActive = !isResolved && !isTakeover && !isFailed && idx === 5 && (stg.key === 'AWAITING_APPROVAL' || isAwaiting);
+                    const isStandbyActive = !isResolved && !isTakeover && !isFailed && idx === 5 && isAwaiting;
                     const isActive = !isResolved && !isTakeover && !isFailed && !isStandbyActive && idx === currentStageIdx;
 
                     const isCompleted = isResolved
