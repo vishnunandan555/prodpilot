@@ -539,12 +539,6 @@ def execute_github_pr_lifecycle(
 """
             post_github_issue_comment(incident_id, pr_comment, repo_path=str(repo_dir), db_path=db_path)
 
-            payload={
-                "branch": branch_name, "pr_number": pr_number, "pr_url": pr_url,
-                "merged": False, "action": action, "source": source,
-                "message": f"PR #{pr_number} opened for review; it has not been merged or deployed.",
-            }, db_path=db_path,
-        )
         return {
             "ok": True, "branch": branch_name, "pr_number": pr_number,
             "pr_url": pr_url, "merged": False, "action": action,
