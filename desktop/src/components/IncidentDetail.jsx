@@ -196,7 +196,21 @@ export default function IncidentDetail({
   const prUrl = githubPr?.pr_url || null;
   const prBranch = githubPr?.branch || null;
 
+  const STAGES_LIST = [
+    { key: 'INVESTIGATE', label: 'Investigation', shortDesc: 'Trace & Blame', tab: 'investigation' },
+    { key: 'ANALYSIS', label: 'Analysis', shortDesc: 'Root Cause', tab: 'overview' },
+    { key: 'REPRODUCE', label: 'Reproduction', shortDesc: 'Sandbox Proof', tab: 'investigation' },
+    { key: 'FIX', label: 'Fix & Patch', shortDesc: 'Synthesize Patch', tab: 'changes' },
+    { key: 'VERIFY', label: 'Canary Test', shortDesc: 'Canary Health', tab: 'recovery' },
+    { key: 'AWAITING_APPROVAL', label: 'Approval Gate', shortDesc: 'Standby for Sign-off', tab: 'overview' },
+    { key: 'RESOLVED', label: 'Restored', shortDesc: 'Live 200 OK', tab: 'overview' },
+  ];
+
   const getStageStatusIndex = () => {
+    if (isResolved) return 6;
+    if (isAwaiting || isTakeover) return 5;
+    if (staging?.fix_forward?.health !== undefined) return 4;
+    if (diffContent || artifacts?.patch_diff) return 4;
     switch (incident.status) {
       case 'OPEN':
       case 'DETECTED':
@@ -204,7 +218,7 @@ export default function IncidentDetail({
       case 'INVESTIGATING':
       case 'UNDERSTAND':
       case 'TRIAGED':
-        return 1;
+        return suspectHash || suspectAuthor ? 1 : 0;
       case 'REPRODUCE':
       case 'REPRODUCED':
         return 2;
@@ -219,13 +233,12 @@ export default function IncidentDetail({
       case 'AWAITING_APPROVAL':
       case 'DECIDE':
       case 'GATE':
+      case 'MANUAL_TAKEOVER':
         return 5;
       case 'DEPLOYED':
       case 'RESOLVED':
       case 'ROLLED_BACK':
         return 6;
-      case 'MANUAL_TAKEOVER':
-        return 5;
       default:
         return 1;
     }
@@ -575,7 +588,12 @@ export default function IncidentDetail({
                     </button>
                     {showPatchDiffInGate && (
                       <div className="p-2 border-t border-[#1b2234]">
-                        <DiffViewer diff={diffContent} />
+                        <DiffViewer
+                          diff={diffContent}
+                          suspectedArea={incident.suspected_area}
+                          suspectCommit={suspectHash || 'HEAD~1'}
+                          service={incident.service}
+                        />
                       </div>
                     )}
                   </div>
@@ -714,6 +732,132 @@ export default function IncidentDetail({
                     <span>View in Logs</span>
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Stage-wise Progress Timeline Stepper */}
+            <div className="rounded-xl bg-[#0d111a] border border-[#1b2234] p-3.5 sm:p-4 space-y-3.5 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#161f30] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Activity size={14} className="text-[#58a6ff]" />
+                  <span className="text-xs font-semibold text-[#f0f6fc]">Incident Resolution Lifecycle</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#273855] font-mono">
+                    {Math.min(currentStageIdx + (isResolved ? 1 : 0), STAGES_LIST.length)} of {STAGES_LIST.length} Completed
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[11px] text-[#8b949e]">Current Stage:</span>
+                  <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded border flex items-center gap-1.5 ${
+                    isResolved
+                      ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
+                      : isAwaiting
+                      ? 'bg-[#241a0c] text-[#d29922] border-[#442c16]'
+                      : isTakeover
+                      ? 'bg-[#161f30] text-[#79c0ff] border-[#273855]'
+                      : 'bg-[#161f30] text-[#58a6ff] border-[#273855]'
+                  }`}>
+                    {isResolved ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+                    ) : (
+                      <span className={`w-1.5 h-1.5 rounded-full animate-ping ${isAwaiting ? 'bg-[#d29922]' : 'bg-[#58a6ff]'}`} />
+                    )}
+                    <span>
+                      {isResolved
+                        ? 'Production Restored (200 OK)'
+                        : isAwaiting
+                        ? 'Approval Gate: Standby for Operator Sign-off'
+                        : `${STAGES_LIST[currentStageIdx]?.label}: ${STAGES_LIST[currentStageIdx]?.shortDesc}`}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Horizontal Stepper Row */}
+              <div className="overflow-x-auto pb-1 pt-1">
+                <div className="flex items-center min-w-[700px] justify-between">
+                  {STAGES_LIST.map((stg, idx) => {
+                    const isLast = idx === STAGES_LIST.length - 1;
+                    const isCompleted = isResolved ? true : idx < currentStageIdx;
+                    const isActive = !isResolved && idx === currentStageIdx;
+                    const isStandbyActive = isActive && (stg.key === 'AWAITING_APPROVAL' || isAwaiting);
+
+                    return (
+                      <React.Fragment key={stg.key}>
+                        <button
+                          type="button"
+                          onClick={() => stg.tab && setActiveTab(stg.tab)}
+                          className="flex flex-col items-center group flex-shrink-0 focus:outline-none"
+                          title={`Navigate to ${stg.label}`}
+                        >
+                          <div
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono transition-all duration-200 border ${
+                              isCompleted
+                                ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b] shadow-sm'
+                                : isStandbyActive
+                                ? 'bg-[#241a0c] text-[#d29922] border-[#d29922] ring-2 ring-[#d29922]/30 animate-pulse'
+                                : isActive
+                                ? 'bg-[#161f30] text-[#58a6ff] border-[#388bfd] ring-2 ring-[#58a6ff]/30 animate-pulse'
+                                : 'bg-[#090d14] text-[#6e7681] border-[#1b2234] group-hover:border-[#2b3a58]'
+                            }`}
+                          >
+                            {isCompleted ? (
+                              <Check size={12} className="stroke-[3]" />
+                            ) : (
+                              <span>{idx + 1}</span>
+                            )}
+                          </div>
+
+                          <div className="text-center mt-1.5 space-y-0.5">
+                            <span
+                              className={`block text-[11px] font-semibold transition ${
+                                isCompleted
+                                  ? 'text-[#c9d1d9] group-hover:text-[#f0f6fc]'
+                                  : isStandbyActive
+                                  ? 'text-[#d29922] font-bold'
+                                  : isActive
+                                  ? 'text-[#58a6ff] font-bold'
+                                  : 'text-[#6e7681] group-hover:text-[#8b949e]'
+                              }`}
+                            >
+                              {stg.label}
+                            </span>
+                            <span
+                              className={`block text-[10px] font-mono leading-none ${
+                                isStandbyActive
+                                  ? 'text-[#d29922]/90'
+                                  : isActive
+                                  ? 'text-[#79c0ff]'
+                                  : isCompleted
+                                  ? 'text-[#3fb950]/80'
+                                  : 'text-[#485263]'
+                              }`}
+                            >
+                              {stg.shortDesc}
+                            </span>
+                          </div>
+                        </button>
+
+                        {!isLast && (
+                          <div className="flex-1 mx-2 mb-5 h-[2px] min-w-[24px] relative">
+                            <div className="absolute inset-0 bg-[#161f30]" />
+                            <div
+                              className={`absolute inset-0 transition-all duration-300 ${
+                                isCompleted
+                                  ? 'bg-[#238636]'
+                                  : isActive
+                                  ? isStandbyActive
+                                    ? 'bg-gradient-to-r from-[#238636] to-[#d29922]'
+                                    : 'bg-gradient-to-r from-[#238636] to-[#58a6ff]'
+                                  : 'bg-transparent'
+                              }`}
+                            />
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -881,7 +1025,12 @@ export default function IncidentDetail({
                 </div>
 
                 <div className="rounded-lg border border-[#1b2234] overflow-hidden">
-                  <DiffViewer diff={diffContent} />
+                  <DiffViewer
+                    diff={diffContent}
+                    suspectedArea={incident.suspected_area}
+                    suspectCommit={suspectHash || 'HEAD~1'}
+                    service={incident.service}
+                  />
                 </div>
               </div>
             )}
@@ -1112,7 +1261,12 @@ export default function IncidentDetail({
                   </div>
                 </div>
                 <div className="rounded border border-[#1b2234] overflow-hidden">
-                  <DiffViewer diff={diffContent} />
+                  <DiffViewer
+                    diff={diffContent}
+                    suspectedArea={incident.suspected_area}
+                    suspectCommit={suspectHash || 'HEAD~1'}
+                    service={incident.service}
+                  />
                 </div>
               </div>
             )}
@@ -1361,32 +1515,36 @@ export default function IncidentDetail({
 
         {/* ===================== TAB 5: CHANGES & DIFFS ===================== */}
         {activeTab === 'changes' && (
-          <div className="space-y-3">
-            <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
-                <div className="flex items-center gap-1.5">
-                  <FileCode size={14} className="text-[#58a6ff]" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
-                    Patch diff
+          <div className="space-y-4">
+            {/* Dual-Window IDE Diff Comparison */}
+            <DiffViewer
+              diff={diffContent}
+              suspectedArea={incident.suspected_area}
+              suspectCommit={suspectHash || 'HEAD~1'}
+              service={incident.service}
+            />
+
+            {/* Reproduction Test Script Proof (Collapsible) */}
+            {reproTest && (
+              <div className="rounded-xl bg-[#0d111a] border border-[#1b2234] overflow-hidden shadow-md">
+                <div className="px-4 py-2.5 bg-[#090d16] border-b border-[#1b2234] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileCode size={14} className="text-[#a371f7]" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#c9d1d9] font-mono">
+                      Sandbox Reproduction Script (test_repro.py)
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1e1528] text-[#d2a8ff] border border-[#3e2c52]">
+                    pytest repro proof
                   </span>
                 </div>
-                {artifacts.repro_test && (
-                  <span className="text-[10px] font-mono text-[#58a6ff]">
-                    {artifacts.repro_test}
-                  </span>
-                )}
+                <div className="p-3 bg-[#05070a] overflow-x-auto max-h-64">
+                  <pre className="text-[#79c0ff] font-mono text-[11px] leading-relaxed whitespace-pre selection:bg-[#263550]">
+                    {reproTest}
+                  </pre>
+                </div>
               </div>
-
-              <div className="rounded border border-[#1b2234] overflow-hidden">
-                {diffContent ? (
-                  <DiffViewer diff={diffContent} />
-                ) : (
-                  <div className="p-6 text-center text-xs font-mono text-[#6e7681]">
-                    No patch diff synthesized yet. Remediation pipeline is triaging the incident.
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
 
             {/* Test Evidence Red -> Green */}
             <div className="rounded-md bg-[#0d111a] border border-[#1b2234] p-4 space-y-2.5">

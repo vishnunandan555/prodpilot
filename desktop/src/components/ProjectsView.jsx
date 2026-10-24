@@ -16,9 +16,17 @@ import {
   Folder,
   ShieldAlert,
   Search,
-  MessageSquare
+  MessageSquare,
+  ArrowRight,
+  Filter,
+  Tag,
+  SlidersHorizontal,
+  ChevronRight
 } from 'lucide-react';
 import { ListItemSkeleton } from './LoadingSkeleton';
+import IssueExplorer from './IssueExplorer';
+import NewIssueModal from './NewIssueModal';
+import { formatRelativeTime } from '../utils/formatters';
 
 export default function ProjectsView({ apiUrl }) {
   const [projects, setProjects] = useState([]);
@@ -31,6 +39,13 @@ export default function ProjectsView({ apiUrl }) {
   const [prs, setPrs] = useState([]);
   const [deploys, setDeploys] = useState([]);
   const [commits, setCommits] = useState([]);
+
+  // Issue Platform states
+  const [selectedIssue, setSelectedIssue] = useState(null);
+  const [showNewIssueModal, setShowNewIssueModal] = useState(false);
+  const [issueSearch, setIssueSearch] = useState('');
+  const [issueLabelFilter, setIssueLabelFilter] = useState('all');
+  const [issueSort, setIssueSort] = useState('newest'); // 'newest', 'oldest', 'comments'
 
   // Filter & loading states
   const [loading, setLoading] = useState(false);
@@ -472,146 +487,335 @@ export default function ProjectsView({ apiUrl }) {
               </div>
             )}
 
-            {/* --- TAB 1: ISSUES --- */}
+            {/* --- TAB 1: ISSUES PLATFORM --- */}
             {activeTab === 'issues' && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#8b949e]">Filter:</span>
-                    {['open', 'closed', 'all'].map((st) => (
-                      <button
-                        key={st}
-                        onClick={() => setIssueFilter(st)}
-                        className={`text-[11px] px-2.5 py-1 rounded capitalize transition ${
-                          issueFilter === st
-                            ? 'bg-[#1f2b40] text-[#79c0ff] border border-[#2d4265]'
-                            : 'bg-[#121824] text-[#8b949e] hover:text-[#c9d1d9] border border-transparent'
-                        }`}
-                      >
-                        {st}
-                      </button>
-                    ))}
-
-                    <button
-                      onClick={fetchSubData}
-                      disabled={dataLoading}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium transition ml-2"
-                      title="Refresh issues from GitHub"
-                    >
-                      <RefreshCw size={11} className={dataLoading ? 'animate-spin text-[#58a6ff]' : ''} />
-                      <span>Refresh Issues</span>
-                    </button>
-                  </div>
-
-                  <span className="text-xs text-[#8b949e] font-mono">
-                    Showing {issues.length} {issueFilter} issues from GitHub
-                  </span>
-                </div>
-
-                {dataLoading && issues.length === 0 ? (
-                  <div className="py-4 space-y-3">
-                    <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
-                      <RefreshCw size={12} className="animate-spin" />
-                      <span>Fetching issues from GitHub...</span>
-                    </div>
-                    <ListItemSkeleton count={3} />
-                  </div>
-                ) : issues.length === 0 ? (
-                  <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
-                    {errorMsg ? (
-                      <>
-                        <ShieldAlert size={28} className="mx-auto text-[#d29922] mb-2" />
-                        <p className="text-xs text-[#f0f6fc] font-semibold">GitHub Issues Unavailable</p>
-                        <p className="text-[11px] text-[#ff7b72] mt-1 mb-4">{errorMsg}</p>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 size={28} className="mx-auto text-[#3fb950] mb-2" />
-                        <p className="text-xs text-[#f0f6fc] font-semibold">No issues found</p>
-                        <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
-                          No issues matching state "{issueFilter}" in {currentProject?.github_repo}.
-                        </p>
-                      </>
-                    )}
-                    <button
-                      onClick={fetchSubData}
-                      disabled={dataLoading}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium transition"
-                    >
-                      <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
-                      <span>Refresh from GitHub</span>
-                    </button>
-                  </div>
+                {selectedIssue ? (
+                  <IssueExplorer
+                    issue={selectedIssue}
+                    projectId={currentProject?.id}
+                    apiUrl={apiUrl}
+                    onBack={() => setSelectedIssue(null)}
+                    onIssueUpdated={(updated) => {
+                      setSelectedIssue(updated);
+                      setIssues((prev) =>
+                        prev.map((i) => (i.number === updated.number ? updated : i))
+                      );
+                    }}
+                  />
                 ) : (
-                  <div className="space-y-2.5">
-                    {issues.map((issue) => (
-                      <div
-                        key={issue.id || issue.number}
-                        className="p-4 rounded-lg bg-[#0e1420] border border-[#1b2438] hover:border-[#2b3a5a] transition flex items-start justify-between gap-4"
-                      >
-                        <div className="flex items-start gap-3">
-                          <AlertCircle
-                            size={16}
-                            className={issue.state === 'open' ? 'text-[#ff7b72] mt-0.5' : 'text-[#8957e5] mt-0.5'}
-                          />
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <a
-                                href={issue.html_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs font-bold text-[#f0f6fc] hover:text-[#58a6ff] hover:underline"
-                              >
-                                {issue.title}
-                              </a>
-                              <span className="text-[11px] font-mono text-[#8b949e]">#{issue.number}</span>
-                              {issue.labels?.map((lbl) => (
-                                <span
-                                  key={lbl.id || lbl.name}
-                                  className="text-[10px] px-2 py-0.2 rounded-full font-mono border"
-                                  style={{
-                                    backgroundColor: `#${lbl.color}15`,
-                                    borderColor: `#${lbl.color}40`,
-                                    color: `#${lbl.color}`
-                                  }}
+                  (() => {
+                    const allIssueLabels = Array.from(
+                      new Set(
+                        issues.flatMap((iss) =>
+                          (iss.labels || []).map((l) => (typeof l === 'string' ? l : l.name))
+                        )
+                      )
+                    ).filter(Boolean);
+
+                    const filteredIssues = issues
+                      .filter((issue) => {
+                        if (issueSearch.trim()) {
+                          const q = issueSearch.toLowerCase();
+                          const matchTitle = (issue.title || '').toLowerCase().includes(q);
+                          const matchBody = (issue.body || '').toLowerCase().includes(q);
+                          const matchAuthor = (
+                            issue.author ||
+                            issue.user?.login ||
+                            ''
+                          ).toLowerCase().includes(q);
+                          const matchNum = String(issue.number).includes(q);
+                          if (!matchTitle && !matchBody && !matchAuthor && !matchNum) return false;
+                        }
+                        if (issueLabelFilter !== 'all') {
+                          const hasLabel = (issue.labels || []).some(
+                            (l) => (typeof l === 'string' ? l : l.name) === issueLabelFilter
+                          );
+                          if (!hasLabel) return false;
+                        }
+                        return true;
+                      })
+                      .sort((a, b) => {
+                        if (issueSort === 'oldest') {
+                          return new Date(a.created_at) - new Date(b.created_at);
+                        }
+                        if (issueSort === 'comments') {
+                          return (
+                            (b.comments_count || b.comments || 0) -
+                            (a.comments_count || a.comments || 0)
+                          );
+                        }
+                        return new Date(b.created_at) - new Date(a.created_at);
+                      });
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Platform Header & Actions */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0b1019] border border-[#1b263b] rounded-xl p-3.5">
+                          {/* Left: State filters and Refresh */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center bg-[#090d16] border border-[#1e2a3e] rounded-lg p-0.5">
+                              {['open', 'closed', 'all'].map((st) => (
+                                <button
+                                  key={st}
+                                  onClick={() => setIssueFilter(st)}
+                                  className={`text-xs px-3 py-1 rounded-md capitalize font-medium transition ${
+                                    issueFilter === st
+                                      ? 'bg-[#1a2638] text-[#79c0ff] shadow-xs'
+                                      : 'text-[#8b949e] hover:text-[#c9d1d9]'
+                                  }`}
                                 >
-                                  {lbl.name}
-                                </span>
+                                  {st}
+                                </button>
                               ))}
                             </div>
 
-                            <p className="text-[11px] text-[#8b949e] mt-1 line-clamp-2">
-                              {issue.body || 'No description provided.'}
-                            </p>
-
-                            <div className="flex items-center gap-4 mt-2 text-[10px] text-[#6e7681]">
-                              <span>Opened by {issue.user?.login || 'contributor'}</span>
-                              <span className="flex items-center gap-1">
-                                <Clock size={10} />
-                                {new Date(issue.created_at).toLocaleDateString()}
-                              </span>
-                              {issue.comments > 0 && (
-                                <span className="flex items-center gap-1 text-[#8b949e]">
-                                  <MessageSquare size={10} />
-                                  {issue.comments} comments
-                                </span>
-                              )}
-                            </div>
+                            <button
+                              onClick={fetchSubData}
+                              disabled={dataLoading}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#121824] hover:bg-[#1a2335] text-[#79c0ff] border border-[#1e2a3e] text-xs font-medium transition"
+                              title="Refresh issues from GitHub"
+                            >
+                              <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
+                              <span>Refresh</span>
+                            </button>
                           </div>
+
+                          {/* Right: + New Issue Button */}
+                          <button
+                            onClick={() => setShowNewIssueModal(true)}
+                            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium shadow-sm transition"
+                          >
+                            <Plus size={14} />
+                            <span>New Issue</span>
+                          </button>
                         </div>
 
-                        <a
-                          href={issue.html_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-[11px] flex items-center gap-1 flex-shrink-0 transition"
-                        >
-                          <span>View on GitHub</span>
-                          <ExternalLink size={11} />
-                        </a>
+                        {/* Search, Label Filter, and Sorting Bar */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 flex-1 max-w-md">
+                            <div className="relative flex-1">
+                              <Search
+                                size={13}
+                                className="absolute left-3 top-2.5 text-[#484f58]"
+                              />
+                              <input
+                                type="text"
+                                value={issueSearch}
+                                onChange={(e) => setIssueSearch(e.target.value)}
+                                placeholder="Filter by title, author, description, or #number..."
+                                className="w-full pl-8 pr-3 py-1.5 bg-[#090d16] border border-[#1b263b] rounded-lg text-xs text-[#f0f6fc] placeholder-[#484f58] focus:outline-none focus:border-[#388bfd]"
+                              />
+                            </div>
+
+                            {/* Label Filter Dropdown */}
+                            {allIssueLabels.length > 0 && (
+                              <select
+                                value={issueLabelFilter}
+                                onChange={(e) => setIssueLabelFilter(e.target.value)}
+                                className="px-2.5 py-1.5 bg-[#090d16] border border-[#1b263b] rounded-lg text-xs text-[#8b949e] focus:outline-none focus:border-[#388bfd]"
+                              >
+                                <option value="all">All Labels ({allIssueLabels.length})</option>
+                                {allIssueLabels.map((lbl) => (
+                                  <option key={lbl} value={lbl}>
+                                    Label: {lbl}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            {/* Sort Selector */}
+                            <select
+                              value={issueSort}
+                              onChange={(e) => setIssueSort(e.target.value)}
+                              className="px-2.5 py-1.5 bg-[#090d16] border border-[#1b263b] rounded-lg text-xs text-[#8b949e] focus:outline-none focus:border-[#388bfd]"
+                            >
+                              <option value="newest">Newest</option>
+                              <option value="oldest">Oldest</option>
+                              <option value="comments">Most Comments</option>
+                            </select>
+                          </div>
+
+                          <span className="text-[11px] text-[#8b949e] font-mono sm:self-center">
+                            Showing {filteredIssues.length} of {issues.length} {issueFilter} issues from GitHub
+                          </span>
+                        </div>
+
+                        {/* Issues List or Skeletons */}
+                        {dataLoading && issues.length === 0 ? (
+                          <div className="py-4 space-y-3">
+                            <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
+                              <RefreshCw size={12} className="animate-spin" />
+                              <span>Fetching issues from GitHub repository...</span>
+                            </div>
+                            <ListItemSkeleton count={3} />
+                          </div>
+                        ) : filteredIssues.length === 0 ? (
+                          <div className="p-12 text-center border border-dashed border-[#1b263b] rounded-xl bg-[#0a0e17]">
+                            {errorMsg ? (
+                              <>
+                                <ShieldAlert size={28} className="mx-auto text-[#d29922] mb-2" />
+                                <p className="text-xs text-[#f0f6fc] font-semibold">
+                                  GitHub Issues Unavailable
+                                </p>
+                                <p className="text-[11px] text-[#ff7b72] mt-1 mb-4">{errorMsg}</p>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 size={28} className="mx-auto text-[#3fb950] mb-2" />
+                                <p className="text-xs text-[#f0f6fc] font-semibold">
+                                  No issues matching criteria
+                                </p>
+                                <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
+                                  {issueSearch || issueLabelFilter !== 'all'
+                                    ? 'Try clearing your search or label filters.'
+                                    : `No ${issueFilter} issues in ${currentProject?.github_repo}.`}
+                                </p>
+                              </>
+                            )}
+                            <div className="flex items-center justify-center gap-2">
+                              {(issueSearch || issueLabelFilter !== 'all') && (
+                                <button
+                                  onClick={() => {
+                                    setIssueSearch('');
+                                    setIssueLabelFilter('all');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-[#162032] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium transition"
+                                >
+                                  Clear Filters
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setShowNewIssueModal(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium transition"
+                              >
+                                <Plus size={13} />
+                                <span>Create Issue</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {filteredIssues.map((issue) => {
+                              const isIssueOpen =
+                                (issue.state || 'OPEN').toUpperCase() === 'OPEN';
+                              const cleanExcerpt = (issue.body || '')
+                                .replace(/#+\s+/g, '')
+                                .replace(/\|/g, ' ')
+                                .replace(/[-*]\s+/g, '')
+                                .replace(/`{1,3}/g, '')
+                                .trim();
+
+                              return (
+                                <div
+                                  key={issue.id || issue.number}
+                                  className="p-4 rounded-xl bg-[#0b1019] border border-[#1b263b] hover:border-[#2b3e5f] transition-all duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group cursor-pointer shadow-xs"
+                                  onClick={() => setSelectedIssue(issue)}
+                                >
+                                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                                    <div className="mt-0.5 flex-shrink-0">
+                                      {isIssueOpen ? (
+                                        <div className="w-3.5 h-3.5 rounded-full bg-[#12281e] border border-[#238636] flex items-center justify-center">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+                                        </div>
+                                      ) : (
+                                        <CheckCircle2 size={15} className="text-[#a371f7]" />
+                                      )}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                                        <span className="text-xs font-bold text-[#f0f6fc] group-hover:text-[#58a6ff] transition">
+                                          {issue.title}
+                                        </span>
+                                        <span className="text-[11px] font-mono text-[#8b949e]">
+                                          #{issue.number}
+                                        </span>
+                                        {issue.labels?.map((lbl) => {
+                                          const name = typeof lbl === 'string' ? lbl : lbl.name;
+                                          const color =
+                                            typeof lbl === 'string'
+                                              ? 'ededed'
+                                              : lbl.color || 'ededed';
+                                          return (
+                                            <span
+                                              key={name}
+                                              className="text-[10px] px-2 py-0.2 rounded-full font-mono border"
+                                              style={{
+                                                backgroundColor: `#${color}15`,
+                                                borderColor: `#${color}40`,
+                                                color: `#${color}`
+                                              }}
+                                            >
+                                              {name}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+
+                                      <p className="text-[11px] text-[#8b949e] line-clamp-1 mb-2">
+                                        {cleanExcerpt || 'No description provided.'}
+                                      </p>
+
+                                      <div className="flex items-center gap-4 text-[10px] text-[#6e7681] flex-wrap">
+                                        <span className="flex items-center gap-1.5">
+                                          {issue.author_avatar ? (
+                                            <img
+                                              src={issue.author_avatar}
+                                              alt=""
+                                              className="w-3.5 h-3.5 rounded-full"
+                                            />
+                                          ) : null}
+                                          <span>
+                                            {issue.author || issue.user?.login || 'contributor'}
+                                          </span>
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                          <Clock size={10} />
+                                          {formatRelativeTime(issue.created_at)}
+                                        </span>
+                                        {(issue.comments_count > 0 || issue.comments > 0) && (
+                                          <span className="flex items-center gap-1 text-[#79c0ff]">
+                                            <MessageSquare size={10} />
+                                            {issue.comments_count || issue.comments} comments
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Right Action buttons */}
+                                  <div
+                                    className="flex items-center gap-2 flex-shrink-0 sm:self-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={() => setSelectedIssue(issue)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-[#162032] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium flex items-center gap-1 transition"
+                                    >
+                                      <span>Explore Issue</span>
+                                      <ArrowRight size={12} />
+                                    </button>
+                                    {issue.html_url && (
+                                      <a
+                                        href={issue.html_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1.5 rounded-lg bg-[#121824] hover:bg-[#1a2335] text-[#8b949e] hover:text-[#f0f6fc] border border-[#1e2a3e] transition"
+                                        title="View on GitHub"
+                                      >
+                                        <ExternalLink size={13} />
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()
                 )}
               </div>
             )}
@@ -944,6 +1148,17 @@ export default function ProjectsView({ apiUrl }) {
       )}
 
       {/* Add Project Modal */}
+      <NewIssueModal
+        isOpen={showNewIssueModal}
+        onClose={() => setShowNewIssueModal(false)}
+        projectId={currentProject?.id}
+        apiUrl={apiUrl}
+        onIssueCreated={(newIssue) => {
+          setIssues((prev) => [newIssue, ...prev]);
+          setSelectedIssue(newIssue);
+        }}
+      />
+
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
           <div className="w-full max-w-lg bg-[#0e1420] border border-[#23314d] rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">

@@ -351,6 +351,31 @@ def delete_project_endpoint(project_id: str) -> Dict[str, Any]:
     return {"status": "deleted", "project_id": project_id}
 
 
+class CreateProjectIssueRequest(BaseModel):
+    title: str
+    body: str
+    labels: Optional[List[str]] = None
+    assignees: Optional[List[str]] = None
+
+
+class UpdateProjectIssueRequest(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    state: Optional[str] = None
+    state_reason: Optional[str] = None
+    labels: Optional[List[str]] = None
+    assignees: Optional[List[str]] = None
+
+
+class CreateIssueCommentRequest(BaseModel):
+    body: str
+
+
+class CloseProjectIssueRequest(BaseModel):
+    comment: Optional[str] = None
+    state_reason: Optional[str] = "completed"
+
+
 @router.get("/projects/{project_id}/issues")
 def get_project_issues_endpoint(project_id: str, state: str = "open", limit: int = 30) -> Dict[str, Any]:
     project = get_project(project_id)
@@ -360,6 +385,130 @@ def get_project_issues_endpoint(project_id: str, state: str = "open", limit: int
     token = get_effective_github_token(project.get("github_token"))
     gh = GitHubClient(token=token)
     result = gh.get_issues(project["github_repo"], token=token, state=state, limit=limit)
+    return result
+
+
+@router.get("/projects/{project_id}/issues/{issue_number}")
+def get_project_single_issue_endpoint(project_id: str, issue_number: int) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    result = gh.get_issue(project["github_repo"], issue_number=issue_number, token=token)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to fetch issue"))
+    return result
+
+
+@router.post("/projects/{project_id}/issues")
+def create_project_issue_endpoint(project_id: str, body: CreateProjectIssueRequest) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    result = gh.create_issue(
+        repo_slug=project["github_repo"],
+        title=body.title,
+        body=body.body,
+        labels=body.labels,
+        assignees=body.assignees,
+        token=token,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to create issue"))
+    return result
+
+
+@router.patch("/projects/{project_id}/issues/{issue_number}")
+def update_project_issue_endpoint(
+    project_id: str,
+    issue_number: int,
+    body: UpdateProjectIssueRequest,
+) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    result = gh.update_issue(
+        repo_slug=project["github_repo"],
+        issue_number=issue_number,
+        title=body.title,
+        body=body.body,
+        state=body.state,
+        state_reason=body.state_reason,
+        labels=body.labels,
+        assignees=body.assignees,
+        token=token,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to update issue"))
+    return result
+
+
+@router.get("/projects/{project_id}/issues/{issue_number}/comments")
+def get_project_issue_comments_endpoint(project_id: str, issue_number: int) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    result = gh.get_issue_comments(project["github_repo"], issue_number=issue_number, token=token)
+    return result
+
+
+@router.post("/projects/{project_id}/issues/{issue_number}/comments")
+def add_project_issue_comment_endpoint(
+    project_id: str,
+    issue_number: int,
+    body: CreateIssueCommentRequest,
+) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    result = gh.add_issue_comment(
+        repo_slug=project["github_repo"],
+        issue_number=issue_number,
+        comment_body=body.body,
+        token=token,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to add comment"))
+    return result
+
+
+@router.post("/projects/{project_id}/issues/{issue_number}/close")
+def close_project_issue_endpoint(
+    project_id: str,
+    issue_number: int,
+    body: Optional[CloseProjectIssueRequest] = None,
+) -> Dict[str, Any]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    token = get_effective_github_token(project.get("github_token"))
+    gh = GitHubClient(token=token)
+    comment = body.comment if body else None
+    reason = body.state_reason if body and body.state_reason else "completed"
+    result = gh.close_issue(
+        repo_slug=project["github_repo"],
+        issue_number=issue_number,
+        comment=comment,
+        state_reason=reason,
+        token=token,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to close issue"))
     return result
 
 
@@ -497,7 +646,16 @@ def probe_server_endpoint(server_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="Server not found")
 
     probe = RenderClient.probe_health(server["health_url"])
-    update_server_status(server_id, status=probe["status"], latency_ms=probe.get("latency_ms", 0.0))
+    server_status = probe["status"]
+    if probe.get("is_sleeping") or server_status == "SLEEPING":
+        server_status = "SLEEPING"
+    elif server_status == "ERROR" and (probe.get("latency_ms", 0) >= 3000 or "onrender.com" in server.get("health_url", "")):
+        server_status = "SLEEPING"
+        probe["status"] = "SLEEPING"
+        probe["is_sleeping"] = True
+        probe["error"] = "Instance is sleeping or cold-starting (Render free tier inactivity)"
+
+    update_server_status(server_id, status=server_status, latency_ms=probe.get("latency_ms", 0.0))
     try:
         from backend.prodpilot.db import get_db
         with get_db() as conn:
@@ -505,14 +663,58 @@ def probe_server_endpoint(server_id: str) -> Dict[str, Any]:
                 "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
                 (
                     "RENDER",
-                    "INFO" if probe["status"] == "HEALTHY" else "WARN",
-                    f"Live health probe '{server.get('name', 'server')}': {probe['status']} ({probe.get('latency_ms', 0):.0f}ms) at {server['health_url']}",
+                    "INFO" if server_status == "HEALTHY" else "WARN",
+                    f"Live health probe '{server.get('name', 'server')}': {server_status} ({probe.get('latency_ms', 0):.0f}ms) at {server['health_url']}",
                     datetime.utcnow().isoformat(),
                 ),
             )
     except Exception:
         pass
-    return {"server_id": server_id, "probe": probe}
+    return {"server_id": server_id, "probe": probe, "status": server_status}
+
+
+@router.post("/servers/{server_id}/wake")
+def wake_server_endpoint(server_id: str) -> Dict[str, Any]:
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    health_url = server.get("health_url")
+    if not health_url:
+        raise HTTPException(status_code=400, detail="Server has no health URL configured")
+
+    # Render free tier container cold-start spin-up takes ~30-50s
+    probe = RenderClient.probe_health(health_url, timeout_sec=45.0)
+    server_status = probe["status"]
+    if probe.get("is_sleeping") or server_status == "SLEEPING":
+        server_status = "SLEEPING"
+    elif server_status == "ERROR" and probe.get("code") is None:
+        server_status = "OFFLINE"
+
+    update_server_status(server_id, status=server_status, latency_ms=probe.get("latency_ms", 0.0))
+    try:
+        from backend.prodpilot.db import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                (
+                    "RENDER",
+                    "INFO" if server_status == "HEALTHY" else "WARN",
+                    f"Wake probe for '{server.get('name', 'server')}': {server_status} ({probe.get('latency_ms', 0):.0f}ms)",
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+    except Exception:
+        pass
+
+    return {
+        "ok": server_status == "HEALTHY",
+        "server_id": server_id,
+        "status": server_status,
+        "latency_ms": probe.get("latency_ms", 0.0),
+        "probe": probe,
+        "message": "Server is awake and responding!" if server_status == "HEALTHY" else f"Wake probe finished: {probe.get('error') or server_status}",
+    }
 
 
 @router.get("/servers/{server_id}/render-details")
@@ -535,11 +737,17 @@ def get_server_render_details_endpoint(server_id: str) -> Dict[str, Any]:
     svc_res = client.get_service(service_id)
     deploys_res = client.get_deploys(service_id)
 
+    svc_data = svc_res.get("service") or {}
+    plan = svc_data.get("plan", "free")
+    is_free_tier = plan == "free"
+
     return {
         "ok": svc_res.get("ok", False),
-        "service": svc_res.get("service"),
+        "service": svc_data,
         "deploys": deploys_res.get("deploys", []),
         "error": svc_res.get("error") or deploys_res.get("error"),
+        "is_free_tier": is_free_tier,
+        "sleep_policy": "Spins down after 15 min of inactivity" if is_free_tier else "Always on (Dedicated worker)",
     }
 
 

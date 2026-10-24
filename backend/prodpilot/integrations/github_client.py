@@ -159,6 +159,17 @@ class GitHubClient:
         except Exception as e:
             return {"ok": False, "error": str(e), "repo": None}
 
+    @staticmethod
+    def _normalize_label(lbl: Any) -> Dict[str, Any]:
+        if isinstance(lbl, dict):
+            return {
+                "id": lbl.get("id"),
+                "name": lbl.get("name") or "",
+                "color": (lbl.get("color") or "ededed").lstrip("#"),
+                "description": lbl.get("description") or "",
+            }
+        return {"id": None, "name": str(lbl), "color": "ededed", "description": ""}
+
     def get_issues(self, repo_slug: str, token: Optional[str] = None, state: str = "open", limit: int = 30) -> Dict[str, Any]:
         """Fetches issues for repository (excluding pull requests)."""
         slug = self.normalize_slug(repo_slug)
@@ -181,16 +192,91 @@ class GitHubClient:
                             "title": item.get("title", "Untitled Issue"),
                             "body": item.get("body") or "",
                             "state": item.get("state", "open").upper(),
+                            "state_reason": item.get("state_reason"),
                             "author": (item.get("user") or {}).get("login", "unknown"),
-                            "labels": [lbl.get("name") for lbl in item.get("labels", []) if isinstance(lbl, dict)],
+                            "author_avatar": (item.get("user") or {}).get("avatar_url", ""),
+                            "labels": [self._normalize_label(lbl) for lbl in item.get("labels", [])],
+                            "assignees": [(u.get("login") if isinstance(u, dict) else str(u)) for u in item.get("assignees", [])],
                             "comments_count": item.get("comments", 0),
                             "created_at": item.get("created_at", ""),
+                            "updated_at": item.get("updated_at", ""),
+                            "closed_at": item.get("closed_at", ""),
                             "html_url": item.get("html_url", ""),
                         })
                     return {"ok": True, "issues": issues, "count": len(issues)}
                 return {"ok": False, "error": f"GitHub API error {res.status_code}", "issues": []}
         except Exception as e:
             return {"ok": False, "error": str(e), "issues": []}
+
+    def get_issue(
+        self,
+        repo_slug: str,
+        issue_number: int,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetches a single issue from GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues/{issue_number}"
+        headers = self._headers(token)
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(url, headers=headers)
+                if res.status_code == 200:
+                    item = res.json()
+                    issue = {
+                        "id": str(item.get("id")),
+                        "number": item.get("number"),
+                        "title": item.get("title", "Untitled Issue"),
+                        "body": item.get("body") or "",
+                        "state": item.get("state", "open").upper(),
+                        "state_reason": item.get("state_reason"),
+                        "author": (item.get("user") or {}).get("login", "unknown"),
+                        "author_avatar": (item.get("user") or {}).get("avatar_url", ""),
+                        "labels": [self._normalize_label(lbl) for lbl in item.get("labels", [])],
+                        "assignees": [(u.get("login") if isinstance(u, dict) else str(u)) for u in item.get("assignees", [])],
+                        "comments_count": item.get("comments", 0),
+                        "created_at": item.get("created_at", ""),
+                        "updated_at": item.get("updated_at", ""),
+                        "closed_at": item.get("closed_at", ""),
+                        "html_url": item.get("html_url", ""),
+                    }
+                    return {"ok": True, "issue": issue}
+                return {"ok": False, "error": f"GitHub API error {res.status_code}: {res.text[:200]}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_issue_comments(
+        self,
+        repo_slug: str,
+        issue_number: int,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetches comments for an issue from GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues/{issue_number}/comments"
+        headers = self._headers(token)
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(url, headers=headers)
+                if res.status_code == 200:
+                    raw_comments = res.json()
+                    comments = []
+                    for c in raw_comments:
+                        comments.append({
+                            "id": str(c.get("id")),
+                            "author": (c.get("user") or {}).get("login", "unknown"),
+                            "author_avatar": (c.get("user") or {}).get("avatar_url", ""),
+                            "body": c.get("body") or "",
+                            "created_at": c.get("created_at", ""),
+                            "updated_at": c.get("updated_at", ""),
+                            "html_url": c.get("html_url", ""),
+                        })
+                    return {"ok": True, "comments": comments, "count": len(comments)}
+                return {"ok": False, "error": f"GitHub API error {res.status_code}: {res.text[:200]}", "comments": []}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "comments": []}
 
     def get_pull_requests(self, repo_slug: str, token: Optional[str] = None, state: str = "all", limit: int = 20) -> Dict[str, Any]:
         """Fetches pull requests and discussions from repository."""
@@ -373,6 +459,7 @@ class GitHubClient:
         title: str,
         body: str,
         labels: Optional[List[str]] = None,
+        assignees: Optional[List[str]] = None,
         token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Creates a new issue on GitHub."""
@@ -385,21 +472,107 @@ class GitHubClient:
         }
         if labels:
             payload["labels"] = labels
+        if assignees:
+            payload["assignees"] = assignees
 
         try:
             with httpx.Client(timeout=15.0) as client:
                 res = client.post(url, json=payload, headers=headers)
                 if res.status_code in (200, 201):
-                    data = res.json()
+                    item = res.json()
+                    issue = {
+                        "id": str(item.get("id")),
+                        "number": item.get("number"),
+                        "title": item.get("title", title),
+                        "body": item.get("body") or body,
+                        "state": item.get("state", "open").upper(),
+                        "state_reason": item.get("state_reason"),
+                        "author": (item.get("user") or {}).get("login", "unknown"),
+                        "author_avatar": (item.get("user") or {}).get("avatar_url", ""),
+                        "labels": [self._normalize_label(lbl) for lbl in item.get("labels", [])],
+                        "assignees": [(u.get("login") if isinstance(u, dict) else str(u)) for u in item.get("assignees", [])],
+                        "comments_count": item.get("comments", 0),
+                        "created_at": item.get("created_at", ""),
+                        "updated_at": item.get("updated_at", ""),
+                        "closed_at": item.get("closed_at", ""),
+                        "html_url": item.get("html_url", ""),
+                    }
                     return {
                         "ok": True,
-                        "issue_number": data.get("number"),
-                        "issue_url": data.get("html_url"),
-                        "raw": data,
+                        "issue_number": item.get("number"),
+                        "issue_url": item.get("html_url"),
+                        "issue": issue,
                     }
                 return {
                     "ok": False,
                     "error": f"GitHub API error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def update_issue(
+        self,
+        repo_slug: str,
+        issue_number: int,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+        state: Optional[str] = None,
+        state_reason: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+        assignees: Optional[List[str]] = None,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Updates an issue (title, body, state, labels, etc.) on GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues/{issue_number}"
+        headers = self._headers(token)
+        payload: Dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title
+        if body is not None:
+            payload["body"] = body
+        if state is not None:
+            payload["state"] = state.lower()
+        if state_reason is not None:
+            payload["state_reason"] = state_reason
+        if labels is not None:
+            payload["labels"] = labels
+        if assignees is not None:
+            payload["assignees"] = assignees
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.patch(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    item = res.json()
+                    issue = {
+                        "id": str(item.get("id")),
+                        "number": item.get("number"),
+                        "title": item.get("title", ""),
+                        "body": item.get("body") or "",
+                        "state": item.get("state", "open").upper(),
+                        "state_reason": item.get("state_reason"),
+                        "author": (item.get("user") or {}).get("login", "unknown"),
+                        "author_avatar": (item.get("user") or {}).get("avatar_url", ""),
+                        "labels": [self._normalize_label(lbl) for lbl in item.get("labels", [])],
+                        "assignees": [(u.get("login") if isinstance(u, dict) else str(u)) for u in item.get("assignees", [])],
+                        "comments_count": item.get("comments", 0),
+                        "created_at": item.get("created_at", ""),
+                        "updated_at": item.get("updated_at", ""),
+                        "closed_at": item.get("closed_at", ""),
+                        "html_url": item.get("html_url", ""),
+                    }
+                    return {
+                        "ok": True,
+                        "issue_number": item.get("number"),
+                        "issue": issue,
+                        "state": item.get("state"),
+                        "html_url": item.get("html_url"),
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API update error {res.status_code}: {res.text[:200]}",
                     "status_code": res.status_code,
                 }
         except Exception as e:
@@ -427,6 +600,15 @@ class GitHubClient:
                         "ok": True,
                         "comment_id": data.get("id"),
                         "comment_url": data.get("html_url"),
+                        "comment": {
+                            "id": str(data.get("id")),
+                            "author": (data.get("user") or {}).get("login", "unknown"),
+                            "author_avatar": (data.get("user") or {}).get("avatar_url", ""),
+                            "body": data.get("body") or "",
+                            "created_at": data.get("created_at", ""),
+                            "updated_at": data.get("updated_at", ""),
+                            "html_url": data.get("html_url", ""),
+                        },
                     }
                 return {
                     "ok": False,
@@ -471,4 +653,5 @@ class GitHubClient:
                 }
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
 

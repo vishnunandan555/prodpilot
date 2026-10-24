@@ -121,6 +121,21 @@ def _run_process_incident(
         db_path=db_path,
     )
 
+    # Immediately fire automated Sev-1 emergency voice escalation in parallel
+    try:
+        from backend.prodpilot.db import get_setting
+        twilio_enabled = (get_setting("SERVICE_ENABLED_TWILIO") or "true").strip().lower() not in ("false", "0", "off", "no")
+        is_sev1 = (
+            (incident.get("severity") or "").lower() in ("sev1", "sev-1", "critical", "high")
+            or "crash" in (incident.get("root_cause_report") or "").lower()
+            or "outage" in (incident.get("title") or "").lower()
+        )
+        if twilio_enabled and is_sev1:
+            from backend.prodpilot.integrations.twilio_client import dispatch_incident_voice_drill
+            dispatch_incident_voice_drill(incident, db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not trigger Twilio emergency voice escalation: {e}")
+
     # Immediately create GitHub Issue when diagnosis starts
     try:
         create_linked_github_issue(incident=incident, brief=None, repo_path=target_repo, db_path=db_path)
@@ -170,19 +185,6 @@ def _run_process_incident(
     except Exception as e:
         logger.warning(f"Telegram stage 2 alert error: {e}")
 
-    # Automated Emergency Sev-1 Voice Call Escalation via Twilio
-    try:
-        twilio_enabled = (get_setting("SERVICE_ENABLED_TWILIO") or "true").strip().lower() not in ("false", "0", "off", "no")
-        is_sev1 = (
-            (incident.get("severity") or "").lower() in ("sev1", "sev-1", "critical", "high")
-            or "crash" in (incident.get("root_cause_report") or "").lower()
-            or "outage" in (incident.get("title") or "").lower()
-        )
-        if twilio_enabled and is_sev1:
-            from backend.prodpilot.integrations.twilio_client import dispatch_incident_voice_drill
-            dispatch_incident_voice_drill(incident, db_path=db_path)
-    except Exception as e:
-        logger.warning(f"Could not trigger Twilio emergency voice escalation: {e}")
 
     # c. Transition status to FIXING and run repro pipeline
     update_incident_status(incident_id, "FIXING", db_path=db_path)

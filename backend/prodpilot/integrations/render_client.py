@@ -65,6 +65,10 @@ class RenderClient:
                             "region": details.get("region", "oregon"),
                             "env": details.get("env", "python"),
                             "status": data.get("suspended", "not_suspended"),
+                            "plan": details.get("plan", "free"),
+                            "suspended": data.get("suspended", "not_suspended"),
+                            "dashboardUrl": data.get("dashboardUrl", ""),
+                            "autoDeploy": data.get("autoDeploy", "yes"),
                             "updated_at": data.get("updatedAt", ""),
                         },
                     }
@@ -479,23 +483,56 @@ class RenderClient:
                 timeout_sec = 4.0
 
         t0 = time.perf_counter()
+        is_render_domain = "onrender.com" in url or "render" in url.lower()
         try:
             with httpx.Client(timeout=timeout_sec, follow_redirects=True) as client:
                 res = client.get(url)
                 latency_ms = round((time.perf_counter() - t0) * 1000, 1)
                 is_healthy = 200 <= res.status_code < 300
+
+                text_lower = (res.text or "").lower() if hasattr(res, "text") and res.text else ""
+                headers_lower = {k.lower(): v.lower() for k, v in res.headers.items()} if hasattr(res, "headers") and res.headers else {}
+
+                is_explicit_spin_down = (
+                    headers_lower.get("x-render-routing") in ("spin-down", "starting")
+                    or "spinning up" in text_lower
+                    or "spin up" in text_lower
+                    or "cold start" in text_lower
+                    or "sleeping" in text_lower
+                )
+
+                if is_healthy:
+                    status = "HEALTHY"
+                    error = None
+                elif is_explicit_spin_down:
+                    status = "SLEEPING"
+                    error = "Server is sleeping (Render free-tier inactivity spin-down)"
+                elif res.status_code in (502, 503, 504) and is_render_domain:
+                    status = "SLEEPING"
+                    error = f"HTTP {res.status_code} - Render instance is sleeping or spinning up"
+                else:
+                    status = "ERROR"
+                    error = f"HTTP {res.status_code}"
+
                 return {
-                    "status": "HEALTHY" if is_healthy else "ERROR",
+                    "status": status,
                     "code": res.status_code,
                     "latency_ms": latency_ms,
-                    "error": None if is_healthy else f"HTTP {res.status_code}",
+                    "error": error,
+                    "is_sleeping": status == "SLEEPING",
                 }
         except httpx.ConnectError:
             latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-            return {"status": "OFFLINE", "code": None, "latency_ms": latency_ms, "error": "Connection refused"}
+            return {"status": "OFFLINE", "code": None, "latency_ms": latency_ms, "error": "Connection refused", "is_sleeping": False}
         except httpx.TimeoutException:
             latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-            return {"status": "ERROR", "code": None, "latency_ms": latency_ms, "error": f"Health probe timed out after {timeout_sec:.1f}s"}
+            return {
+                "status": "ERROR",
+                "code": None,
+                "latency_ms": latency_ms,
+                "error": f"Health probe timed out after {timeout_sec:.1f}s",
+                "is_sleeping": is_render_domain,
+            }
         except Exception as e:
             latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-            return {"status": "ERROR", "code": None, "latency_ms": latency_ms, "error": str(e)}
+            return {"status": "ERROR", "code": None, "latency_ms": latency_ms, "error": str(e), "is_sleeping": False}

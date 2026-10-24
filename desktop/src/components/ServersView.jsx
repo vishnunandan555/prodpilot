@@ -23,7 +23,9 @@ import {
   Bot,
   ShieldCheck,
   Power,
-  Check
+  Check,
+  Moon,
+  WifiOff
 } from 'lucide-react';
 import { ListItemSkeleton } from './LoadingSkeleton';
 import { formatDate, formatRelativeTime } from '../utils/formatters';
@@ -45,6 +47,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [probingId, setProbingId] = useState(null);
+  const [wakingId, setWakingId] = useState(null);
   const [renderDetails, setRenderDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -252,6 +255,29 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
     }
   };
 
+  const handleWakeServer = async (id) => {
+    setWakingId(id);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${id}/wake`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchServers();
+        await fetchRenderDetails();
+        if (data.status === 'HEALTHY') {
+          alert(`Server is awake! Latency: ${data.latency_ms || 0}ms`);
+        } else {
+          alert(`Wake probe completed. Status: ${data.status} (${data.message || ''})`);
+        }
+      } else {
+        alert('Wake request failed: ' + (data.detail || res.statusText));
+      }
+    } catch (err) {
+      alert('Wake probe failed: ' + err.message);
+    } finally {
+      setWakingId(null);
+    }
+  };
+
   const handleActivate = async (id) => {
     try {
       const res = await fetch(`${apiUrl}/servers/${id}/activate`, { method: 'POST' });
@@ -394,11 +420,24 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
               onChange={(e) => setSelectedServerId(e.target.value)}
               className="bg-[#121824] border border-[#222f47] text-xs text-[#f0f6fc] px-3 py-1.5 rounded-md focus:outline-none focus:border-[#58a6ff]"
             >
-              {servers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.status}) — {s.render_service_id || 'Render'}
-                </option>
-              ))}
+              {servers.map((s) => {
+                const sStatus = (s.status || 'UNKNOWN').toUpperCase();
+                const iconLabel =
+                  sStatus === 'HEALTHY' || sStatus === 'LIVE'
+                    ? '🟢 ONLINE'
+                    : sStatus === 'SLEEPING'
+                    ? '💤 SLEEPING'
+                    : sStatus === 'OFFLINE'
+                    ? '🔴 OFFLINE'
+                    : sStatus === 'DEGRADED'
+                    ? '⚠️ DEGRADED'
+                    : sStatus;
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.name} [{iconLabel}] — {s.render_service_id || 'Render'}
+                  </option>
+                );
+              })}
             </select>
           )}
 
@@ -459,82 +498,162 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
           {currentServer && (
             <>
               {/* Server Hero Card */}
-              <div className="p-5 rounded-xl bg-[#0e1420] border border-[#1b2438] flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-base font-bold text-[#f0f6fc]">{currentServer.name}</h2>
-                    <span
-                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border ${
-                        currentServer.status === 'HEALTHY' || currentServer.status === 'LIVE'
-                          ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
-                          : currentServer.status === 'DEGRADED' || currentServer.status === 'BUILDING'
-                          ? 'bg-[#241a12] text-[#d29922] border-[#442c16]'
-                          : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                      }`}
-                    >
-                      <span className="w-2 h-2 rounded-full bg-current" />
-                      {currentServer.status}
-                    </span>
+              <div className="p-5 rounded-xl bg-[#0e1420] border border-[#1b2438]">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="text-base font-bold text-[#f0f6fc]">{currentServer.name}</h2>
+                      
+                      {/* Dynamic Status Badge */}
+                      {(() => {
+                        const s = (currentServer.status || 'UNKNOWN').toUpperCase();
+                        if (s === 'HEALTHY' || s === 'LIVE') {
+                          return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#122419] text-[#3fb950] border border-[#1f4a2b]">
+                              <span className="w-2 h-2 rounded-full bg-[#3fb950] animate-pulse" />
+                              <span>ONLINE</span>
+                            </span>
+                          );
+                        }
+                        if (s === 'SLEEPING') {
+                          return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#241a2e] text-[#d2a8ff] border border-[#492b6a]">
+                              <Moon size={11} className="text-[#d2a8ff] animate-pulse" />
+                              <span>SLEEPING (Idle)</span>
+                            </span>
+                          );
+                        }
+                        if (s === 'OFFLINE') {
+                          return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                              <span className="w-2 h-2 rounded-full bg-[#ff7b72]" />
+                              <span>OFFLINE</span>
+                            </span>
+                          );
+                        }
+                        if (s === 'DEGRADED' || s === 'BUILDING') {
+                          return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#241a12] text-[#d29922] border border-[#442c16]">
+                              <span className="w-2 h-2 rounded-full bg-[#d29922]" />
+                              <span>{s}</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#161f30] text-[#79c0ff] border border-[#263550]">
+                            <span className="w-2 h-2 rounded-full bg-current" />
+                            <span>{s}</span>
+                          </span>
+                        );
+                      })()}
 
-                    {currentServer.is_active ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-bold">
-                        ACTIVE PRODUCTION TARGET
-                      </span>
-                    ) : (
+                      {currentServer.is_active ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-bold">
+                          ACTIVE PRODUCTION TARGET
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleActivate(currentServer.id)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-[#161f30] hover:bg-[#202e47] text-[#8b949e] hover:text-[#c9d1d9] border border-[#263550] transition"
+                        >
+                          Set as Active
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-5 mt-3 text-xs text-[#8b949e]">
+                      <div className="flex items-center gap-1.5 font-mono">
+                        <Globe size={13} className="text-[#58a6ff]" />
+                        <a
+                          href={currentServer.health_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-[#58a6ff] hover:underline"
+                        >
+                          {currentServer.health_url}
+                        </a>
+                      </div>
+
+                      {currentServer.render_service_id && (
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#8b949e]">
+                          <Layers size={13} className="text-[#a371f7]" />
+                          <span>Render ID: {currentServer.render_service_id}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                        <Activity size={13} className="text-[#3fb950]" />
+                        <span>{currentServer.latency_ms || 0} ms Latency</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start">
+                    {currentServer.status === 'SLEEPING' && (
                       <button
-                        onClick={() => handleActivate(currentServer.id)}
-                        className="text-[10px] px-2 py-0.5 rounded bg-[#161f30] hover:bg-[#202e47] text-[#8b949e] hover:text-[#c9d1d9] border border-[#263550] transition"
+                        onClick={() => handleWakeServer(currentServer.id)}
+                        disabled={wakingId === currentServer.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7938b2] hover:bg-[#8f47d1] text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                        title="Ping origin server to trigger container cold-start spin-up"
                       >
-                        Set as Active
+                        <Zap size={13} className={wakingId === currentServer.id ? 'animate-bounce' : ''} />
+                        <span>{wakingId === currentServer.id ? 'Waking...' : 'Wake Up'}</span>
                       </button>
                     )}
+
+                    <button
+                      onClick={() => handleProbe(currentServer.id)}
+                      disabled={probingId === currentServer.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-semibold transition"
+                    >
+                      <Activity size={13} className={probingId === currentServer.id ? 'animate-spin' : ''} />
+                      <span>{probingId === currentServer.id ? 'Probing...' : 'Probe Live Health'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleDelete(currentServer.id)}
+                      title="Remove Server"
+                      className="p-2 rounded-lg bg-[#1f1519] border border-[#3e1d25] text-[#ff7b72] hover:bg-[#341b23] transition text-xs"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-5 mt-3 text-xs text-[#8b949e]">
-                    <div className="flex items-center gap-1.5 font-mono">
-                      <Globe size={13} className="text-[#58a6ff]" />
-                      <a
-                        href={currentServer.health_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-[#58a6ff] hover:underline"
-                      >
-                        {currentServer.health_url}
-                      </a>
-                    </div>
-
-                    {currentServer.render_service_id && (
-                      <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#8b949e]">
-                        <Layers size={13} className="text-[#a371f7]" />
-                        <span>Render ID: {currentServer.render_service_id}</span>
+                {/* Status Specific Context Banners */}
+                {currentServer.status === 'SLEEPING' && (
+                  <div className="mt-4 p-3.5 rounded-lg bg-[#1f152b] border border-[#3e245a] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
+                    <div className="flex items-start gap-2.5">
+                      <Moon size={16} className="text-[#d2a8ff] shrink-0 mt-0.5 animate-pulse" />
+                      <div>
+                        <span className="font-semibold text-[#f0f6fc]">Server is currently sleeping (Free-Tier Inactivity)</span>
+                        <p className="text-[11px] text-[#c9d1d9]/80 mt-0.5 leading-relaxed">
+                          Render spins free-tier instances down after 15 minutes of zero HTTP traffic. The next request triggers an automatic cold-start (~30–50s).
+                        </p>
                       </div>
-                    )}
+                    </div>
+                    <button
+                      onClick={() => handleWakeServer(currentServer.id)}
+                      disabled={wakingId === currentServer.id}
+                      className="px-3 py-1.5 rounded-md bg-[#7938b2] hover:bg-[#8f47d1] text-white font-medium text-xs flex items-center gap-1.5 transition shrink-0 shadow-sm disabled:opacity-50"
+                    >
+                      <Zap size={13} className={wakingId === currentServer.id ? 'animate-bounce' : ''} />
+                      <span>{wakingId === currentServer.id ? 'Waking container (up to 45s)...' : 'Wake Up Server'}</span>
+                    </button>
+                  </div>
+                )}
 
-                    <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                      <Activity size={13} className="text-[#3fb950]" />
-                      <span>{currentServer.latency_ms || 0} ms Latency</span>
+                {currentServer.status === 'OFFLINE' && (
+                  <div className="mt-4 p-3 rounded-lg bg-[#261317] border border-[#4a1c24] flex items-center gap-2.5 text-xs text-[#ff7b72] animate-in fade-in duration-200">
+                    <WifiOff size={16} className="shrink-0" />
+                    <div>
+                      <span className="font-semibold text-[#ff7b72]">Server is Offline / Unreachable</span>
+                      <p className="text-[11px] text-[#ff7b72]/80 mt-0.5">
+                        TCP connection was refused or the host did not respond. Check your DNS routing, server container process, or firewall.
+                      </p>
                     </div>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleProbe(currentServer.id)}
-                    disabled={probingId === currentServer.id}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-semibold transition"
-                  >
-                    <Activity size={13} className={probingId === currentServer.id ? 'animate-spin' : ''} />
-                    <span>{probingId === currentServer.id ? 'Probing...' : 'Probe Live Health'}</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(currentServer.id)}
-                    title="Remove Server"
-                    className="p-2 rounded-lg bg-[#1f1519] border border-[#3e1d25] text-[#ff7b72] hover:bg-[#341b23] transition text-xs"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                )}
               </div>
 
               {/* Render Cloud Service Status & Deploys */}
@@ -583,6 +702,33 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                         <span className="text-[#8b949e]">Auto-Deploy</span>
                         <span className="font-mono text-[#3fb950]">
                           {renderDetails.service.autoDeploy === 'yes' ? 'Enabled' : 'Manual'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-[#161f30]">
+                        <span className="text-[#8b949e]">Plan & Sleep Policy</span>
+                        <span className="font-mono text-[#d2a8ff]">
+                          {renderDetails.service.plan ? renderDetails.service.plan.toUpperCase() : 'FREE'} • {renderDetails.sleep_policy || 'Spins down after 15m idle'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-[#161f30]">
+                        <span className="text-[#8b949e]">Container State</span>
+                        <span className="font-mono flex items-center gap-1.5">
+                          {currentServer.status === 'HEALTHY' || currentServer.status === 'LIVE' ? (
+                            <span className="text-[#3fb950] flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
+                              Awake & Responding
+                            </span>
+                          ) : currentServer.status === 'SLEEPING' ? (
+                            <span className="text-[#d2a8ff] flex items-center gap-1">
+                              <Moon size={11} className="text-[#d2a8ff]" />
+                              Asleep (Spun Down)
+                            </span>
+                          ) : (
+                            <span className="text-[#ff7b72] flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#ff7b72]" />
+                              Offline / Unreachable
+                            </span>
+                          )}
                         </span>
                       </div>
                       <div className="flex justify-between py-1">

@@ -152,7 +152,10 @@ async def startup_watchdog_event():
                     health_url = active_srv.get("health_url")
                     if health_url:
                         probe = RenderClient.probe_health(health_url)
-                        update_server_status(active_srv["id"], status=probe["status"], latency_ms=probe.get("latency_ms", 0.0))
+                        server_status = probe["status"]
+                        if probe.get("is_sleeping") or server_status == "SLEEPING":
+                            server_status = "SLEEPING"
+                        update_server_status(active_srv["id"], status=server_status, latency_ms=probe.get("latency_ms", 0.0))
 
                     if active_srv.get("render_service_id"):
                         res = run_server_log_triage(active_srv["id"], limit=50)

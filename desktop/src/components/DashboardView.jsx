@@ -117,6 +117,8 @@ export default function DashboardView({
 
   const hasServerErrors = servers.some((s) => s.status === 'ERROR' || s.status === 'OFFLINE');
   const serverErrorCount = servers.filter((s) => s.status === 'ERROR' || s.status === 'OFFLINE').length;
+  const hasSleepingServers = servers.some((s) => s.status === 'SLEEPING');
+  const sleepingCount = servers.filter((s) => s.status === 'SLEEPING').length;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
@@ -130,6 +132,8 @@ export default function DashboardView({
                   ? 'bg-[#8b949e]'
                   : isDegraded || hasServerErrors
                   ? 'bg-[#f85149]'
+                  : hasSleepingServers
+                  ? 'bg-[#d2a8ff]'
                   : !hasProjects
                   ? 'bg-[#58a6ff]'
                   : servers.length === 0
@@ -148,6 +152,8 @@ export default function DashboardView({
                       ? 'bg-[#161b26] text-[#8b949e] border-[#212a3d]'
                       : isDegraded || hasServerErrors
                       ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                      : hasSleepingServers
+                      ? 'bg-[#241a2e] text-[#d2a8ff] border-[#492b6a]'
                       : !hasProjects
                       ? 'bg-[#161f30] text-[#79c0ff] border-[#263550]'
                       : servers.length === 0
@@ -159,12 +165,14 @@ export default function DashboardView({
                     ? 'Disconnected'
                     : isDegraded
                     ? 'Active Incident'
+                    : hasServerErrors
+                    ? `Offline / Degraded (${serverErrorCount})`
+                    : hasSleepingServers
+                    ? `Sleeping (${sleepingCount} Idle)`
                     : !hasProjects
                     ? 'No Projects Added'
                     : servers.length === 0
                     ? 'No servers'
-                    : hasServerErrors
-                    ? `Degraded (${serverErrorCount})`
                     : 'All Systems Operational'}
                 </span>
               </div>
@@ -541,56 +549,69 @@ export default function DashboardView({
                       </button>
                     </div>
                   ) : (
-                    servers.map((srv) => (
-                      <div
-                        key={srv.id}
-                        className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] flex items-center justify-between gap-4 hover:border-[#26334f] transition"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              srv.status === 'HEALTHY'
-                                ? 'bg-[#3fb950]'
-                                : srv.status === 'ERROR'
-                                ? 'bg-[#f85149]'
-                                : 'bg-[#8b949e]'
-                            }`}
-                          />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-[#f0f6fc]">{srv.name}</span>
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234] font-mono">
-                                Port {srv.port}
-                              </span>
-                              {srv.is_active === 1 && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
-                                  Active Target
+                    servers.map((srv) => {
+                      const sStatus = (srv.status || 'UNKNOWN').toUpperCase();
+                      const isHealthy = sStatus === 'HEALTHY' || sStatus === 'LIVE';
+                      const isSleeping = sStatus === 'SLEEPING';
+                      const isOffline = sStatus === 'OFFLINE';
+
+                      return (
+                        <div
+                          key={srv.id}
+                          className="p-4 rounded-lg bg-[#0d111a] border border-[#1b2234] flex items-center justify-between gap-4 hover:border-[#26334f] transition"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                isHealthy
+                                  ? 'bg-[#3fb950]'
+                                  : isSleeping
+                                  ? 'bg-[#d2a8ff] animate-pulse'
+                                  : isOffline || sStatus === 'ERROR'
+                                  ? 'bg-[#f85149]'
+                                  : 'bg-[#8b949e]'
+                              }`}
+                            />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-[#f0f6fc]">{srv.name}</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#07090f] text-[#8b949e] border border-[#1b2234] font-mono">
+                                  Port {srv.port}
                                 </span>
-                              )}
+                                {srv.is_active === 1 && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-medium">
+                                    Active Target
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-[#6e7681] mt-0.5 font-mono">
+                                {srv.health_url}
+                              </p>
                             </div>
-                            <p className="text-xs text-[#6e7681] mt-0.5 font-mono">
-                              {srv.health_url}
-                            </p>
+                          </div>
+                          <div className="text-right text-xs flex-shrink-0">
+                            <span
+                              className={`font-semibold text-xs flex items-center justify-end gap-1 ${
+                                isHealthy
+                                  ? 'text-[#3fb950]'
+                                  : isSleeping
+                                  ? 'text-[#d2a8ff]'
+                                  : isOffline || sStatus === 'ERROR'
+                                  ? 'text-[#ff7b72]'
+                                  : 'text-[#8b949e]'
+                              }`}
+                            >
+                              {isSleeping ? '💤 SLEEPING' : isHealthy ? '🟢 ONLINE' : isOffline ? '🔴 OFFLINE' : srv.status || 'UNKNOWN'}
+                            </span>
+                            {isSleeping ? (
+                              <div className="text-[11px] text-[#8b949e] font-mono">Idle spin-down</div>
+                            ) : srv.latency_ms !== null && srv.latency_ms !== undefined ? (
+                              <div className="text-[11px] text-[#485263] font-mono">{srv.latency_ms}ms latency</div>
+                            ) : null}
                           </div>
                         </div>
-                        <div className="text-right text-xs flex-shrink-0">
-                          <span
-                            className={`font-semibold text-xs ${
-                              srv.status === 'HEALTHY'
-                                ? 'text-[#3fb950]'
-                                : srv.status === 'ERROR'
-                                ? 'text-[#ff7b72]'
-                                : 'text-[#8b949e]'
-                            }`}
-                          >
-                            {srv.status || 'UNKNOWN'}
-                          </span>
-                          {srv.latency_ms !== null && srv.latency_ms !== undefined && (
-                            <div className="text-[11px] text-[#485263] font-mono">{srv.latency_ms}ms latency</div>
-                          )}
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
