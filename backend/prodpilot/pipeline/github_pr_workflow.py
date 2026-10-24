@@ -29,8 +29,13 @@ logger = logging.getLogger("prodpilot.pr_workflow")
 
 
 def resolve_repo_slug_and_token(repo_path: str) -> tuple[Optional[str], Optional[str]]:
-    """Resolves owner/repo slug and GitHub PAT."""
-    token = get_setting("GITHUB_PAT") or os.environ.get("GITHUB_PAT") or os.environ.get("GH_PAT")
+    """Resolves owner/repo slug and GitHub token (prefers GitHub App token over PAT)."""
+    from backend.prodpilot.integrations.github_client import mint_github_app_token
+
+    # Check for GitHub App token first
+    token = mint_github_app_token()
+    if not token:
+        token = get_setting("GITHUB_PAT") or os.environ.get("GITHUB_PAT") or os.environ.get("GH_PAT")
 
     active_repo = get_active_repo()
     slug = None
@@ -471,15 +476,32 @@ def execute_github_pr_lifecycle(
         )
         if diff_check.returncode == 0:
             return {"ok": False, "error": "Remediation produced no changes; no PR was created"}
+
+        # Configure official Bot Author for Git history
+        bot_app_id = get_setting("GITHUB_APP_ID") or "5450099"
+        bot_name = "prodpilotagent[bot]"
+        bot_email = f"{bot_app_id}+{bot_name}@users.noreply.github.com"
+        commit_env = os.environ.copy()
+        commit_env["GIT_AUTHOR_NAME"] = bot_name
+        commit_env["GIT_AUTHOR_EMAIL"] = bot_email
+        commit_env["GIT_COMMITTER_NAME"] = bot_name
+        commit_env["GIT_COMMITTER_EMAIL"] = bot_email
+
         commit = subprocess.run(
             ["git", "commit", "-m", f"fix(prodpilot): resolve incident {incident_id}"],
-            cwd=worktree_path, capture_output=True, text=True,
+            cwd=worktree_path, capture_output=True, text=True, env=commit_env,
         )
         if commit.returncode != 0:
             return {"ok": False, "error": f"Could not commit remediation: {commit.stderr.strip()}"}
 
+        # Push branch using authenticated URL with installation token
+        push_cmd = ["git", "push", "-u", "origin", branch_name]
+        if token and repo_slug:
+            auth_remote = f"https://x-access-token:{token}@github.com/{repo_slug}.git"
+            push_cmd = ["git", "push", "-u", auth_remote, branch_name]
+
         push = subprocess.run(
-            ["git", "push", "-u", "origin", branch_name],
+            push_cmd,
             cwd=worktree_path, capture_output=True, text=True, timeout=30,
         )
         if push.returncode != 0:

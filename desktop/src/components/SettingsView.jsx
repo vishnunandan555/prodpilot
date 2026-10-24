@@ -649,66 +649,107 @@ export default function SettingsView({
               </span>
             </div>
 
-            {/* 1. Global GitHub Personal Access Token (PAT) */}
-            <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
+            {/* 1. GitHub Integration (GitHub App [bot] & PAT) */}
+            <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <label className="block text-xs font-bold text-[#f0f6fc]">
-                    GitHub Token
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-bold text-[#f0f6fc]">
+                      GitHub Identity & Bot Integration
+                    </label>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-[#161f30] text-[#3fb950] border border-[#1b3d2b] flex items-center gap-1 font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
+                      prodpilotagent[bot] ACTIVE
+                    </span>
+                  </div>
                   <p className="text-xs text-[#8b949e] mt-0.5">
-                    Fallback token for all projects.
+                    GitHub App (ID: 5450099) handles automated issues, triage comments, worktree commits, and PR merges with an official bot badge.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <a
-                    href="https://github.com/settings/tokens/new?description=ProdPilot+Autonomous+SRE&scopes=repo,workflow,read:user,user:email"
+                    href="https://github.com/settings/installations/174681346"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-2.5 py-1 rounded bg-[#1f2b40] hover:bg-[#283854] text-[#79c0ff] hover:text-[#a5d6ff] border border-[#2d4265] text-xs font-medium flex items-center gap-1.5 transition shadow-sm"
-                    title="Open GitHub token generator with repo, workflow, read:user permissions pre-checked"
+                    title="Manage GitHub App permissions and repository installations on GitHub"
                   >
-                    <span>Generate on GitHub</span>
+                    <span>Manage App</span>
                     <ExternalLink size={12} />
                   </a>
                   <button
                     type="button"
                     onClick={handleTestGithub}
-                    disabled={testingGh || !settings.github_pat}
+                    disabled={testingGh}
                     className="px-2.5 py-1 rounded bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium flex items-center gap-1.5 disabled:opacity-50 transition"
                   >
                     <RefreshCw size={12} className={testingGh ? 'animate-spin' : ''} />
-                    <span>Test Token</span>
+                    <span>Test Bot Auth</span>
                   </button>
                 </div>
               </div>
 
-              <input
-                type="password"
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                value={settings.github_pat}
-                onChange={(e) => setSettings({ ...settings, github_pat: e.target.value })}
-                className="w-full bg-[#121824] border border-[#222f47] text-xs text-[#f0f6fc] px-3 py-2 rounded-md font-mono focus:outline-none focus:border-[#58a6ff]"
-              />
+              {/* Bot Identity Card */}
+              <div className="p-3 rounded-lg bg-[#07090f] border border-[#1e2738] flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-md bg-[#161f30] border border-[#2b3a58] flex items-center justify-center text-sm">
+                    🤖
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[#f0f6fc]">prodpilotagent[bot]</span>
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                        BOT
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#6e7681] font-mono">
+                      Author: 5450099+prodpilotagent[bot]@users.noreply.github.com
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono text-[#3fb950] bg-[#0d1e17] px-2 py-0.5 rounded border border-[#1b3d2b]">
+                  27 Repos Installed
+                </span>
+              </div>
 
-              <div className="flex items-center gap-2 text-[11px] text-[#8b949e] flex-wrap">
-                <span className="text-[#6e7681]">Required scopes:</span>
-                <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">repo</span>
-                <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">workflow</span>
-                <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">read:user</span>
-                <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">user:email</span>
+              {/* Fallback PAT */}
+              <div className="pt-2 border-t border-[#1b2234] space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-medium text-[#8b949e]">
+                    Optional Fallback Personal Access Token (PAT)
+                  </label>
+                  <span className="text-[10px] text-[#6e7681]">Used only if App authentication is unavailable</span>
+                </div>
+                <input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  value={settings.github_pat}
+                  onChange={(e) => setSettings({ ...settings, github_pat: e.target.value })}
+                  className="w-full bg-[#121824] border border-[#222f47] text-xs text-[#f0f6fc] px-3 py-2 rounded-md font-mono focus:outline-none focus:border-[#58a6ff]"
+                />
               </div>
 
               {ghStatus && (
                 <div
-                  className={`p-2.5 rounded text-xs flex items-center gap-2 ${
+                  className={`p-2.5 rounded text-xs flex items-center justify-between gap-2 ${
                     ghStatus.ok
                       ? 'bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950]'
                       : 'bg-[#261317] border border-[#4a1c24] text-[#ff7b72]'
                   }`}
                 >
-                  {ghStatus.ok ? <Check size={14} /> : <AlertCircle size={14} />}
-                  <span>{ghStatus.ok ? `Authenticated as @${ghStatus.user?.login}` : `Error: ${ghStatus.error}`}</span>
+                  <div className="flex items-center gap-2">
+                    {ghStatus.ok ? <Check size={14} /> : <AlertCircle size={14} />}
+                    <span>
+                      {ghStatus.ok
+                        ? `Authenticated as @${ghStatus.login || ghStatus.user?.login} (${ghStatus.scopes || 'Full access'})`
+                        : `Error: ${ghStatus.error}`}
+                    </span>
+                  </div>
+                  {ghStatus.mode === 'app' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#162a20] border border-[#244f36] text-[#3fb950] font-mono font-semibold">
+                      VERIFIED BOT
+                    </span>
+                  )}
                 </div>
               )}
             </div>

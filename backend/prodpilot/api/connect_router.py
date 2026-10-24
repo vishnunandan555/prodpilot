@@ -826,6 +826,10 @@ def triage_server_logs_endpoint(server_id: str, limit: int = 60) -> Dict[str, An
 
 class UpdateSettingsRequest(BaseModel):
     github_pat: Optional[str] = None
+    github_app_id: Optional[str] = None
+    github_app_installation_id: Optional[str] = None
+    github_app_slug: Optional[str] = None
+    github_auth_mode: Optional[str] = None
     render_api_key: Optional[str] = None
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None
@@ -846,6 +850,10 @@ def get_settings_endpoint() -> Dict[str, Any]:
         "TWILIO_FROM_NUMBER": os.environ.get("TWILIO_FROM_NUMBER", ""),
         "ENGINEER_PHONE": os.environ.get("ENGINEER_PHONE", ""),
         "TWILIO_AUTH_TOKEN": os.environ.get("TWILIO_AUTH_TOKEN", ""),
+        "GITHUB_APP_ID": os.environ.get("GITHUB_APP_ID", "5450099"),
+        "GITHUB_APP_INSTALLATION_ID": os.environ.get("GITHUB_APP_INSTALLATION_ID", "174681346"),
+        "GITHUB_APP_SLUG": os.environ.get("GITHUB_APP_SLUG", "prodpilotagent"),
+        "GITHUB_AUTH_MODE": os.environ.get("GITHUB_AUTH_MODE", "app"),
     }
     for k, v in env_fallbacks.items():
         if not all_s.get(k) and v:
@@ -858,6 +866,10 @@ def get_settings_endpoint() -> Dict[str, Any]:
 def save_settings_endpoint(body: UpdateSettingsRequest) -> Dict[str, Any]:
     mapping = {
         "GITHUB_PAT": body.github_pat,
+        "GITHUB_APP_ID": body.github_app_id,
+        "GITHUB_APP_INSTALLATION_ID": body.github_app_installation_id,
+        "GITHUB_APP_SLUG": body.github_app_slug,
+        "GITHUB_AUTH_MODE": body.github_auth_mode,
         "RENDER_API_KEY": body.render_api_key,
         "TELEGRAM_BOT_TOKEN": body.telegram_bot_token,
         "TELEGRAM_ALLOWED_CHAT_ID": body.telegram_allowed_chat_id,
@@ -878,15 +890,45 @@ def save_settings_endpoint(body: UpdateSettingsRequest) -> Dict[str, Any]:
 
 @router.post("/settings/test-github")
 def test_github_token_endpoint(token: Optional[str] = None) -> Dict[str, Any]:
-    pat = (token or get_setting("GITHUB_PAT") or os.environ.get("GITHUB_PAT") or "").strip()
+    from backend.prodpilot.integrations.github_client import mint_github_app_token
+
+    # 1. If explicit token passed, test it
+    if token and token.strip():
+        pat = token.strip()
+    else:
+        # Check if GitHub App mode is active
+        app_token = mint_github_app_token()
+        if app_token:
+            try:
+                with httpx.Client(timeout=8.0) as client:
+                    res = client.get("https://api.github.com/installation/repositories", headers={"Authorization": f"Bearer {app_token}", "Accept": "application/vnd.github.v3+json", "User-Agent": "ProdPilot"})
+                    if res.status_code == 200:
+                        data = res.json()
+                        total = data.get("total_count", 0)
+                        app_id = get_setting("GITHUB_APP_ID") or "5450099"
+                        app_slug = get_setting("GITHUB_APP_SLUG") or "prodpilotagent"
+                        return {
+                            "ok": True,
+                            "mode": "app",
+                            "login": f"{app_slug}[bot]",
+                            "name": f"ProdPilot SRE Bot (App #{app_id})",
+                            "repos_count": total,
+                            "scopes": "issues:write, contents:write, pull_requests:write (GitHub App)",
+                        }
+                    return {"ok": False, "error": f"GitHub App token verification failed: HTTP {res.status_code}"}
+            except Exception as e:
+                return {"ok": False, "error": f"GitHub App token error: {e}"}
+
+        pat = (get_setting("GITHUB_PAT") or os.environ.get("GITHUB_PAT") or "").strip()
+
     if not pat:
-        return {"ok": False, "error": "No GitHub PAT provided to test"}
+        return {"ok": False, "error": "No GitHub PAT or GitHub App configured to test"}
     try:
         with httpx.Client(timeout=8.0) as client:
             res = client.get("https://api.github.com/user", headers={"Authorization": f"Bearer {pat}", "User-Agent": "ProdPilot"})
             if res.status_code == 200:
                 user = res.json()
-                return {"ok": True, "login": user.get("login"), "name": user.get("name"), "scopes": res.headers.get("x-oauth-scopes", "")}
+                return {"ok": True, "mode": "pat", "login": user.get("login"), "name": user.get("name"), "scopes": res.headers.get("x-oauth-scopes", "")}
             return {"ok": False, "error": f"GitHub returned HTTP {res.status_code}: {res.text[:120]}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}

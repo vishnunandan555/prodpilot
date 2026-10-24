@@ -13,15 +13,104 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
 GITHUB_API_BASE = "https://api.github.com"
+
+# In-memory cache for GitHub App installation token: (token, expires_at_epoch)
+_APP_TOKEN_CACHE: Dict[str, Tuple[str, float]] = {}
+
+
+def mint_github_app_token(
+    app_id: Optional[str] = None,
+    installation_id: Optional[str] = None,
+    private_key_path: Optional[str] = None,
+) -> Optional[str]:
+    """Generates an installation access token using GitHub App credentials and private key.
+    
+    Tokens are valid for 1 hour; this function caches them until 5 minutes before expiry.
+    """
+    from backend.prodpilot.db import get_setting
+
+    aid = app_id or get_setting("GITHUB_APP_ID") or os.environ.get("GITHUB_APP_ID") or "5450099"
+    iid = installation_id or get_setting("GITHUB_APP_INSTALLATION_ID") or os.environ.get("GITHUB_APP_INSTALLATION_ID") or "174681346"
+
+    if not aid or not iid:
+        return None
+
+    cache_key = f"{aid}:{iid}"
+    now = time.time()
+    if cache_key in _APP_TOKEN_CACHE:
+        cached_tok, expires_at = _APP_TOKEN_CACHE[cache_key]
+        if now < expires_at - 300:  # 5 min safety buffer
+            return cached_tok
+
+    key_path = private_key_path or get_setting("GITHUB_APP_PRIVATE_KEY_PATH") or os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+    if not key_path:
+        default_p = Path(__file__).resolve().parent.parent / "credentials" / "github_app_private_key.pem"
+        if default_p.exists():
+            key_path = str(default_p)
+
+    if not key_path or not Path(key_path).exists():
+        logger.warning("GitHub App private key not found at %s", key_path)
+        return None
+
+    try:
+        import jwt
+
+        with open(key_path, "r", encoding="utf-8") as f:
+            private_key = f.read()
+
+        now_int = int(now)
+        jwt_payload = {
+            "iat": now_int - 60,
+            "exp": now_int + (10 * 60),
+            "iss": str(aid).strip(),
+        }
+        encoded_jwt = jwt.encode(jwt_payload, private_key, algorithm="RS256")
+
+        headers = {
+            "Authorization": f"Bearer {encoded_jwt}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "ProdPilot-Autonomous-SRE/1.0",
+        }
+
+        with httpx.Client(timeout=10.0) as client:
+            res = client.post(
+                f"{GITHUB_API_BASE}/app/installations/{iid}/access_tokens",
+                headers=headers,
+            )
+            if res.status_code == 201:
+                data = res.json()
+                token = data.get("token")
+                # Parse expiration or default to 55 minutes
+                _APP_TOKEN_CACHE[cache_key] = (token, now + 3300)
+                logger.info("Minted new GitHub App installation token for App ID %s (Installation %s)", aid, iid)
+                return token
+            else:
+                logger.error("Failed to mint GitHub App token (HTTP %d): %s", res.status_code, res.text[:200])
+                return None
+    except Exception as e:
+        logger.error("Exception during GitHub App token minting: %s", e)
+        return None
 
 
 class GitHubClient:
     def __init__(self, token: Optional[str] = None):
-        self.token = (token or "").strip()
+        if token:
+            self.token = token.strip()
+        else:
+            # Check if GitHub App token can be minted
+            app_tok = mint_github_app_token()
+            if app_tok:
+                self.token = app_tok
+            else:
+                from backend.prodpilot.db import get_setting
+                self.token = (get_setting("GITHUB_PAT") or os.environ.get("GITHUB_PAT") or "").strip()
 
     def _headers(self, custom_token: Optional[str] = None) -> Dict[str, str]:
-        t = (custom_token or self.token or "").strip()
+        t = (custom_token or self.token or mint_github_app_token() or "").strip()
         headers = {
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "ProdPilot-Autonomous-SRE/1.0",

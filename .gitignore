@@ -36,6 +36,9 @@ service.log
 .env
 .env.local
 *.env
+*.pem
+credentials/
+**/credentials/
 
 # Node / Electron
 node_modules/
