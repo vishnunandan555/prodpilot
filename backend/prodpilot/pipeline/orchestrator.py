@@ -154,22 +154,22 @@ def _run_process_incident(
         suspect_area = brief.get("suspected_area") or "codebase"
         raw_trace = (incident.get("trace") or incident.get("error_trace") or "No trace").strip()
         natural_issue = generate_natural_incident_explanation(brief=brief, trace=raw_trace)
-        rca_comment = f"""### 🔍 Root Cause Analysis Report
+        rca_comment = f"""### Root Cause Analysis Report
 - **Service**: `{incident.get('service', 'production-service')}`
 - **Severity**: `{incident.get('severity', 'sev2').upper()}`
 - **Suspect Commit**: `{suspect_commit}`
 - **Suspect Area / File**: `{suspect_area}`
 - **Failure Summary**: {brief.get('summary')}
 
-#### 💥 What Actually Happened
+#### Root Cause Summary
 {natural_issue}
 
-#### 📜 Error Trace Snapshot
+#### Error Trace Snapshot
 ```text
 {raw_trace[:800]}
 ```
 
-*Remediation pipeline is now initializing an isolated Git worktree to reproduce the failure.*
+*Remediation pipeline is initializing an isolated Git worktree to reproduce the failure.*
 """
         post_github_issue_comment(incident_id, rca_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:
@@ -228,18 +228,18 @@ def _run_process_incident(
             brief=brief,
             suspected_area=brief.get("suspected_area"),
         )
-        fix_comment = f"""### 🧪 Fix Generation & Reproduction Verification
+        fix_comment = f"""### Fix Generation & Reproduction Verification
 The agent reproduced the issue in an isolated Git worktree and verified the defensive patch.
 
-#### 🛠️ How the Agent Fixed It
+#### Remediation Details
 {natural_fix}
 
-**Red-to-Green Test Verification**:
-- **Before Patch (Baseline Failure)**:
+**Test Verification Summary**:
+- **Baseline (Before Patch)**:
 ```text
 {before_log}
 ```
-- **After Patch (Patch Passed)**:
+- **Verification (After Patch)**:
 ```text
 {after_log}
 ```
@@ -331,14 +331,14 @@ The agent reproduced the issue in an isolated Git worktree and verified the defe
         rb_ok = staging_status.get('rollback', {}).get('health', False)
         prob_ff = int((decision.get('probabilities') or {}).get('fix_forward', 0) * 100)
         prob_rb = int((decision.get('probabilities') or {}).get('rollback', 0) * 100)
-        decision_comment = f"""### 🛡️ Canary Staging & Jev Decision Engine Report
-- **Canary Fix-Forward (:8001)**: `{'HEALTHY ✅' if ff_ok else 'FAILED ❌'}`
-- **Canary Rollback (:8002)**: `{'HEALTHY ✅' if rb_ok else 'FAILED ❌'}`
+        decision_comment = f"""### Canary Staging & Decision Engine Report
+- **Canary Fix-Forward (:8001)**: `{'HEALTHY' if ff_ok else 'FAILED'}`
+- **Canary Rollback (:8002)**: `{'HEALTHY' if rb_ok else 'FAILED'}`
 - **Recommendation**: `{decision.get('recommendation', 'fix_forward').upper()}`
-- **Confidence Probabilities**: Fix-Forward: `{prob_ff}%` | Rollback: `{prob_rb}%`
+- **Confidence Score**: Fix-Forward: `{prob_ff}%` | Rollback: `{prob_rb}%`
 - **Decision Rationale**: {decision.get('reason')}
 
-*Opening remediation Pull Request and awaiting operator review on dashboard.*
+*Remediation Pull Request opened. Awaiting operator review and approval on dashboard.*
 """
         post_github_issue_comment(incident_id, decision_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:

@@ -102,12 +102,12 @@ def format_pr_body(
         generate_natural_incident_explanation,
     )
 
-    header = f"## 🤖 ProdPilot Automated Remediation: `{action.upper()}`"
+    header = f"## ProdPilot Automated Remediation: `{action.upper()}`"
     incident_link = f"**Incident ID**: `{incident_id}`  \n"
     if linked_issue_number:
         incident_link += f"**Linked Issue**: Resolves #{linked_issue_number}  \n"
     if mobile_url:
-        incident_link += f"**Live SRE Console**: [📱 Open Incident Dashboard]({mobile_url})  \n"
+        incident_link += f"**Live SRE Console**: [Open Incident Dashboard]({mobile_url})  \n"
 
     suspect_area = (brief or {}).get("suspected_area") or "codebase"
     issue_desc = generate_natural_incident_explanation(brief=brief, trace=trace)
@@ -115,7 +115,7 @@ def format_pr_body(
 
     diff_section = ""
     if patch_diff:
-        diff_section = f"""### 📝 Verified Patch Diff
+        diff_section = f"""### Verified Patch Diff
 ```diff
 {patch_diff.strip()}
 ```
@@ -129,12 +129,12 @@ def format_pr_body(
 
 ---
 
-### 💥 What Happened (Root Cause)
+### Root Cause Analysis
 {issue_desc}
 
 ---
 
-### 🔧 What is the Fix & How it Works
+### Remediation Details
 {fix_desc}
 
 ---
@@ -176,7 +176,7 @@ def create_linked_github_issue(
     service = incident.get("service") or "production-service"
     severity = incident.get("severity") or "sev2"
     error_type = incident.get("error_type") or "Production Incident"
-    title = f"🚨 [{severity.upper()}] {service}: {error_type} ({incident_id[:8]})"
+    title = f"[{severity.upper()}] {service}: {error_type} ({incident_id[:8]})"
 
     raw_trace = (incident.get("trace") or incident.get("error_trace") or "No trace provided").strip()
     trace_snippet = raw_trace[:1500] if len(raw_trace) > 1500 else raw_trace
@@ -184,7 +184,7 @@ def create_linked_github_issue(
     from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
     mobile_link = f"{get_effective_tunnel_url()}/incidents/{incident_id}"
 
-    body = f"""## 🚨 Automated Incident Detection & Triage
+    body = f"""## Automated Incident Detection & Triage
 
 | Attribute | Value |
 | :--- | :--- |
@@ -192,10 +192,10 @@ def create_linked_github_issue(
 | **Service** | `{service}` |
 | **Severity** | `{severity.upper()}` |
 | **Detected At** | `{incident.get('created_at', 'Just now')}` |
-| **Status** | 🟡 **DIAGNOSIS IN PROGRESS** |
-| **Live Console** | [📱 Open Incident Dashboard]({mobile_link}) |
+| **Status** | **DIAGNOSIS IN PROGRESS** |
+| **Live Console** | [Open Incident Dashboard]({mobile_link}) |
 
-### 🔍 Error Trace Snapshot
+### Error Trace Snapshot
 ```text
 {trace_snippet}
 ```
@@ -553,7 +553,7 @@ def execute_github_pr_lifecycle(
         )
 
         if linked_num:
-            pr_comment = f"""### 🚀 Remediation Pull Request Opened
+            pr_comment = f"""### Remediation Pull Request Opened
 - **Pull Request**: [#{pr_number}]({pr_url})
 - **Branch**: `{branch_name}`
 - **Remediation Action**: `{action.upper()}`
