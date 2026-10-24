@@ -207,7 +207,7 @@ export default function DashboardView({
       </div>
 
       {/* Main Body */}
-      <div className="p-6 max-w-6xl w-full mx-auto space-y-6">
+      <div className="p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-6">
         {!initialLoaded && loading ? (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">

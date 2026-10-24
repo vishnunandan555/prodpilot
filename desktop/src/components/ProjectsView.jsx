@@ -313,7 +313,7 @@ export default function ProjectsView({ apiUrl }) {
 
       {/* Main Content Area */}
       {loading && projects.length === 0 ? (
-        <div className="flex-1 p-8 max-w-4xl w-full mx-auto space-y-4 animate-in fade-in duration-300">
+        <div className="flex-1 p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-4 animate-in fade-in duration-300">
           <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-2">
             <RefreshCw size={13} className="animate-spin" />
             <span>Connecting to project repositories...</span>
@@ -479,7 +479,7 @@ export default function ProjectsView({ apiUrl }) {
           )}
 
           {/* Sub Tab Content */}
-          <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 w-full max-w-[1680px] mx-auto">
             {errorMsg && (
               <div className="p-3 mb-4 rounded-lg bg-[#241316] border border-[#481c25] text-xs text-[#ff7b72] flex items-center gap-2">
                 <ShieldAlert size={16} />

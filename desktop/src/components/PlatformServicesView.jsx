@@ -236,7 +236,7 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
       </div>
 
       {/* Main Content */}
-      <div className="p-6 max-w-5xl w-full mx-auto space-y-4">
+      <div className="p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-4">
         {loading && services.length === 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-300">
             <ListItemSkeleton count={4} />

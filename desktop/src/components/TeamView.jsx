@@ -158,7 +158,7 @@ export default function TeamView({ apiUrl = 'http://127.0.0.1:8765', currentUser
       </div>
 
       {/* Main Content */}
-      <div className="p-6 max-w-4xl w-full mx-auto space-y-4">
+      <div className="p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-4">
         {loading && users.length === 0 ? (
           <div className="space-y-3 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">

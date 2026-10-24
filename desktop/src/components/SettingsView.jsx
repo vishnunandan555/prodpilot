@@ -335,7 +335,7 @@ export default function SettingsView({
         </button>
       </div>
 
-      <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
+      <div className="p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-6">
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 border-b border-[#1b2234] pb-0">
           <button

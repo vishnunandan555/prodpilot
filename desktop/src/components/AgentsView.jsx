@@ -230,7 +230,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
         </div>
       </div>
 
-      <div className="p-6 max-w-6xl w-full mx-auto space-y-5">
+      <div className="p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-5">
         {/* Environment & Live Target Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-3.5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-1">

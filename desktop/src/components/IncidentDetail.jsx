@@ -336,11 +336,13 @@ export default function IncidentDetail({
           <div className="flex items-center gap-2.5 min-w-0">
             {onBack && (
               <button
+                type="button"
                 onClick={onBack}
-                className="p-1 rounded bg-[#161b26] text-[#8b949e] hover:text-[#f0f6fc] border border-[#212a3d] transition"
-                title="Back"
+                className="px-2.5 py-1 rounded bg-[#161b26] hover:bg-[#1f2738] text-[#8b949e] hover:text-[#f0f6fc] border border-[#212a3d] transition flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+                title="Return to Incident Directory"
               >
-                <ArrowLeft size={14} />
+                <ArrowLeft size={13} />
+                <span className="hidden sm:inline">All Incidents</span>
               </button>
             )}
             <div className="flex items-center gap-2 min-w-0">
@@ -435,7 +437,7 @@ export default function IncidentDetail({
         </div>
       </div>
 
-      <div className="flex-1 max-w-4xl w-full mx-auto p-4 space-y-4">
+      <div className="flex-1 w-full max-w-[1680px] mx-auto px-6 py-5 space-y-4">
         {/* Production Restored Banner */}
         {isTakeover && !dismissRestoredBanner && (
           <div className="p-3.5 rounded-lg bg-[#161b26] border border-[#212a3d] flex items-center justify-between gap-3 animate-in fade-in">
@@ -1719,7 +1721,7 @@ export default function IncidentDetail({
       {/* Docked Sticky Bottom Action Bar (Contained within incident view) */}
       {isAwaiting && (
         <div className="sticky bottom-0 z-30 bg-[#0d111a]/95 backdrop-blur-md border-t border-[#1b2234] p-3 shadow-xl mt-auto shrink-0">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="max-w-[1680px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 px-3">
             <div className="hidden sm:flex items-center gap-2 text-xs text-[#8b949e]">
               <span className="w-2 h-2 rounded-full bg-[#e3b341] animate-pulse" />
               <span>Awaiting approval</span>

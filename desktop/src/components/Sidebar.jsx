@@ -79,7 +79,12 @@ export default function Sidebar({
           return (
             <button
               key={item.id}
-              onClick={() => setActiveNav(item.id)}
+              onClick={() => {
+                setActiveNav(item.id);
+                if (item.id === 'incidents' && onSelectIncident) {
+                  onSelectIncident(null);
+                }
+              }}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-medium transition ${
                 isActive
                   ? 'bg-[#171f30] text-[#f0f6fc] font-semibold border border-[#293652]'

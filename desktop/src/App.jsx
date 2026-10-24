@@ -13,6 +13,7 @@ import SettingsView from './components/SettingsView';
 import MasterLogsView from './components/MasterLogsView';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
+import IncidentsListView from './components/IncidentsListView';
 import { GlobalProgressBar } from './components/LoadingSkeleton';
 import { isIncidentActive } from './utils/formatters';
 
@@ -170,21 +171,9 @@ export default function App() {
           let target = null;
           if (pathIncId) {
             target = data.find((i) => i.id === pathIncId);
-          }
-
-          // If URL had an incident ID that no longer exists in data (e.g. deleted),
-          // clean URL and fallback to currentSelected or first active incident
-          if (!target) {
-            if (currentSelected && data.some((i) => i.id === currentSelected.id)) {
-              target = data.find((i) => i.id === currentSelected.id);
-            } else {
-              target = data.find((i) => isIncidentActive(i.status)) || data[0];
-            }
-            if (target && window.history.replaceState) {
-              window.history.replaceState({}, '', `/incidents/${encodeURIComponent(target.id)}`);
-            } else if (!target && window.history.replaceState) {
-              window.history.replaceState({}, '', '/');
-            }
+          } else if (currentSelected && data.some((i) => i.id === currentSelected.id)) {
+            // Preserve currently viewed incident
+            target = data.find((i) => i.id === currentSelected.id);
           }
 
           if (target) {
@@ -195,8 +184,12 @@ export default function App() {
             } else if (target.status !== currentSelected.status || isActiveState) {
               fetchIncidentDetail(target.id);
             }
-          } else {
+          } else if (pathIncId && !target) {
+            // URL had an incident ID that no longer exists in data (e.g. deleted)
             setSelectedIncident(null);
+            if (window.history.replaceState) {
+              window.history.replaceState({}, '', '/incidents');
+            }
           }
         }
       } else {
@@ -294,7 +287,12 @@ export default function App() {
   }, [selectedIncident?.id, apiUrl, token]);
 
   const handleSelectIncident = (inc) => {
+    if (!inc) {
+      handleBackToIncidentsList();
+      return;
+    }
     setSelectedIncident(inc);
+    setActiveNav('incidents');
     setEvents([]);
     setDeployError(null);
     setDeploySuccess(inc.status === 'DEPLOYED' || inc.status === 'RESOLVED');
@@ -303,6 +301,14 @@ export default function App() {
     // Update URL bar if in browser mode without reloading page
     if (window.history.pushState) {
       window.history.pushState({}, '', `/incidents/${encodeURIComponent(inc.id)}`);
+    }
+  };
+
+  const handleBackToIncidentsList = () => {
+    setSelectedIncident(null);
+    if (isMobileScreen) setShowMobileList(true);
+    if (window.history.pushState) {
+      window.history.pushState({}, '', '/incidents');
     }
   };
 
@@ -613,11 +619,9 @@ export default function App() {
             activeNav={activeNav}
             setActiveNav={(nav) => {
               setActiveNav(nav);
-              if (nav === 'incidents' && !selectedIncident && incidents.length > 0) {
-                const target = incidents.find((i) => isIncidentActive(i.status)) || incidents[0];
-                if (target) {
-                  handleSelectIncident(target);
-                }
+              if (nav === 'incidents') {
+                setSelectedIncident(null);
+                if (window.history.pushState) window.history.pushState({}, '', '/incidents');
               }
               if (isMobileScreen) setShowMobileList(false);
             }}
@@ -648,22 +652,32 @@ export default function App() {
           )}
 
           {activeNav === 'incidents' && (
-            <IncidentDetail
-              incident={selectedIncident}
-              events={events}
-              onApprove={handleApprove}
-              onRollback={handleRollback}
-              onTakeover={handleTakeover}
-              actionLoading={actionLoading}
-              deploySuccess={deploySuccess}
-              deployError={deployError}
-              onClearDeployError={() => setDeployError(null)}
-              isStandaloneMobile={isMobileScreen}
-              onBack={isMobileScreen ? () => setShowMobileList(true) : null}
-              onNavigate={handleNavigate}
-              onDeleteIncident={handleDeleteIncident}
-              onLogAudit={logAuditAction}
-            />
+            selectedIncident ? (
+              <IncidentDetail
+                incident={selectedIncident}
+                events={events}
+                onApprove={handleApprove}
+                onRollback={handleRollback}
+                onTakeover={handleTakeover}
+                actionLoading={actionLoading}
+                deploySuccess={deploySuccess}
+                deployError={deployError}
+                onClearDeployError={() => setDeployError(null)}
+                isStandaloneMobile={isMobileScreen}
+                onBack={handleBackToIncidentsList}
+                onNavigate={handleNavigate}
+                onDeleteIncident={handleDeleteIncident}
+                onLogAudit={logAuditAction}
+              />
+            ) : (
+              <IncidentsListView
+                incidents={incidents}
+                onSelectIncident={handleSelectIncident}
+                onRefresh={() => fetchIncidents(true)}
+                isRefreshing={isRefreshing}
+                onNavigate={handleNavigate}
+              />
+            )
           )}
 
           {activeNav === 'master_logs' && (

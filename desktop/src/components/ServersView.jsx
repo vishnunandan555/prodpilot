@@ -466,7 +466,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
 
       {/* Main Content Area */}
       {loading && servers.length === 0 ? (
-        <div className="flex-1 p-8 max-w-4xl w-full mx-auto space-y-4 animate-in fade-in duration-300">
+        <div className="flex-1 p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-4 animate-in fade-in duration-300">
           <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-2">
             <RefreshCw size={13} className="animate-spin" />
             <span>Discovering production servers...</span>
@@ -494,7 +494,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
         </div>
       ) : (
         /* Selected Server View */
-        <div className="flex-1 flex flex-col overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 flex flex-col overflow-y-auto p-6 sm:p-8 max-w-[1680px] w-full mx-auto space-y-6">
           {currentServer && (
             <>
               {/* Server Hero Card */}
