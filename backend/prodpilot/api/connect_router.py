@@ -75,7 +75,7 @@ router = APIRouter(tags=["platform"])
 # Global Cloudflare Tunnel state
 _TUNNEL_PROCESS: Optional[subprocess.Popen] = None
 _TUNNEL_URL: Optional[str] = None
-_TUNNEL_LOCK = threading.Lock()
+_TUNNEL_LOCK = threading.RLock()
 
 
 def _find_cloudflared() -> Optional[str]:
@@ -1914,9 +1914,9 @@ def start_tunnel_endpoint() -> Dict[str, Any]:
             t = threading.Thread(target=_monitor_tunnel_output, args=(proc,), daemon=True)
             t.start()
 
-            # Wait up to 6 seconds for tunnel url to be announced
+            # Wait up to 12 seconds for tunnel url to be announced
             start_wait = time.time()
-            while time.time() - start_wait < 6:
+            while time.time() - start_wait < 12:
                 if _TUNNEL_URL:
                     break
                 if proc.poll() is not None:
@@ -2083,17 +2083,44 @@ def legacy_active_commits_endpoint() -> Dict[str, Any]:
 
 def get_effective_public_url(req: Optional[Request] = None) -> str:
     """Returns the live public HTTPS URL reachable by Twilio or webhooks."""
-    global _TUNNEL_URL
-    if _TUNNEL_URL:
-        return _TUNNEL_URL.rstrip("/")
+    global _TUNNEL_URL, _TUNNEL_PROCESS
+    with _TUNNEL_LOCK:
+        if _TUNNEL_PROCESS is not None and _TUNNEL_PROCESS.poll() is None and _TUNNEL_URL:
+            return _TUNNEL_URL.rstrip("/")
+
+        # Check if stored setting URL is alive and responding
+        stored_url = (get_setting("CLOUDFLARE_TUNNEL_URL") or os.environ.get("CLOUDFLARE_TUNNEL_URL") or "").rstrip("/")
+        if stored_url and "trycloudflare.com" in stored_url:
+            try:
+                import httpx
+                resp = httpx.get(f"{stored_url}/health", timeout=1.5)
+                if resp.status_code == 200:
+                    _TUNNEL_URL = stored_url
+                    return stored_url
+            except Exception:
+                logger.warning(f"Stored tunnel URL {stored_url} failed health check. Re-provisioning...")
+                stored_url = None
+
+        # If not alive or not responding, auto-start tunnel
+        bin_path = _find_cloudflared()
+        if bin_path:
+            try:
+                start_res = start_tunnel_endpoint()
+                if start_res.get("url"):
+                    return start_res["url"].rstrip("/")
+            except Exception as e:
+                logger.warning(f"Could not auto-start cloudflared tunnel: {e}")
+
     if req:
         proto = req.headers.get("x-forwarded-proto", "https")
         host = req.headers.get("host")
         if host and "127.0.0.1" not in host and "localhost" not in host:
             return f"{proto}://{host}".rstrip("/")
-    url = (get_setting("CLOUDFLARE_TUNNEL_URL") or os.environ.get("CLOUDFLARE_TUNNEL_URL") or "").rstrip("/")
-    if url:
-        return url
+
+    if _TUNNEL_URL:
+        return _TUNNEL_URL.rstrip("/")
+    if stored_url:
+        return stored_url
     return "http://127.0.0.1:8765"
 
 

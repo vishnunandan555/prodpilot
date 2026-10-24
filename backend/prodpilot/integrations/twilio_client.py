@@ -96,9 +96,20 @@ def initiate_voice_call(to_phone: str, webhook_url: str) -> Dict[str, Any]:
         if tunnel_url:
             call_kwargs["status_callback"] = f"{tunnel_url}/voice/status-callback"
             call_kwargs["status_callback_event"] = ["initiated", "ringing", "answered", "completed"]
-            call_kwargs["status_callback_method"] = "POST"
 
-        call = client.calls.create(**call_kwargs)
+        try:
+            call = client.calls.create(**call_kwargs)
+        except Exception as api_err:
+            # Twilio Free Trial accounts strictly forbid certain optional parameters
+            # (like status_callback_method or advanced callbacks). If Twilio rejects with
+            # a trial limitation, gracefully retry with only essential telephony params.
+            err_str = str(api_err).lower()
+            if "trial account" in err_str or "disallowed parameter" in err_str:
+                logger.warning("Twilio trial parameter restriction encountered (%s). Retrying with core parameters...", api_err)
+                call = client.calls.create(to=to_phone, from_=creds["from_number"], url=webhook_url)
+            else:
+                raise
+
         logger.info("Twilio voice call triggered: Call SID=%s to %s", call.sid, to_phone)
         return {
             "ok": True,

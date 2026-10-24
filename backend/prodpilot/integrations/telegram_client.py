@@ -23,22 +23,12 @@ TELEGRAM_API_BASE = "https://api.telegram.org"
 
 def get_effective_tunnel_url() -> str:
     """Returns public Cloudflare Tunnel URL if available, auto-starting if needed."""
-    tunnel = get_setting("CLOUDFLARE_TUNNEL_URL")
-    if tunnel and tunnel.startswith("http") and "trycloudflare.com" in tunnel:
-        return tunnel.rstrip("/")
-
-    # Attempt auto-start via local daemon if not currently set
     try:
-        with httpx.Client(timeout=5.0) as client:
-            res = client.post("http://127.0.0.1:8765/tunnel/start")
-            if res.status_code == 200:
-                t_url = res.json().get("url")
-                if t_url:
-                    return t_url.rstrip("/")
+        from backend.prodpilot.api.connect_router import get_effective_public_url
+        return get_effective_public_url()
     except Exception:
-        pass
-
-    return tunnel or "http://127.0.0.1:8765"
+        tunnel = get_setting("CLOUDFLARE_TUNNEL_URL")
+        return tunnel or "http://127.0.0.1:8765"
 
 
 def _send_telegram(text: str, reply_markup: Optional[Dict[str, Any]] = None, parse_mode: str = "HTML") -> bool:
