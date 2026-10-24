@@ -69,7 +69,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       name: 'Watcher',
       type: 'Telemetry & Health Probing',
       status: 'STANDBY',
-      status_detail: 'Standby — Connect a server in Production Servers tab to activate watchdog probes',
+      status_detail: 'Standby — Connect a server in Servers tab to activate watchdog probes',
       current_target: 'No production server connected',
       last_action: 'Awaiting target server registration',
       capabilities: ['Render REST API v1', 'HTTP Health Probing', 'Crash Log Ingestion'],
@@ -80,12 +80,12 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     {
       id: 'triager',
       name: 'Triager',
-      type: 'Crash Normalization & Severity Scoring',
+      type: 'Triage & Classification',
       status: 'READY',
       status_detail: 'SHA-256 stack trace fingerprinter & rule evaluation engine',
       current_target: 'Decision Policy Engine',
       last_action: 'Triage rule index warm. 0 active incident alerts.',
-      capabilities: ['Traceback Extraction', 'SHA-256 Deduplication', 'Severity Tagging'],
+      capabilities: ['Traceback Extraction', 'Deduplication', 'Severity Tagging'],
       safety_guard: 'Deterministic rule filtering',
       health: 'HEALTHY',
       icon: 'Filter'
@@ -98,7 +98,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
       status_detail: 'Standby — Link a repository in Projects tab to enable blame correlation',
       current_target: 'No repository connected',
       last_action: 'Commit blame cache synchronized with repository HEAD',
-      capabilities: ['AST Syntax Analysis', 'Git Commit Blame', 'PR Diff Correlation'],
+      capabilities: ['Code analysis', 'Git Commit Blame', 'PR Diff Correlation'],
       safety_guard: 'Read-only git inspection',
       health: 'STANDBY',
       icon: 'GitBranch'
@@ -106,12 +106,12 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     {
       id: 'fixer',
       name: 'Fixer',
-      type: 'Autonomous Code Repair & Patch Synthesis',
+      type: 'Patch Synthesis',
       status: 'READY',
       status_detail: 'Isolated Git Worktree sandbox (/worktrees). 1-attempt anti-loop guard.',
       current_target: 'Isolated Git Worktree',
       last_action: '0 active worktrees. Worktree isolation lock free.',
-      capabilities: ['Repro Test Synthesis', 'AST Code Patching', 'Pytest Suite Runner'],
+      capabilities: ['Repro Test Synthesis', 'AST Code Patching', 'Test runner'],
       safety_guard: 'Max 1 Attempt (Anti-Loop Circuit Breaker)',
       health: 'HEALTHY',
       icon: 'Cpu'
@@ -202,21 +202,21 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-sm font-bold text-[#f0f6fc] tracking-tight">
-                  Autonomous SRE Agents & Telemetry
+                  Agents
                 </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-semibold">
-                  FLEET ACTIVE
+                  ACTIVE
                 </span>
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Live agent telemetry, cognitive task execution states, worktree isolation, and safety policies
+                Live status for each automation worker
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-[#6e7681] hidden md:inline">
-              Sync: {lastRefreshed.toLocaleTimeString()}
+              Updated {lastRefreshed.toLocaleTimeString()}
             </span>
             <button
               onClick={fetchAgents}
@@ -224,7 +224,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
               className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2d47] border border-[#27395c] text-[#f0f6fc] text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
             >
               <RefreshCw size={12} className={loading ? 'animate-spin text-[#58a6ff]' : ''} />
-              <span>{loading ? 'Refreshing...' : 'Refresh Fleet'}</span>
+              <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
             </button>
           </div>
         </div>
@@ -245,14 +245,14 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
               {fleetData?.active_server ? (
                 <span className="text-[#3fb950] font-medium flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-                  Active Watchdog Probe
+                  Monitoring
                 </span>
               ) : (
                 <button
                   onClick={() => onNavigate && onNavigate('servers')}
                   className="text-[#58a6ff] hover:underline flex items-center gap-1"
                 >
-                  Connect in Servers →
+                  Add server →
                 </button>
               )}
             </p>
@@ -274,7 +274,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
                   onClick={() => onNavigate && onNavigate('projects')}
                   className="text-[#58a6ff] hover:underline flex items-center gap-1"
                 >
-                  Link in Projects →
+                  Link project →
                 </button>
               )}
             </p>
@@ -289,7 +289,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
               Isolated & Clean
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Anti-Loop Guard (Max 1 Try)
+              Max 1 attempt
             </p>
           </div>
 
@@ -302,7 +302,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
               {incidents.length} Active / 0 In Repair
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              {incidents.length === 0 ? 'All Systems Healthy' : `${incidents.length} Under Autonomous Triage`}
+              {incidents.length === 0 ? 'All clear' : `${incidents.length} in triage`}
             </p>
           </div>
         </div>
@@ -311,9 +311,8 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wider text-[#8b949e]">
-              Available Autonomous Agents ({agents.length})
+              Workers ({agents.length})
             </h2>
-            <span className="text-[11px] text-[#6e7681]">Real-time operational states</span>
           </div>
 
           <div className="grid grid-cols-1 gap-3.5">
@@ -348,7 +347,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
                     {/* Current Active Target */}
                     <div className="p-3 rounded-lg bg-[#080b11] border border-[#182030] space-y-1">
                       <span className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider block">
-                        Assigned Target / Environment
+                        Target
                       </span>
                       <div className="font-mono text-xs text-[#79c0ff] truncate font-medium">
                         {agent.current_target}
@@ -361,14 +360,14 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
                     {/* Exact Real-Time Action */}
                     <div className="p-3 rounded-lg bg-[#080b11] border border-[#182030] space-y-1">
                       <span className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider block">
-                        Real-Time Action & Telemetry
+                        Last Action
                       </span>
                       <div className="font-medium text-xs text-[#f0f6fc] flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#58a6ff]" />
                         <span>{agent.last_action}</span>
                       </div>
-                      <div className="text-[11px] text-[#6e7681]">
-                        Safety: <span className="text-[#3fb950] font-medium">{agent.safety_guard}</span>
+                      <div className="text-[11px]">
+                        <span className="text-[#3fb950] font-medium">{agent.safety_guard}</span>
                       </div>
                     </div>
                   </div>
@@ -376,7 +375,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
                   {/* Tool Capabilities Badges */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <span className="text-[10px] font-semibold text-[#6e7681] uppercase tracking-wider mr-1">
-                      Toolchain:
+                      Tools
                     </span>
                     {agent.capabilities?.map((cap, i) => (
                       <span

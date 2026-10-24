@@ -343,7 +343,7 @@ export default function LogsView({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">
-                  Logs Explorer
+                  Logs
                 </h1>
                 {currentServer?.name ? (
                   <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-[#161f30] text-[#79c0ff] border border-[#263550]">
@@ -355,7 +355,7 @@ export default function LogsView({
                 </span>
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Real-time container stdout/stderr, stack traces, and Render lifecycle events
+                Real-time container logs, stack traces, and deploy events
               </p>
             </div>
           </div>
@@ -672,14 +672,14 @@ export default function LogsView({
             <div>
               <p className="text-xs text-[#8b949e] font-semibold">
                 {!currentServer
-                  ? 'No Production Servers Connected'
+                  ? 'No Servers Connected'
                   : !currentServer.render_service_id
                   ? 'No Render Service ID Attached'
                   : 'Awaiting Real Render Production Logs'}
               </p>
               <p className="text-[11px] text-[#6e7681] mt-1 max-w-sm">
                 {!currentServer
-                  ? 'Go to Production Servers tab to attach your Render web service and configure your Render API Key.'
+                  ? 'Go to Servers tab to attach your Render web service and configure your Render API Key.'
                   : !currentServer.render_service_id
                   ? `Attach Render Service ID (srv-...) to '${currentServer.name}' to stream real production logs.`
                   : 'No log events matching filters or container has not emitted standard output.'}

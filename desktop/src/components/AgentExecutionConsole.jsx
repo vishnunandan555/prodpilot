@@ -169,13 +169,10 @@ export default function AgentExecutionConsole({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">Pipeline Execution Console</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161f30] text-[#58a6ff] border border-[#2b3a58]">
-                Worktree Sandbox Runner
-              </span>
+              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">Execution Console</span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Real-time execution log, diagnostic steps & sandbox command stream
+              Live agent steps and tool calls
             </p>
           </div>
         </div>
@@ -192,7 +189,7 @@ export default function AgentExecutionConsole({
                   : 'text-[#8b949e] hover:text-[#c9d1d9]'
               }`}
             >
-              Unified Stream
+              Timeline
             </button>
             <button
               onClick={() => setActiveViewMode('terminal')}
@@ -202,7 +199,7 @@ export default function AgentExecutionConsole({
                   : 'text-[#8b949e] hover:text-[#c9d1d9]'
               }`}
             >
-              Live Terminal Feed
+              Terminal
             </button>
           </div>
 
@@ -220,9 +217,9 @@ export default function AgentExecutionConsole({
         <div className="px-4 py-2 bg-[#07090f] border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5">
             {[
-              { id: 'all', label: 'All Activities', count: unifiedStream.length },
+              { id: 'all', label: 'All', count: unifiedStream.length },
               { id: 'thoughts', label: 'Thoughts', count: unifiedStream.filter((s) => s.isThought).length },
-              { id: 'tools', label: 'Tool Calls & Commands', count: unifiedStream.filter((s) => s.isTool).length },
+              { id: 'tools', label: 'Tool Calls', count: unifiedStream.filter((s) => s.isTool).length },
               { id: 'tests', label: 'Verifications', count: unifiedStream.filter((s) => s.isTest).length },
             ].map((f) => (
               <button
@@ -241,7 +238,7 @@ export default function AgentExecutionConsole({
           </div>
 
           <span className="text-[10px] font-mono text-[#6e7681]">
-            Total {unifiedStream.length} actions captured
+            {unifiedStream.length} steps
           </span>
         </div>
       )}
@@ -253,10 +250,7 @@ export default function AgentExecutionConsole({
           <div className="rounded-lg bg-[#05070a] border border-[#1b2234] p-3 font-mono text-xs text-[#c9d1d9] space-y-2 max-h-[550px] overflow-y-auto select-text">
             <div className="text-[11px] text-[#58a6ff] pb-2 border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-2 select-none">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-[#f0f6fc]">Execution Session Terminal</span>
-                <span className="text-[10px] text-[#8b949e] font-mono px-1.5 py-0.2 rounded bg-[#0e1420] border border-[#1e2a40]">
-                  Worktree Sandbox
-                </span>
+                <span className="font-semibold text-[#f0f6fc]">Terminal</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -485,10 +479,10 @@ export default function AgentExecutionConsole({
               </div>
               <div className="flex-1">
                 <h3 className="text-xs font-bold text-[#f0f6fc]">
-                  Human-in-the-Loop Approval Required
+                  Approval Required
                 </h3>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
-                  <strong className="text-[#f0f6fc]">Fixer</strong> has synthesized the patch in an isolated worktree, and <strong className="text-[#f0f6fc]">Validator</strong> staged dual canaries on ports 8001/8002 with 100% regression verification. Review candidate diff before promoting. Approving will merge and push the patch to Git and trigger automated deployment.
+                  Fix synthesized and verified across canaries. Awaiting your approval.
                 </p>
               </div>
             </div>
@@ -500,7 +494,7 @@ export default function AgentExecutionConsole({
                 className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <Check size={14} />
-                <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
+                <span>{actionLoading ? 'Deploying...' : 'Deploy'}</span>
               </button>
 
               <button
@@ -509,7 +503,7 @@ export default function AgentExecutionConsole({
                 className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#30363d] flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <RotateCcw size={14} className="text-[#f85149]" />
-                <span>Trigger Rollback</span>
+                <span>Rollback</span>
               </button>
 
               <button

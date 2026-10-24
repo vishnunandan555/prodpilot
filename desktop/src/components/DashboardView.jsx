@@ -156,22 +156,22 @@ export default function DashboardView({
                   }`}
                 >
                   {!apiConnected
-                    ? 'Daemon Disconnected'
+                    ? 'Disconnected'
                     : isDegraded
                     ? 'Active Incident'
                     : !hasProjects
                     ? 'No Projects Added'
                     : servers.length === 0
-                    ? 'Awaiting Server'
+                    ? 'No servers'
                     : hasServerErrors
-                    ? `Health Probe Alert (${serverErrorCount})`
+                    ? `Degraded (${serverErrorCount})`
                     : 'All Systems Operational'}
                 </span>
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
                 {hasProjects
-                  ? `${projects.length} project${projects.length === 1 ? '' : 's'} • ${servers.length} server${servers.length === 1 ? '' : 's'} • Control Plane: ${apiConnected ? 'Online' : 'Offline'}`
-                  : `0 connected projects • Control Plane: ${apiConnected ? 'Online' : 'Offline'}`}
+                  ? `${projects.length} project${projects.length === 1 ? '' : 's'} • ${servers.length} server${servers.length === 1 ? '' : 's'} • ${apiConnected ? 'Online' : 'Offline'}`
+                  : `0 connected projects • ${apiConnected ? 'Online' : 'Offline'}`}
               </p>
             </div>
           </div>
@@ -204,7 +204,7 @@ export default function DashboardView({
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 text-xs text-[#58a6ff] pb-1">
               <RefreshCw size={13} className="animate-spin" />
-              <span>Loading telemetry and dashboard topology...</span>
+              <span>Loading...</span>
             </div>
             <StatCardsSkeleton />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -220,10 +220,10 @@ export default function DashboardView({
               </div>
 
               <h2 className="text-xl font-bold text-[#f0f6fc] mb-2">
-                Welcome to your ProdPilot Dashboard
+                Get started
               </h2>
               <p className="text-xs text-[#8b949e] max-w-xl mx-auto leading-relaxed mb-6">
-                Your autonomous reliability control plane is ready. Because you haven't added any projects yet, your operational metrics and telemetry are waiting. Add a project to start live issue tracking, GitHub Actions deployment monitoring, and autonomous RCA.
+                No projects yet. Add one to start monitoring incidents, deployments, and server health.
               </p>
 
               <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -232,7 +232,7 @@ export default function DashboardView({
                   className="px-5 py-2.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center gap-2 shadow-md transition"
                 >
                   <Plus size={15} />
-                  <span>Add Your First Project</span>
+                  <span>Add Project</span>
                 </button>
 
                 <button
@@ -240,7 +240,7 @@ export default function DashboardView({
                   className="px-4 py-2.5 rounded-lg bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#273855] text-xs font-medium flex items-center gap-2 transition"
                 >
                   <Server size={14} />
-                  <span>Connect Production Server</span>
+                  <span>Add Server</span>
                 </button>
               </div>
             </div>
@@ -252,13 +252,13 @@ export default function DashboardView({
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] uppercase font-bold">
-                      Step 1 • Required
+                      Step 1
                     </span>
                     <FolderGit2 size={16} className="text-[#58a6ff]" />
                   </div>
                   <h3 className="text-sm font-bold text-[#f0f6fc]">Connect GitHub Project</h3>
                   <p className="text-xs text-[#8b949e] leading-relaxed">
-                    Provide a GitHub repo and optional Personal Access Token (PAT). ProdPilot clones the repository to give access to active issues, pull requests, and workflow runs.
+                    Connect a GitHub repo to monitor issues, PRs, and Actions.
                   </p>
                 </div>
 
@@ -276,13 +276,13 @@ export default function DashboardView({
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] uppercase font-bold">
-                      Step 2 • Telemetry
+                      Step 2
                     </span>
                     <Server size={16} className="text-[#58a6ff]" />
                   </div>
                   <h3 className="text-sm font-bold text-[#f0f6fc]">Connect Production Server</h3>
                   <p className="text-xs text-[#8b949e] leading-relaxed">
-                    Add your Render Web Service ID and API key, or specify a live healthcheck URL to receive real-time 5xx logs and uptime probe alerts.
+                    Add a Render service or health URL for crash alerts and uptime monitoring.
                   </p>
                 </div>
 
@@ -300,13 +300,13 @@ export default function DashboardView({
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] uppercase font-bold">
-                      Ready • Standing By
+                      Ready
                     </span>
                     <Cpu size={16} className="text-[#3fb950]" />
                   </div>
                   <h3 className="text-sm font-bold text-[#f0f6fc]">Platform Automation & Diagnostics</h3>
                   <p className="text-xs text-[#8b949e] leading-relaxed">
-                    Triage policy engine, AST code analysis, and Telegram on-call dispatching are active and monitoring registered projects.
+                    Automation is ready. Connect a project and server to begin.
                   </p>
                 </div>
 
@@ -325,10 +325,7 @@ export default function DashboardView({
               <div className="flex items-center justify-between mb-3 border-b border-[#1b2234] pb-2">
                 <span className="text-xs font-semibold text-[#8b949e] flex items-center gap-2">
                   <Radio size={14} className="text-[#3fb950]" />
-                  <span>Platform Engine Availability</span>
-                </span>
-                <span className="text-[11px] text-[#8b949e] font-mono">
-                  {services.some((s) => s.status === 'ONLINE') ? 'Live Platform Telemetry' : 'Daemon Connecting...'}
+                  <span>Services</span>
                 </span>
               </div>
 
@@ -362,28 +359,28 @@ export default function DashboardView({
                         <span className="font-medium text-[#f0f6fc]">Triage Engine</span>
                         <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">Decision Policy Model</p>
+                      <p className="text-[11px] text-[#6e7681]">Triage model</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
                         <span className="font-medium text-[#f0f6fc]">Code Sandbox</span>
                         <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">AST Analysis & Worktree</p>
+                      <p className="text-[11px] text-[#6e7681]">Code analysis</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
                         <span className="font-medium text-[#f0f6fc]">Telegram On-Call</span>
                         <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">1-Tap Approvals & Alerts</p>
+                      <p className="text-[11px] text-[#6e7681]">Mobile alerts</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
                         <span className="font-medium text-[#f0f6fc]">Voice Escalation</span>
                         <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">Emergency Phone Alert Tree</p>
+                      <p className="text-[11px] text-[#6e7681]">Voice escalation</p>
                     </div>
                   </>
                 )}
@@ -516,7 +513,7 @@ export default function DashboardView({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#8b949e] flex items-center gap-2">
                     <Server size={14} className="text-[#58a6ff]" />
-                    <span>Production Servers ({servers.length})</span>
+                    <span>Servers ({servers.length})</span>
                   </span>
                   <button
                     onClick={() => onNavigate('servers')}
@@ -531,16 +528,16 @@ export default function DashboardView({
                   {servers.length === 0 ? (
                     <div className="p-8 rounded-lg bg-[#0d111a] border border-[#1b2234] text-center space-y-3">
                       <Server size={24} className="mx-auto text-[#485263]" />
-                      <p className="text-sm font-semibold text-[#c9d1d9]">No production servers registered</p>
+                      <p className="text-sm font-semibold text-[#c9d1d9]">No servers</p>
                       <p className="text-xs text-[#8b949e] max-w-md mx-auto">
-                        Connect your Render Web Service or production endpoint to start continuous health monitoring and deployment tracking.
+                        Add a server to monitor uptime and deployments.
                       </p>
                       <button
                         onClick={() => onNavigate('servers')}
                         className="mt-2 px-3.5 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium inline-flex items-center gap-1.5 transition"
                       >
                         <Plus size={13} />
-                        <span>Connect Render Server</span>
+                        <span>Add Server</span>
                       </button>
                     </div>
                   ) : (
@@ -640,10 +637,6 @@ export default function DashboardView({
                         <span className="text-[#c9d1d9] font-medium">Max 1 Attempt</span>
                       </div>
                     </div>
-
-                    <p className="text-xs text-[#8b949e] leading-relaxed">
-                      Upon detecting unhandled 5xx exceptions or healthcheck failures, ProdPilot correlates git blame, verifies candidate fixes in an isolated worktree sandbox, and stages canaries for approval.
-                    </p>
                   </div>
                 </div>
 
@@ -651,7 +644,7 @@ export default function DashboardView({
                   onClick={() => onNavigate('projects')}
                   className="w-full py-2 rounded bg-[#171f30] hover:bg-[#1f293d] border border-[#293652] text-[#58a6ff] text-xs font-medium transition flex items-center justify-center gap-1.5"
                 >
-                  <span>View Projects & GitHub Data</span>
+                  <span>View Projects</span>
                   <ChevronRight size={13} />
                 </button>
               </div>
@@ -664,7 +657,6 @@ export default function DashboardView({
                   <Terminal size={14} className="text-[#58a6ff]" />
                   <span>Real-Time Audit Trail</span>
                 </span>
-                <span className="text-xs text-[#58a6ff] font-mono">SSE Stream</span>
               </div>
 
               <div className="space-y-1.5 text-xs">
@@ -684,11 +676,11 @@ export default function DashboardView({
                   ))
                 ) : primaryActive ? (
                   <div className="p-4 rounded bg-[#07090f] border border-[#1b2234] text-xs text-[#8b949e]">
-                    Active incident {primaryActive.id} is being processed by the triage pipeline.
+                    Processing...
                   </div>
                 ) : (
                   <div className="text-center py-6 text-[#6e7681] text-xs">
-                    All systems nominal. Log forwarder and continuous probes active.
+                    No active incidents.
                   </div>
                 )}
               </div>

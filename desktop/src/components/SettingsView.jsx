@@ -321,10 +321,7 @@ export default function SettingsView({
             <Settings size={18} />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-[#f0f6fc]">Settings & Preferences</h1>
-            <p className="text-[11px] text-[#8b949e]">
-              Manage your personal account profile, contact channels, and platform API credentials
-            </p>
+            <h1 className="text-sm font-bold text-[#f0f6fc]">Settings</h1>
           </div>
         </div>
 
@@ -351,7 +348,7 @@ export default function SettingsView({
             }`}
           >
             <User size={14} className={activeTab === 'profile' ? 'text-[#58a6ff]' : ''} />
-            <span>Profile & Account</span>
+            <span>Profile</span>
           </button>
 
           <button
@@ -364,7 +361,7 @@ export default function SettingsView({
             }`}
           >
             <Key size={14} className={activeTab === 'credentials' ? 'text-[#58a6ff]' : ''} />
-            <span>Platform Credentials & Integrations</span>
+            <span>Integrations</span>
           </button>
         </div>
 
@@ -383,17 +380,14 @@ export default function SettingsView({
             {savedProfile && (
               <div className="p-3 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] text-xs text-[#3fb950] flex items-center gap-2">
                 <Check size={15} />
-                <span>Profile updated and synchronized successfully!</span>
+                <span>Saved.</span>
               </div>
             )}
 
             {/* Profile Avatar Card */}
             <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-4">
               <div>
-                <h3 className="text-xs font-bold text-[#f0f6fc]">Profile Photo & Avatar</h3>
-                <p className="text-[11px] text-[#8b949e] mt-0.5">
-                  Your photo is visible to your team roster and in on-call escalation dispatches.
-                </p>
+                <h3 className="text-xs font-bold text-[#f0f6fc]">Avatar</h3>
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-5">
@@ -614,7 +608,7 @@ export default function SettingsView({
                   ) : (
                     <>
                       <Save size={14} />
-                      <span>Save Profile Changes</span>
+                      <span>Save</span>
                     </>
                   )}
                 </button>
@@ -631,7 +625,7 @@ export default function SettingsView({
             {savedCreds && (
               <div className="p-3 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] text-xs text-[#3fb950] flex items-center gap-2">
                 <Check size={15} />
-                <span>Credentials saved and verified with FastAPI backend!</span>
+                <span>Saved.</span>
               </div>
             )}
 
@@ -640,7 +634,7 @@ export default function SettingsView({
               <div className="flex items-center gap-3">
                 <span className={`w-2.5 h-2.5 rounded-full ${apiConnected ? 'bg-[#3fb950] animate-pulse' : 'bg-[#f85149]'}`} />
                 <div>
-                  <p className="text-xs font-semibold text-[#f0f6fc]">FastAPI Backend Control Plane</p>
+                  <p className="text-xs font-semibold text-[#f0f6fc]">Backend</p>
                   <p className="text-[11px] text-[#8b949e]">Daemon active on port 8765</p>
                 </div>
               </div>
@@ -660,10 +654,10 @@ export default function SettingsView({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <label className="block text-xs font-bold text-[#f0f6fc]">
-                    Global GitHub Personal Access Token (PAT)
+                    GitHub Token
                   </label>
                   <p className="text-xs text-[#8b949e] mt-0.5">
-                    Default PAT used for all projects when no project-specific token is provided.
+                    Fallback token for all projects.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -698,7 +692,7 @@ export default function SettingsView({
               />
 
               <div className="flex items-center gap-2 text-[11px] text-[#8b949e] flex-wrap">
-                <span className="text-[#6e7681]">Pre-configured permissions in template:</span>
+                <span className="text-[#6e7681]">Required scopes:</span>
                 <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">repo</span>
                 <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">workflow</span>
                 <span className="px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono text-[10px]">read:user</span>
@@ -724,10 +718,10 @@ export default function SettingsView({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <label className="block text-xs font-bold text-[#f0f6fc]">
-                    Global Render REST API Key
+                    Render API Key
                   </label>
                   <p className="text-xs text-[#8b949e] mt-0.5">
-                    Allows ProdPilot to poll production web service status, read deploy logs, and trigger canaries.
+                    Used to monitor services and trigger deployments.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -816,10 +810,10 @@ export default function SettingsView({
               <div>
                 <label className="block text-xs font-bold text-[#f0f6fc] flex items-center gap-2">
                   <Cpu size={14} className="text-[#e3b341]" />
-                  <span>Decision Policy Engine (OpenRouter API Key)</span>
+                  <span>OpenRouter Key</span>
                 </label>
                 <p className="text-xs text-[#8b949e] mt-0.5">
-                  Powers automated decision primitives (remediation scoring, canary evaluation, and confidence rating) via OpenRouter.
+                  Used for triage scoring and canary evaluation.
                 </p>
               </div>
 
@@ -881,10 +875,10 @@ export default function SettingsView({
                 <div>
                   <label className="block text-xs font-bold text-[#f0f6fc] flex items-center gap-2">
                     <PhoneCall size={14} className="text-[#3fb950]" />
-                    <span>Twilio Voice Emergency Escalation (Sev-1 Informant)</span>
+                    <span>Twilio Voice</span>
                   </label>
                   <p className="text-xs text-[#8b949e] mt-0.5">
-                    Places outbound interactive voice calls to the on-call engineer during high-severity outages with DTMF 1-tap confirmation.
+                    Calls on-call engineers during SEV-1 outages.
                   </p>
                 </div>
 
@@ -895,7 +889,7 @@ export default function SettingsView({
                   className="px-3 py-1.5 rounded-md bg-[#161f30] hover:bg-[#202e47] text-[#79c0ff] border border-[#263550] text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 flex-shrink-0"
                 >
                   <PhoneCall size={12} className={testingTwilio ? 'animate-bounce text-[#3fb950]' : ''} />
-                  <span>{testingTwilio ? 'Placing Call...' : 'Place Test Phone Call'}</span>
+                  <span>{testingTwilio ? 'Placing Call...' : 'Test Call'}</span>
                 </button>
               </div>
 
@@ -1004,7 +998,7 @@ export default function SettingsView({
                 className="px-5 py-2.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold flex items-center gap-2 transition shadow"
               >
                 <Save size={14} />
-                <span>Save Platform Credentials</span>
+                <span>Save</span>
               </button>
             </div>
           </form>

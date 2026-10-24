@@ -376,13 +376,13 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-[#f0f6fc]">Production Servers</h1>
+              <h1 className="text-sm font-bold text-[#f0f6fc]">Servers</h1>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono">
                 {servers.length} Registered
               </span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Render REST API v1 integration, live health probes & production telemetry
+              Uptime monitoring, health probes, and deployment tracking
             </p>
           </div>
         </div>

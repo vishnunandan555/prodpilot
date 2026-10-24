@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -35,6 +35,8 @@ export default function Sidebar({
   onDeleteIncident,
   onClearIncidents
 }) {
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const activeCount = incidents.filter((i) => isIncidentActive(i.status));
 
   const filteredIncidents = incidents.filter((inc) => {
@@ -56,10 +58,10 @@ export default function Sidebar({
       badge: activeCount.length > 0 ? `${activeCount.length}` : null,
       badgeColor: 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
     },
-    { id: 'logs', label: 'Logs Explorer', icon: Terminal },
-    { id: 'servers', label: 'Production Servers', icon: Server },
+    { id: 'logs', label: 'Logs', icon: Terminal },
+    { id: 'servers', label: 'Servers', icon: Server },
     { id: 'projects', label: 'Projects', icon: FolderGit2 },
-    { id: 'services', label: 'Platform Services', icon: Cpu },
+    { id: 'services', label: 'Services', icon: Cpu },
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'team', label: 'Team', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -123,18 +125,36 @@ export default function Sidebar({
               ({incidentFilter === 'active' ? activeCount.length : filteredIncidents.length})
             </span>
             {incidents.length > 0 && onClearIncidents && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm("Clear all resolved/deployed incidents?")) {
-                    onClearIncidents("RESOLVED");
-                  }
-                }}
-                className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition ml-0.5"
-                title="Clear resolved incidents"
-              >
-                <Trash2 size={11} />
-              </button>
+              confirmClear ? (
+                <span className="flex items-center gap-1 text-[10px] ml-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClearIncidents("RESOLVED");
+                      setConfirmClear(false);
+                    }}
+                    className="text-[#ff7b72] hover:underline font-semibold"
+                  >
+                    Clear?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(false)}
+                    className="text-[#8b949e] hover:underline"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(true)}
+                  className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition ml-0.5"
+                  title="Clear resolved incidents"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )
             )}
           </div>
 
@@ -204,19 +224,40 @@ export default function Sidebar({
                         {formatStatusLabel(inc.status)}
                       </span>
                       {onDeleteIncident && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Delete incident ${inc.id}?`)) {
-                              onDeleteIncident(inc.id);
-                            }
-                          }}
-                          className="p-0.5 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition opacity-0 group-hover:opacity-100"
-                          title="Delete incident record"
-                        >
-                          <Trash2 size={11} />
-                        </button>
+                        confirmDeleteId === inc.id ? (
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteIncident(inc.id);
+                                setConfirmDeleteId(null);
+                              }}
+                              className="text-[9px] px-1 py-0.5 rounded bg-[#da3633] text-white font-medium hover:bg-[#f85149]"
+                              title="Confirm delete"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="text-[9px] px-1 py-0.5 rounded text-[#8b949e] hover:text-[#c9d1d9]"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(inc.id);
+                            }}
+                            className="p-0.5 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition opacity-0 group-hover:opacity-100"
+                            title="Delete incident record"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
@@ -267,7 +308,7 @@ export default function Sidebar({
 
       {/* Footer Info */}
       <div className="px-3 py-2 border-t border-[#1b2234] bg-[#07090f] text-xs text-[#6e7681] flex items-center justify-between">
-        <span className="text-[11px]">Production Console</span>
+        <span className="text-[11px]">ProdPilot</span>
         <span className={`text-[11px] flex items-center gap-1 ${apiConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#ff7b72]'}`} />
           {apiConnected ? 'Connected' : 'Offline'}

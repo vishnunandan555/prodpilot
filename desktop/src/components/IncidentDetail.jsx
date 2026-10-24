@@ -133,7 +133,7 @@ export default function IncidentDetail({
         </div>
         <h2 className="text-base font-bold text-[#f0f6fc]">No Active Incidents</h2>
         <p className="text-xs text-[#8b949e] mt-1.5 max-w-md leading-relaxed">
-          All systems are healthy. When an outage or error is detected on your connected production servers, it will appear here in real time with root cause attribution and automated remediation pipelines.
+          No incidents. All systems healthy.
         </p>
         {onNavigate && (
           <div className="mt-5 flex items-center gap-3">
@@ -142,7 +142,7 @@ export default function IncidentDetail({
               className="px-3.5 py-1.5 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs font-semibold text-[#f0f6fc] rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
             >
               <Server size={13} className="text-[#58a6ff]" />
-              <span>Connect Production Server</span>
+              <span>Add Server</span>
             </button>
             <button
               onClick={() => onNavigate('dashboard')}
@@ -307,8 +307,8 @@ export default function IncidentDetail({
   const tabs = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
     { id: 'agent', label: 'Execution Console', icon: Bot },
-    { id: 'logs', label: 'Logs & Telemetry', icon: Terminal },
-    { id: 'investigation', label: 'Investigation & RCA', icon: AlertTriangle },
+    { id: 'logs', label: 'Logs', icon: Terminal },
+    { id: 'investigation', label: 'Investigation', icon: AlertTriangle },
     { id: 'recovery', label: 'Canary Validation', icon: Server },
     { id: 'changes', label: 'Code Changes', icon: FileCode },
     { id: 'timeline', label: 'Audit Trail', icon: Radio },
@@ -388,11 +388,7 @@ export default function IncidentDetail({
             {onDeleteIncident && (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm(`Delete incident ${incident.id}?`)) {
-                    onDeleteIncident(incident.id);
-                  }
-                }}
+                onClick={() => setConfirmAction('delete')}
                 className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#261317] hover:bg-[#3d1822] text-[#ff7b72] border border-[#4a1c24] flex items-center gap-1 transition ml-1"
                 title="Delete this incident"
               >
@@ -466,19 +462,16 @@ export default function IncidentDetail({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xs font-semibold text-[#f0f6fc]">
-                    Local Demo Deployment Completed
+                    Deployment complete
                   </h3>
                   <span className="text-[11px] text-[#3fb950] font-mono px-1.5 py-0.2 rounded bg-[#162e21] border border-[#235836]">
-                    Local Port 8000 Healthy
-                  </span>
-                  <span className="text-[11px] text-[#79c0ff] font-mono px-1.5 py-0.2 rounded bg-[#161f30] border border-[#263550]">
-                    Local Demo Deployment
+                    Port 8000 OK
                   </span>
                 </div>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
                   {incident.status === 'ROLLED_BACK'
-                    ? 'Local demo server rolled back to prior commit on port 8000. (Local process deployment; not a Render cloud deployment).'
-                    : 'Fix-forward hotfix applied to local demo process on port 8000. Verified HTTP 200 OK. (Local process deployment; not a Render cloud deployment).'}
+                    ? 'Rolled back to previous commit. Local process only.'
+                    : 'Fix deployed and verified. Local process only.'}
                 </p>
               </div>
             </div>
@@ -498,11 +491,11 @@ export default function IncidentDetail({
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={18} className="shrink-0 text-[#ff7b72] mt-0.5" />
               <div>
-                <p className="font-bold text-sm text-[#ff7b72]">Action Failed / Missing Prerequisite</p>
+                <p className="font-bold text-sm text-[#ff7b72]">Deployment failed</p>
                 <p className="mt-1 text-[#f0f6fc] font-mono leading-relaxed">{deployError}</p>
                 {deployError && (deployError.toLowerCase().includes('deployment') || deployError.toLowerCase().includes('provider') || deployError.toLowerCase().includes('adapter')) && (
                   <p className="mt-1 text-[11px] text-[#8b949e]">
-                    Note: Real cloud provider (Render) deployment adapter is not configured. Local process deployment requires PRODPILOT_DEPLOY_TARGET=local_process and verified canary health evidence.
+                    Set PRODPILOT_DEPLOY_TARGET=local_process and ensure canary health checks passed.
                   </p>
                 )}
               </div>
@@ -529,14 +522,14 @@ export default function IncidentDetail({
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-sm font-bold text-[#f0f6fc]">
-                          Deployment Approval Required
+                          Approval Required
                         </h2>
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#d29922]/15 text-[#d29922] border border-[#d29922]/30">
                           Approval Gate
                         </span>
                       </div>
                       <p className="text-xs text-[#c9d1d9] mt-1 leading-relaxed">
-                        The incident pipeline isolated the root cause, validated a regression fix in an isolated sandbox, and verified canary health.
+                        Root cause isolated, fix verified. Awaiting your approval.
                       </p>
                       <div className="flex items-center gap-3 text-xs text-[#8b949e] mt-1.5 flex-wrap">
                         <span className={`flex items-center gap-1 font-mono ${
@@ -596,7 +589,7 @@ export default function IncidentDetail({
                     className="px-3.5 py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold rounded-md transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                   >
                     <Zap size={13} />
-                    <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
+                    <span>{actionLoading ? 'Deploying...' : 'Deploy'}</span>
                   </button>
 
                   <button
@@ -605,7 +598,7 @@ export default function IncidentDetail({
                     className="px-3 py-1.5 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium rounded-md border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <RotateCcw size={12} />
-                    <span>Rollback to Prior Commit</span>
+                    <span>Rollback</span>
                   </button>
 
                   <button
@@ -702,7 +695,7 @@ export default function IncidentDetail({
               {/* Originating Log Link & Metadata */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[#1b2234] text-xs">
                 <div className="flex items-center gap-2 text-[#8b949e] flex-wrap">
-                  <span>Originating Target:</span>
+                  <span>Source:</span>
                   <code className="text-[#ff7b72] font-mono text-[11px] bg-[#160d10] px-1.5 py-0.5 rounded border border-[#3e1b23]">
                     {incident.suspected_area || incident.service}
                   </code>
@@ -718,7 +711,7 @@ export default function IncidentDetail({
                     title="Jump to source in Logs Explorer"
                   >
                     <Terminal size={12} />
-                    <span>Jump to Source in Logs Explorer ➔</span>
+                    <span>View in Logs</span>
                   </button>
                 )}
               </div>
@@ -733,18 +726,15 @@ export default function IncidentDetail({
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-[#f0f6fc] flex items-center gap-2">
-                      <span>Root Cause Analysis Report</span>
-                      <span className="text-[11px] font-mono text-[#8b949e] font-normal">
-                        (Why it happened)
-                      </span>
+                      <span>Root Cause</span>
                     </h2>
                     <p className="text-[11px] text-[#8b949e]">
-                      Automated git blame attribution & failure mechanism isolation
+                      Blame correlation and failure path analysis
                     </p>
                   </div>
                 </div>
                 <span className="px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[#261317] text-[#ff7b72] border border-[#4a1c24] self-start sm:self-auto">
-                  DIAGNOSED • Root Cause Isolated
+                  DIAGNOSED
                 </span>
               </div>
 
@@ -789,7 +779,7 @@ export default function IncidentDetail({
               <div className="space-y-1.5">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-[#8b949e] flex items-center gap-1.5">
                   <Sparkles size={13} className="text-[#e3b341]" />
-                  Failure Mechanism & Root Cause Breakdown
+                  Root Cause
                 </span>
                 <p className="text-xs text-[#c9d1d9] leading-relaxed bg-[#07090f] p-3 rounded-lg border border-[#1b2234]">
                   {generateNaturalIssue()}
@@ -905,14 +895,8 @@ export default function IncidentDetail({
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-[#f0f6fc] flex items-center gap-2">
-                      <span>Fix & Verification Report</span>
-                      <span className="text-[11px] font-mono text-[#8b949e] font-normal">
-                        (What has been fixed & verified)
-                      </span>
+                      <span>Fix & Verification</span>
                     </h2>
-                    <p className="text-[11px] text-[#8b949e]">
-                      Red-to-Green test execution proofs & dual canary telemetry
-                    </p>
                   </div>
                 </div>
                 <span className="px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] self-start sm:self-auto">
@@ -924,7 +908,7 @@ export default function IncidentDetail({
               <div className="space-y-1.5">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-[#8b949e] flex items-center gap-1.5">
                   <Sparkles size={13} className="text-[#3fb950]" />
-                  What Changed & How it Fixes the Issue
+                  What Changed
                 </span>
                 <p className="text-xs text-[#c9d1d9] leading-relaxed bg-[#07090f] p-3 rounded-lg border border-[#1b2234]">
                   {generateNaturalFix()}
@@ -1066,7 +1050,7 @@ export default function IncidentDetail({
                     className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
                   >
                     <Zap size={14} />
-                    <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy Hotfix (:8000)'}</span>
+                    <span>{actionLoading ? 'Deploying...' : 'Deploy'}</span>
                   </button>
 
                   <button
@@ -1076,7 +1060,7 @@ export default function IncidentDetail({
                     className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium rounded-lg border border-[#212a3d] transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     <RotateCcw size={13} className="text-[#d29922]" />
-                    <span>Rollback to Prior Commit...</span>
+                    <span>Rollback</span>
                   </button>
 
                   <button
@@ -1144,7 +1128,7 @@ export default function IncidentDetail({
                 <div className="flex items-center gap-1.5">
                   <Terminal size={14} className="text-[#ff7b72]" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#ff7b72] font-mono">
-                    Extracted Production Traceback
+                    Traceback
                   </span>
                 </div>
                 <button
@@ -1166,9 +1150,8 @@ export default function IncidentDetail({
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono flex items-center gap-1.5">
                   <Clock size={12} className="text-[#58a6ff]" />
-                  <span>Surrounding Production Log Context</span>
+                  <span>Log context</span>
                 </span>
-                <span className="text-[10px] font-mono text-[#6e7681]">Telemetry Forwarder</span>
               </div>
 
               <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-xs font-mono text-[#8b949e] overflow-x-auto leading-relaxed">
@@ -1186,7 +1169,7 @@ export default function IncidentDetail({
               <div className="flex items-center gap-1.5 border-b border-[#1b2234] pb-2">
                 <AlertTriangle size={14} className="text-[#ff7b72]" />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#ff7b72] font-mono">
-                  Root Cause Analysis (RCA) Report
+                  Root Cause
                 </span>
               </div>
 
@@ -1266,7 +1249,7 @@ export default function IncidentDetail({
                 <div className="flex items-center gap-1.5">
                   <Server size={14} className="text-[#3fb950]" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#3fb950] font-mono">
-                    Staged Canary Verification Environments
+                    Canary Environments
                   </span>
                 </div>
                 <span className={`text-[10px] font-mono ${
@@ -1384,7 +1367,7 @@ export default function IncidentDetail({
                 <div className="flex items-center gap-1.5">
                   <FileCode size={14} className="text-[#58a6ff]" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
-                    Synthesized Git Patch Diff
+                    Patch diff
                   </span>
                 </div>
                 {artifacts.repro_test && (
@@ -1410,7 +1393,7 @@ export default function IncidentDetail({
               <div className="flex items-center justify-between border-b border-[#1b2234] pb-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono flex items-center gap-1.5">
                   <CheckCircle2 size={13} className="text-[#3fb950]" />
-                  <span>Deterministic Reproduction Proof (Red $\rightarrow$ Green)</span>
+                  <span>Test evidence</span>
                 </span>
                 {testEvidence && (
                   <span className="text-[9px] font-mono text-[#3fb950] bg-[#0d1e17] px-1.5 py-0.2 rounded border border-[#1b3d2b]">
@@ -1457,7 +1440,7 @@ export default function IncidentDetail({
                 <div className="flex items-center gap-1.5">
                   <Radio size={14} className="text-[#58a6ff]" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#8b949e] font-mono">
-                    Real-Time SSE Event Audit Trail
+                    Event log
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-[#6e7681]">
@@ -1468,7 +1451,7 @@ export default function IncidentDetail({
               <div className="space-y-1.5 text-xs font-mono">
                 {events.length === 0 ? (
                   <div className="p-3 rounded bg-[#07090f] border border-[#1b2234] text-[#485263] text-center text-xs">
-                    Listening to live SSE stream for incident events...
+                    Waiting for events...
                   </div>
                 ) : (
                   events.map((ev, i) => (
@@ -1497,7 +1480,7 @@ export default function IncidentDetail({
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="hidden sm:flex items-center gap-2 text-xs text-[#8b949e]">
               <span className="w-2 h-2 rounded-full bg-[#e3b341] animate-pulse" />
-              <span>Remediation candidate verified and awaiting operator approval</span>
+              <span>Awaiting approval</span>
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1507,7 +1490,7 @@ export default function IncidentDetail({
                 className="flex-1 sm:flex-none px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
               >
                 <Zap size={14} />
-                <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
+                <span>{actionLoading ? 'Deploying...' : 'Deploy'}</span>
               </button>
 
               <button
@@ -1541,20 +1524,34 @@ export default function IncidentDetail({
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#21262d] bg-[#161b26]">
               <div className="flex items-center gap-3">
                 <div className={`p-2.5 rounded-lg border ${
-                  confirmAction === 'rollback'
+                  confirmAction === 'rollback' || confirmAction === 'delete'
                     ? 'bg-[#3b1219] border-[#da3633]/40 text-[#f85149]'
                     : 'bg-[#12281e] border-[#238636]/40 text-[#3fb950]'
                 }`}>
-                  {confirmAction === 'rollback' ? <RotateCcw size={20} /> : <Zap size={20} />}
+                  {confirmAction === 'delete' ? (
+                    <Trash2 size={20} />
+                  ) : confirmAction === 'rollback' ? (
+                    <RotateCcw size={20} />
+                  ) : (
+                    <Zap size={20} />
+                  )}
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#f0f6fc]">
-                    {confirmAction === 'rollback' ? 'Confirm Production Rollback' : 'Confirm Deployment & Git Push'}
+                    {confirmAction === 'delete'
+                      ? 'Delete Incident'
+                      : confirmAction === 'rollback'
+                      ? 'Confirm Production Rollback'
+                      : 'Confirm Deployment & Git Push'}
                   </h3>
                   <p className="text-[11px] text-[#8b949e] mt-0.5">
                     Target: <span className="font-mono text-[#c9d1d9] font-medium">{incident.service || 'Production Service'}</span>
                     {' • '}
-                    {confirmAction === 'rollback' ? 'Revert to prior stable release' : 'Promote patch to remote repo & live service'}
+                    {confirmAction === 'delete'
+                      ? 'Delete incident record'
+                      : confirmAction === 'rollback'
+                      ? 'Revert to prior stable release'
+                      : 'Promote patch to remote repo & live service'}
                   </p>
                 </div>
               </div>
@@ -1568,8 +1565,11 @@ export default function IncidentDetail({
 
             {/* Modal Body */}
             <div className="p-5 space-y-4 text-xs">
-
-              {confirmAction === 'rollback' ? (
+              {confirmAction === 'delete' ? (
+                <p className="text-[#c9d1d9] leading-relaxed">
+                  Are you sure you want to delete incident <span className="font-mono text-[#ff7b72] font-semibold">{incident.id}</span>? This action cannot be undone.
+                </p>
+              ) : confirmAction === 'rollback' ? (
                 <>
                   <p className="text-[#c9d1d9] leading-relaxed">
                     Select a previous stable commit from repository history to revert production traffic to. ProdPilot will create an isolated rollback branch, verify canary health, and deploy to port 8000:
@@ -1578,7 +1578,7 @@ export default function IncidentDetail({
                   {/* Commit Selector List */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-semibold text-[#8b949e]">
-                      <span>Available Repository Commits</span>
+                      <span>Select a commit</span>
                       {loadingCommits ? (
                         <span className="text-[#58a6ff] text-[11px] animate-pulse">Loading commits...</span>
                       ) : (
@@ -1647,7 +1647,7 @@ export default function IncidentDetail({
               ) : (
                 <>
                   <p className="text-[#c9d1d9] leading-relaxed">
-                    ProdPilot is ready to promote and deploy the verified defensive remediation patch. Please review the automated deployment sequence before proceeding:
+                    Review the deployment steps before confirming.
                   </p>
 
                   {/* Step-by-step pipeline */}
@@ -1662,7 +1662,7 @@ export default function IncidentDetail({
                           <span>Merge & Commit Patch Locally</span>
                         </div>
                         <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
-                          Commits synthesized remediation diff to repository with incident attribution metadata.
+                          Commits the patch to the repo.
                         </div>
                       </div>
                     </div>
@@ -1677,7 +1677,7 @@ export default function IncidentDetail({
                           <span>Push to Remote Git (origin/main)</span>
                         </div>
                         <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
-                          Pushes committed changes upstream to remote branch via git push.
+                          Pushes to remote branch.
                         </div>
                       </div>
                     </div>
@@ -1692,7 +1692,7 @@ export default function IncidentDetail({
                           <span>Trigger Cloud Redeployment (Render)</span>
                         </div>
                         <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
-                          Triggers Render deploy API to build and redeploy the latest commit on your production service.
+                          Triggers a Render redeploy.
                         </div>
                       </div>
                     </div>
@@ -1707,7 +1707,7 @@ export default function IncidentDetail({
                           <span>10-Second Post-Deploy Watchdog</span>
                         </div>
                         <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
-                          Monitors live health probes. Automatically invokes safety rollback if error rates or crashes persist.
+                          Watches health for 10s. Rolls back on failure.
                         </div>
                       </div>
                     </div>
@@ -1742,7 +1742,9 @@ export default function IncidentDetail({
                   const act = confirmAction;
                   const commitToRevert = selectedCommitHash;
                   setConfirmAction(null);
-                  if (act === 'rollback') {
+                  if (act === 'delete') {
+                    if (onDeleteIncident) onDeleteIncident(incident.id);
+                  } else if (act === 'rollback') {
                     if (onRollback) onRollback(commitToRevert);
                   } else {
                     if (onApprove) onApprove('fix_forward');
@@ -1750,14 +1752,22 @@ export default function IncidentDetail({
                 }}
                 disabled={actionLoading || (confirmAction === 'rollback' && !selectedCommitHash && commitsList.length > 0)}
                 className={`px-4 py-2 rounded-md text-white text-xs font-semibold flex items-center gap-2 transition shadow-sm disabled:opacity-50 cursor-pointer ${
-                  confirmAction === 'rollback'
+                  confirmAction === 'rollback' || confirmAction === 'delete'
                     ? 'bg-[#da3633] hover:bg-[#b62324]'
                     : 'bg-[#238636] hover:bg-[#2ea043]'
                 }`}
               >
-                {confirmAction === 'rollback' ? <RotateCcw size={14} /> : <Zap size={14} />}
+                {confirmAction === 'delete' ? (
+                  <Trash2 size={14} />
+                ) : confirmAction === 'rollback' ? (
+                  <RotateCcw size={14} />
+                ) : (
+                  <Zap size={14} />
+                )}
                 <span>
-                  {confirmAction === 'rollback'
+                  {confirmAction === 'delete'
+                    ? 'Delete Incident'
+                    : confirmAction === 'rollback'
                     ? `Confirm Rollback ${selectedCommitHash ? `to ${selectedCommitHash.slice(0, 7)}` : ''}`
                     : 'Confirm & Deploy to Production'}
                 </span>

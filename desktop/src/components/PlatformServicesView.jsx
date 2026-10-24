@@ -78,21 +78,21 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
 
   const getServiceWarning = (service, nextState) => {
     if (nextState) {
-      return `Re-enabling ${service.name} will restore active automated workloads and notification dispatch immediately.`;
+      return `Re-enabling ${service.name} immediately restores automated workloads.`;
     }
     switch (service.id) {
       case 'telegram':
-        return 'Instant SEV-1 mobile push notifications and 1-tap mobile triage cards to your Telegram chat will be suppressed. Real-time updates will only appear on this desktop application.';
+        return 'Telegram alerts will stop. Updates only appear here.';
       case 'twilio':
-        return 'Emergency automated phone calls to on-call phone numbers will be completely disabled. The team will NOT receive voice phone alerts or interactive DTMF keypad remediation during critical outages.';
+        return 'Voice calls to on-call engineers will stop.';
       case 'render_watchdog':
-        return 'Continuous 15-second background health checks will pause for this production server. Automated incident detection will stop until re-enabled or manually probed.';
+        return "Health checks will pause. Incidents won't be auto-detected.";
       case 'antigravity':
-        return 'Switches the remediation pipeline to Alert-Only mode. Automatic Git worktree cloning, AST blame analysis, and candidate canary staging on ports 8001/8002 will not run.';
+        return 'Auto-remediation will stop. Incidents will still be detected.';
       case 'auto_revert':
-        return 'Disables the 10-second post-deployment safety watchdog. Faulty patches deployed to production port 8000 will NOT be automatically rolled back.';
+        return "Failed deployments won't be rolled back automatically.";
       case 'tunnel':
-        return 'Closes the public Cloudflare tunnel. External mobile webhook callbacks and triage links accessed from outside localhost will stop resolving.';
+        return 'The public tunnel will close. Remote access and webhooks will stop.';
       default:
         return `This will temporarily mute all automated workloads for ${service.name}.`;
     }
@@ -211,13 +211,13 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-[#f0f6fc]">Platform Services</h1>
+              <h1 className="text-sm font-bold text-[#f0f6fc]">Services</h1>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#161f30] text-[#79c0ff] border border-[#263550] font-mono">
                 {onlineCount} / {services.length} Online
               </span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Operational status, health probes, and connectivity for platform services
+              Operational status and health probes for background services
             </p>
           </div>
         </div>
