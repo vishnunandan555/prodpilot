@@ -308,7 +308,10 @@ export default function Sidebar({
 
       {/* Footer Info */}
       <div className="px-3 py-2 border-t border-[#1b2234] bg-[#07090f] text-xs text-[#6e7681] flex items-center justify-between">
-        <span className="text-[11px]">ProdPilot</span>
+        <div className="flex items-center gap-1.5">
+          <img src="/logo.png" alt="ProdPilot" className="w-3.5 h-3.5 rounded-sm object-contain" />
+          <span className="text-[11px] font-medium text-[#c9d1d9]">ProdPilot</span>
+        </div>
         <span className={`text-[11px] flex items-center gap-1 ${apiConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#ff7b72]'}`} />
           {apiConnected ? 'Connected' : 'Offline'}

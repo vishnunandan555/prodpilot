@@ -102,10 +102,12 @@ export default function AuthModal({
       <div className="w-full max-w-md bg-[#0d111a] border border-[#1b2234] rounded-xl shadow-2xl overflow-hidden font-sans">
         {/* Header */}
         <div className="bg-[#07090f] px-5 py-4 border-b border-[#1b2234] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded bg-[#1f293d] border border-[#2e3d5b] flex items-center justify-center text-white text-xs font-bold font-mono">
-              P
-            </div>
+          <div className="flex items-center gap-3">
+            <img
+              src="/logo.png"
+              alt="ProdPilot"
+              className="w-7 h-7 rounded-lg object-contain shadow-md"
+            />
             <div>
               <h2 className="text-sm font-semibold text-[#f0f6fc]">
                 {tab === 'login' ? 'Operator Sign In' : 'Create Operator Account'}

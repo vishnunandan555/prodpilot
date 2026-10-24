@@ -12,6 +12,7 @@ function createWindow() {
     resizable: true,
     backgroundColor: '#080b11',
     title: 'ProdPilot',
+    icon: path.join(__dirname, '../public/logo.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

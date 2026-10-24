@@ -13,9 +13,11 @@ export default function WindowHeader({
     <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
       {/* Left: Branding */}
       <div className="flex items-center gap-2">
-        <div className="w-4 h-4 rounded bg-[#1f293d] border border-[#2e3d5b] flex items-center justify-center text-[10px] font-bold font-mono text-[#f0f6fc]">
-          P
-        </div>
+        <img
+          src="/logo.png"
+          alt="ProdPilot"
+          className="w-4 h-4 rounded-sm object-contain"
+        />
         <span className="font-semibold text-[#f0f6fc] tracking-tight">ProdPilot</span>
       </div>
 
