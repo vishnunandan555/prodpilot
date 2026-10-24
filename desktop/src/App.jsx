@@ -335,7 +335,7 @@ export default function App() {
   };
 
   // 1-Tap Mobile Action Approvals
-  const handleApprove = async (actionType = 'fix_forward') => {
+  const handleApprove = async (actionType = 'fix_forward', extraPayload = {}) => {
     if (!selectedIncident) return;
     setActionLoading(true);
     setDeployError(null);
@@ -358,7 +358,7 @@ export default function App() {
       const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: actionType }),
+        body: JSON.stringify({ action: actionType, ...extraPayload }),
       });
       if (res.ok) {
         const result = await res.json();
@@ -414,9 +414,10 @@ export default function App() {
     }
   };
 
-  const handleRollback = async () => {
-    return handleApprove('rollback');
+  const handleRollback = async (revertCommit = null) => {
+    return handleApprove('rollback', revertCommit ? { revert_commit: revertCommit } : {});
   };
+
 
   const handleTakeover = async () => {
     if (!selectedIncident) return;

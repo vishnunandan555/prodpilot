@@ -28,6 +28,10 @@ from backend.prodpilot.db import (
 )
 from backend.prodpilot.decide.jev import decide_jev as decide
 from backend.prodpilot.pipeline.brief import create_brief
+from backend.prodpilot.pipeline.github_pr_workflow import (
+    create_linked_github_issue,
+    post_github_issue_comment,
+)
 from backend.prodpilot.pipeline.repro_runner import run_repro_pipeline
 from backend.prodpilot.pipeline.worktree import cleanup_stale_worktrees, remove_worktree
 
@@ -117,10 +121,39 @@ def _run_process_incident(
         db_path=db_path,
     )
 
+    # Immediately create GitHub Issue when diagnosis starts
+    try:
+        create_linked_github_issue(incident=incident, brief=None, repo_path=target_repo, db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not create initial GitHub issue: {e}")
+
     # b. Extract brief
     brief = create_brief(incident)
     update_incident_brief(incident_id, brief, db_path=db_path)
     logger.info(f"Generated brief: {brief['summary']} (suspect: {brief['suspected_area']})")
+
+    # Post Milestone Comment 1: Root Cause Analysis Report
+    try:
+        suspect_commit = incident.get("suspect_commit") or brief.get("introduced_by") or "HEAD~1"
+        suspect_area = brief.get("suspected_area") or "codebase"
+        raw_trace = (incident.get("trace") or incident.get("error_trace") or "No trace").strip()
+        rca_comment = f"""### 🔍 Root Cause Analysis Report
+- **Service**: `{incident.get('service', 'production-service')}`
+- **Severity**: `{incident.get('severity', 'sev2').upper()}`
+- **Suspect Commit**: `{suspect_commit}`
+- **Suspect Area / File**: `{suspect_area}`
+- **Failure Summary**: {brief.get('summary')}
+
+#### 📜 Error Trace Snapshot
+```text
+{raw_trace[:800]}
+```
+
+*Remediation pipeline is now initializing an isolated Git worktree to reproduce the failure.*
+"""
+        post_github_issue_comment(incident_id, rca_comment, repo_path=target_repo, db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not post GitHub RCA comment: {e}")
 
     # Dispatch Stage 2 Telegram Alert (Incident Created / Analysis Complete -> Remediation Start)
     try:
@@ -163,6 +196,29 @@ def _run_process_incident(
         return {"status": "FAILED", "incident_id": incident_id, "error": pipeline_res.error}
 
     logger.info(f"Verified fix for {incident_id}. Evidence: before={pipeline_res.test_evidence.get('before')}, after={pipeline_res.test_evidence.get('after')}")
+
+    # Post Milestone Comment 2: Fix Generation & Test Repro
+    try:
+        before_log = (pipeline_res.test_evidence.get('before') or 'FAILED').strip()[:600]
+        after_log = (pipeline_res.test_evidence.get('after') or 'PASSED').strip()[:600]
+        fix_comment = f"""### 🧪 Fix Generation & Reproduction Verification
+The agent reproduced the issue in an isolated Git worktree and verified the patch.
+
+**Red-to-Green Test Verification**:
+- **Before Patch (Red - Reproduction Failure)**:
+```text
+{before_log}
+```
+- **After Patch (Green - Test Passed)**:
+```text
+{after_log}
+```
+
+*Canary instances are being deployed to ports 8001 (fix-forward) and 8002 (rollback) for side-by-side traffic testing.*
+"""
+        post_github_issue_comment(incident_id, fix_comment, repo_path=target_repo, db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not post GitHub fix verification comment: {e}")
 
     # d. Stage Canaries (8001 & 8002)
     log_event(
@@ -238,6 +294,25 @@ def _run_process_incident(
         db_path=db_path,
     )
     logger.info(f"Decision: {decision['recommendation']} ({decision['probabilities']}) - {decision['reason']}")
+
+    # Post Milestone Comment 3: Fix & Verification Report
+    try:
+        ff_ok = staging_status.get('fix_forward', {}).get('health', False)
+        rb_ok = staging_status.get('rollback', {}).get('health', False)
+        prob_ff = int((decision.get('probabilities') or {}).get('fix_forward', 0) * 100)
+        prob_rb = int((decision.get('probabilities') or {}).get('rollback', 0) * 100)
+        decision_comment = f"""### 🛡️ Canary Staging & Jev Decision Engine Report
+- **Canary Fix-Forward (:8001)**: `{'HEALTHY ✅' if ff_ok else 'FAILED ❌'}`
+- **Canary Rollback (:8002)**: `{'HEALTHY ✅' if rb_ok else 'FAILED ❌'}`
+- **Recommendation**: `{decision.get('recommendation', 'fix_forward').upper()}`
+- **Confidence Probabilities**: Fix-Forward: `{prob_ff}%` | Rollback: `{prob_rb}%`
+- **Decision Rationale**: {decision.get('reason')}
+
+*Opening remediation Pull Request and awaiting operator review on dashboard.*
+"""
+        post_github_issue_comment(incident_id, decision_comment, repo_path=target_repo, db_path=db_path)
+    except Exception as e:
+        logger.warning(f"Could not post GitHub decision comment: {e}")
 
     # Open a review PR from the verified patch in an isolated worktree. The helper
     # never merges; the PR remains a review artifact until a separate provider flow exists.

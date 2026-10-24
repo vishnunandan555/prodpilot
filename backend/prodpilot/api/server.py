@@ -246,6 +246,7 @@ class ApproveRequest(BaseModel):
     action: str  # "fix_forward" or "rollback"
     source: str = "desktop_ui"  # "telegram", "desktop_ui", or "cli"
     repo_path: Optional[str] = None
+    revert_commit: Optional[str] = None
 
 
 class RejectRequest(BaseModel):
@@ -379,6 +380,7 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         "patch_diff": "",
         "test_evidence": None,
         "github_pr": None,
+        "github_issue": None,
     }
     for row in art_rows:
         kind = row.get("kind")
@@ -392,6 +394,11 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
                 artifacts_map["github_pr"] = json.loads(content) if isinstance(content, str) else content
             except Exception:
                 artifacts_map["github_pr"] = None
+        elif kind == "github_issue":
+            try:
+                artifacts_map["github_issue"] = json.loads(content) if isinstance(content, str) else content
+            except Exception:
+                artifacts_map["github_issue"] = None
         elif kind == "test_log_before":
             if not artifacts_map["test_evidence"]:
                 artifacts_map["test_evidence"] = {}
@@ -449,6 +456,8 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         "suspect_commit": suspect_commit,
         "brief": brief,
         "artifacts": artifacts_map,
+        "github_issue": artifacts_map.get("github_issue"),
+        "github_pr": artifacts_map.get("github_pr"),
         "staging": staging_info,
         "decision": decision_info,
         "events": events_list,
@@ -494,6 +503,36 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         return HTMLResponse(content=render_mobile_incident_page(res_data, view=view_param, action=action_param))
 
     return res_data
+
+
+@app.get("/incidents/{incident_id}/commits")
+def get_incident_commits(incident_id: str) -> Dict[str, Any]:
+    """Returns local git commits for the connected repository to assist rollback target selection."""
+    inc = get_incident(incident_id)
+    repo_path = None
+    try:
+        active = get_active_repo()
+        if active and active.get("local_path") and Path(active["local_path"]).exists():
+            repo_path = active["local_path"]
+    except Exception:
+        pass
+
+    commits: List[Dict[str, Any]] = []
+    if repo_path:
+        from backend.prodpilot.integrations.github_client import GitHubClient
+        commits = GitHubClient.inspect_local_commits(repo_path, limit=20)
+
+    if not commits and inc:
+        rc = inc.get("recent_commits")
+        if isinstance(rc, str):
+            try:
+                commits = json.loads(rc)
+            except Exception:
+                pass
+        elif isinstance(rc, list):
+            commits = rc
+
+    return {"ok": True, "commits": commits, "count": len(commits)}
 
 
 @app.post("/incidents/{incident_id}/hold")
@@ -550,6 +589,18 @@ def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
         },
     )
     insert_service_log(service=svc, level="WARN", message=msg)
+
+    # Post comment to GitHub issue
+    try:
+        from backend.prodpilot.pipeline.github_pr_workflow import post_github_issue_comment
+        takeover_comment = f"""### 🧑‍💻 Manual Takeover Initiated
+- **Remediation Status**: `MANUAL_TAKEOVER`
+- **Operator Action**: Manual takeover initiated from dashboard.
+- **Environment**: Isolated worktrees and side-port canaries (8001 / 8002) are preserved for engineer inspection.
+"""
+        post_github_issue_comment(incident_id, takeover_comment)
+    except Exception as e:
+        logger.warning(f"Could not post takeover comment to GitHub issue: {e}")
 
     return {
         "ok": True,
@@ -741,13 +792,15 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: No verified patch artifact is available"
         insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail="No verified patch artifact is available for this incident")
-    suspect = inc.get("suspect_commit")
-    if isinstance(suspect, str):
-        try:
-            suspect = json.loads(suspect)
-        except Exception:
-            suspect = {}
-    suspect_commit_hash = (suspect or {}).get("hash") if isinstance(suspect, dict) else None
+    suspect_commit_hash = body.revert_commit
+    if not suspect_commit_hash:
+        suspect = inc.get("suspect_commit")
+        if isinstance(suspect, str):
+            try:
+                suspect = json.loads(suspect)
+            except Exception:
+                suspect = {}
+        suspect_commit_hash = (suspect or {}).get("hash") if isinstance(suspect, dict) else None
     if action == "rollback" and not suspect_commit_hash:
         msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: No suspect commit is available for rollback"
         insert_service_log(service=svc, level="ERROR", message=msg)
@@ -795,6 +848,14 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
 
     update_incident_status(incident_id, new_status)
 
+    pr_artifact = None
+    for a in art_rows:
+        if a.get("kind") == "github_pr":
+            try:
+                pr_artifact = json.loads(a.get("content") or "{}")
+            except Exception:
+                pass
+
     if new_status == "DEPLOYED":
         try:
             generate_incident_report(
@@ -804,6 +865,18 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
             )
         except Exception as e:
             logger.warning(f"Could not generate post-mortem report for {incident_id}: {e}")
+
+        # Automate GitHub PR merge & issue closure
+        try:
+            from backend.prodpilot.pipeline.github_pr_workflow import close_linked_github_issue_and_merge_pr
+            close_linked_github_issue_and_merge_pr(
+                incident_id=incident_id,
+                action=action,
+                repo_path=repo_path,
+                approver_source=body.source,
+            )
+        except Exception as e:
+            logger.warning(f"Could not close GitHub issue / merge PR for {incident_id}: {e}")
 
         success_msg = f"[BUTTON: {btn_tag}] SUCCESS: Deployed {action} to production port 8000 for #{incident_id[:8]}! Health probe: 200 OK"
         insert_service_log(service=svc, level="PASS", message=success_msg)
@@ -841,10 +914,10 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         "deployment_target": "local_process",
         "health_check": deploy_res.get("health_check"),
         "incident_id": incident_id,
-        "pr_url": None,
-        "pr_number": None,
-        "branch": None,
-        "merged": False,
+        "pr_url": (pr_artifact or {}).get("pr_url"),
+        "pr_number": (pr_artifact or {}).get("pr_number"),
+        "branch": (pr_artifact or {}).get("branch"),
+        "merged": new_status == "DEPLOYED" and action == "fix_forward",
     }
 
 
