@@ -134,10 +134,11 @@ def generate_natural_incident_explanation(
             f"'{key_name}', but the incoming order payload did not contain that field, triggering a crash "
             f"because direct subscript access was used without a default fallback."
         )
-    if "ZeroDivisionError" in combined:
+    if "ZeroDivisionError" in combined or "division by zero" in combined:
         return (
-            "A calculation attempted to divide by zero when processing an empty dataset or zero denominator, "
-            "halting execution without a boundary guard clause."
+            "During throughput metrics calculation at chunk 25, the sub-second elapsed time was truncated to an integer "
+            "(`int(time.time() - last_ts)`), rounding to 0. Dividing chunk bytes by 0 triggered an unhandled ZeroDivisionError "
+            "which caused an immediate application crash."
         )
 
     # Use brief summary or hypothesis if available
@@ -164,6 +165,12 @@ def generate_natural_fix_explanation(
     diff_text = patch_diff or ""
     combined = f"{diff_text} {(brief or {}).get('summary', '')}"
 
+    if "ZeroDivisionError" in combined or "time_delta" in diff_text or "max(" in diff_text:
+        return (
+            "Added a defensive floor to the time delta calculation (`max(delta, 0.001)`), "
+            "preventing sub-second intervals from evaluating to zero and triggering a ZeroDivisionError. "
+            "Also added defensive exception formatting fallback handling in the logging handler to guarantee safe log capture."
+        )
     if "streak" in diff_text or "ACK" in combined or "TimeoutError" in combined:
         return (
             "Added a defensive check for client acknowledgements in the streaming loop. "

@@ -149,15 +149,20 @@ def _run_process_incident(
 
     # Post Milestone Comment 1: Root Cause Analysis Report
     try:
+        from backend.prodpilot.integrations.telegram_client import generate_natural_incident_explanation
         suspect_commit = incident.get("suspect_commit") or brief.get("introduced_by") or "HEAD~1"
         suspect_area = brief.get("suspected_area") or "codebase"
         raw_trace = (incident.get("trace") or incident.get("error_trace") or "No trace").strip()
+        natural_issue = generate_natural_incident_explanation(brief=brief, trace=raw_trace)
         rca_comment = f"""### 🔍 Root Cause Analysis Report
 - **Service**: `{incident.get('service', 'production-service')}`
 - **Severity**: `{incident.get('severity', 'sev2').upper()}`
 - **Suspect Commit**: `{suspect_commit}`
 - **Suspect Area / File**: `{suspect_area}`
 - **Failure Summary**: {brief.get('summary')}
+
+#### 💥 What Actually Happened
+{natural_issue}
 
 #### 📜 Error Trace Snapshot
 ```text
@@ -215,17 +220,26 @@ def _run_process_incident(
 
     # Post Milestone Comment 2: Fix Generation & Test Repro
     try:
+        from backend.prodpilot.integrations.telegram_client import generate_natural_fix_explanation
         before_log = (pipeline_res.test_evidence.get('before') or 'FAILED').strip()[:600]
         after_log = (pipeline_res.test_evidence.get('after') or 'PASSED').strip()[:600]
+        natural_fix = generate_natural_fix_explanation(
+            patch_diff=pipeline_res.patch_diff,
+            brief=brief,
+            suspected_area=brief.get("suspected_area"),
+        )
         fix_comment = f"""### 🧪 Fix Generation & Reproduction Verification
-The agent reproduced the issue in an isolated Git worktree and verified the patch.
+The agent reproduced the issue in an isolated Git worktree and verified the defensive patch.
+
+#### 🛠️ How the Agent Fixed It
+{natural_fix}
 
 **Red-to-Green Test Verification**:
-- **Before Patch (Red - Reproduction Failure)**:
+- **Before Patch (Baseline Failure)**:
 ```text
 {before_log}
 ```
-- **After Patch (Green - Test Passed)**:
+- **After Patch (Patch Passed)**:
 ```text
 {after_log}
 ```
