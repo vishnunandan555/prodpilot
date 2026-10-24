@@ -118,6 +118,9 @@ export default function DashboardView({
 
   const hasProjects = projects.length > 0;
 
+  const hasServerErrors = servers.some((s) => s.status === 'ERROR' || s.status === 'OFFLINE');
+  const serverErrorCount = servers.filter((s) => s.status === 'ERROR' || s.status === 'OFFLINE').length;
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans">
       {/* Top Banner: User's Dashboard Header */}
@@ -128,10 +131,10 @@ export default function DashboardView({
               className={`w-2.5 h-2.5 rounded-full ${
                 !apiConnected
                   ? 'bg-[#8b949e]'
+                  : isDegraded || hasServerErrors
+                  ? 'bg-[#f85149]'
                   : !hasProjects
                   ? 'bg-[#58a6ff]'
-                  : isDegraded
-                  ? 'bg-[#f85149]'
                   : servers.length === 0
                   ? 'bg-[#d29922]'
                   : 'bg-[#3fb950]'
@@ -146,10 +149,10 @@ export default function DashboardView({
                   className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase border ${
                     !apiConnected
                       ? 'bg-[#161b26] text-[#8b949e] border-[#212a3d]'
+                      : isDegraded || hasServerErrors
+                      ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
                       : !hasProjects
                       ? 'bg-[#161f30] text-[#79c0ff] border-[#263550]'
-                      : isDegraded
-                      ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
                       : servers.length === 0
                       ? 'bg-[#241a12] text-[#d29922] border-[#442c16]'
                       : 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
@@ -157,12 +160,14 @@ export default function DashboardView({
                 >
                   {!apiConnected
                     ? 'Daemon Disconnected'
-                    : !hasProjects
-                    ? 'No Projects Added'
                     : isDegraded
                     ? 'Active Incident'
+                    : !hasProjects
+                    ? 'No Projects Added'
                     : servers.length === 0
                     ? 'Awaiting Server'
+                    : hasServerErrors
+                    ? `Health Probe Alert (${serverErrorCount})`
                     : 'All Systems Operational'}
                 </span>
               </div>
@@ -325,41 +330,66 @@ export default function DashboardView({
                   <Radio size={14} className="text-[#3fb950]" />
                   <span>Platform Engine Availability</span>
                 </span>
-                <span className="text-[11px] text-[#3fb950] font-mono">Control Plane Ready</span>
+                <span className="text-[11px] text-[#8b949e] font-mono">
+                  {services.some((s) => s.status === 'ONLINE') ? 'Live Platform Telemetry' : 'Daemon Connecting...'}
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
-                  <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                    <span className="font-medium text-[#f0f6fc]">Jev Engine</span>
-                    <span className="text-[10px] text-[#3fb950] font-mono font-bold">ONLINE</span>
-                  </div>
-                  <p className="text-[11px] text-[#6e7681]">TypeSafe Decision Model</p>
-                </div>
-
-                <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
-                  <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                    <span className="font-medium text-[#f0f6fc]">Antigravity SDK</span>
-                    <span className="text-[10px] text-[#3fb950] font-mono font-bold">ONLINE</span>
-                  </div>
-                  <p className="text-[11px] text-[#6e7681]">Gemini AST Code Synthesis</p>
-                </div>
-
-                <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
-                  <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                    <span className="font-medium text-[#f0f6fc]">Telegram Bot</span>
-                    <span className="text-[10px] text-[#3fb950] font-mono font-bold">ONLINE</span>
-                  </div>
-                  <p className="text-[11px] text-[#6e7681]">On-Call 1-Tap Approvals</p>
-                </div>
-
-                <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
-                  <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                    <span className="font-medium text-[#f0f6fc]">Twilio Voice</span>
-                    <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
-                  </div>
-                  <p className="text-[11px] text-[#6e7681]">Sev-1 Phone Escalation Tree</p>
-                </div>
+                {services.length > 0 ? (
+                  services.slice(0, 4).map((svc) => (
+                    <div key={svc.id} className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
+                      <div className="flex items-center justify-between text-[#8b949e] mb-1">
+                        <span className="font-medium text-[#f0f6fc] truncate">{svc.name}</span>
+                        <span
+                          className={`text-[10px] font-mono font-bold ${
+                            svc.status === 'ONLINE'
+                              ? 'text-[#3fb950]'
+                              : svc.status === 'STANDBY'
+                              ? 'text-[#79c0ff]'
+                              : svc.status === 'OFFLINE'
+                              ? 'text-[#f85149]'
+                              : 'text-[#d29922]'
+                          }`}
+                        >
+                          {svc.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#6e7681] truncate">{svc.activity || svc.description}</p>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
+                      <div className="flex items-center justify-between text-[#8b949e] mb-1">
+                        <span className="font-medium text-[#f0f6fc]">Jev Engine</span>
+                        <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
+                      </div>
+                      <p className="text-[11px] text-[#6e7681]">TypeSafe Decision Model</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
+                      <div className="flex items-center justify-between text-[#8b949e] mb-1">
+                        <span className="font-medium text-[#f0f6fc]">Antigravity SDK</span>
+                        <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
+                      </div>
+                      <p className="text-[11px] text-[#6e7681]">Gemini AST Code Synthesis</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
+                      <div className="flex items-center justify-between text-[#8b949e] mb-1">
+                        <span className="font-medium text-[#f0f6fc]">Telegram Bot</span>
+                        <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
+                      </div>
+                      <p className="text-[11px] text-[#6e7681]">On-Call 1-Tap Approvals</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
+                      <div className="flex items-center justify-between text-[#8b949e] mb-1">
+                        <span className="font-medium text-[#f0f6fc]">Twilio Voice</span>
+                        <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
+                      </div>
+                      <p className="text-[11px] text-[#6e7681]">Sev-1 Phone Escalation Tree</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -596,6 +626,10 @@ export default function DashboardView({
                       <div className="flex items-center justify-between">
                         <span className="text-[#8b949e]">Remediation Engine:</span>
                         <span className="text-[#3fb950] font-medium">Google AGY SDK</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#8b949e]">Deployment Target:</span>
+                        <span className="text-[#e3b341] font-medium">Local Demo Process</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[#8b949e]">Circuit Breaker:</span>

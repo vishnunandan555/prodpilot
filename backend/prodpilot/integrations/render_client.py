@@ -241,133 +241,157 @@ class RenderClient:
                 rate_limit = {"limit": 30, "remaining": 30, "reset": 0}
 
                 # 2. Query official Render application runtime logs endpoint (GET /v1/logs)
-                if owner_id:
-                    logs_url = f"{RENDER_API_BASE}/logs?ownerId={owner_id}&resource={sid}&limit={limit}&direction=backward"
-                    logs_res = client.get(logs_url, headers=headers)
+                if not owner_id:
+                    return {
+                        "ok": False,
+                        "error": f"Could not determine Render owner ID for service '{sid}'",
+                        "logs": [],
+                        "is_suspended": is_suspended,
+                        "service_name": svc_name,
+                        "rate_limit": rate_limit,
+                        "rate_limited": False,
+                    }
 
-                    # Extract rate limit headers from Render response
-                    try:
-                        rate_limit = {
-                            "limit": int(logs_res.headers.get("ratelimit-limit", 30)),
-                            "remaining": int(logs_res.headers.get("ratelimit-remaining", 30)),
-                            "reset": int(logs_res.headers.get("ratelimit-reset", 0)),
-                        }
-                    except Exception:
-                        pass
+                logs_url = f"{RENDER_API_BASE}/logs?ownerId={owner_id}&resource={sid}&limit={limit}&direction=backward"
+                logs_res = client.get(logs_url, headers=headers)
 
-                    if logs_res.status_code == 429:
-                        # Graceful handling for rate limit ceiling: return cached logs
-                        logger.warning(f"Render API rate limit reached (429). Reset in {rate_limit.get('reset')}s")
-                        last_cache = _LAST_LOGS_CACHE.get(sid, {})
-                        return {
-                            "ok": True,
-                            "logs": last_cache.get("logs", []),
-                            "count": len(last_cache.get("logs", [])),
-                            "is_suspended": is_suspended,
-                            "service_name": svc_name,
-                            "rate_limit": rate_limit,
-                            "rate_limited": True,
-                        }
+                # Extract rate limit headers from Render response
+                try:
+                    rate_limit = {
+                        "limit": int(logs_res.headers.get("ratelimit-limit", 30)),
+                        "remaining": int(logs_res.headers.get("ratelimit-remaining", 30)),
+                        "reset": int(logs_res.headers.get("ratelimit-reset", 0)),
+                    }
+                except Exception:
+                    pass
 
-                    if logs_res.status_code == 200:
-                        raw_logs = logs_res.json().get("logs", [])
-                        
-                        def is_new_log_boundary(s: str) -> bool:
-                            return (
-                                s.startswith("INFO:")
-                                or s.startswith("DEBUG:")
-                                or s.startswith("WARNING:")
-                                or s.startswith("[2026-")
-                                or s.startswith("==>")
-                                or s.startswith("HEAD ")
-                                or s.startswith("GET ")
-                                or s.startswith("POST ")
-                                or s.startswith("PUT ")
-                                or s.startswith("DELETE ")
-                            )
+                if logs_res.status_code == 429:
+                    logger.warning(f"Render API rate limit reached (429). Reset in {rate_limit.get('reset')}s")
+                    last_cache = _LAST_LOGS_CACHE.get(sid, {})
+                    return {
+                        "ok": False,
+                        "logs": last_cache.get("logs", []),
+                        "count": len(last_cache.get("logs", [])),
+                        "is_suspended": is_suspended,
+                        "service_name": svc_name,
+                        "rate_limit": rate_limit,
+                        "rate_limited": True,
+                        "error": f"Render API rate limit reached (429). Reset in {rate_limit.get('reset', 60)}s",
+                    }
 
-                        def is_traceback_start(s: str) -> bool:
-                            s_low = s.lower()
-                            return (
-                                s.startswith("Traceback (most recent call last):")
-                                or s.startswith("--- Logging error ---")
-                                or s.startswith('File "')
-                                or "fatal application crash:" in s_low
-                                or "zerodivisionerror" in s_low
-                                or "during handling of the above exception" in s_low
-                                or "call stack:" in s_low
-                            )
+                if logs_res.status_code != 200:
+                    err_msg = f"Render API returned HTTP {logs_res.status_code}: {logs_res.text[:120]}"
+                    logger.warning(f"Failed to fetch logs for {sid}: {err_msg}")
+                    return {
+                        "ok": False,
+                        "logs": [],
+                        "count": 0,
+                        "is_suspended": is_suspended,
+                        "service_name": svc_name,
+                        "rate_limit": rate_limit,
+                        "rate_limited": False,
+                        "error": err_msg,
+                    }
 
+                if logs_res.status_code == 200:
+                    raw_logs = logs_res.json().get("logs", [])
+
+                    def is_new_log_boundary(s: str) -> bool:
+                        return (
+                            s.startswith("INFO:")
+                            or s.startswith("DEBUG:")
+                            or s.startswith("WARNING:")
+                            or s.startswith("[2026-")
+                            or s.startswith("==>")
+                            or s.startswith("HEAD ")
+                            or s.startswith("GET ")
+                            or s.startswith("POST ")
+                            or s.startswith("PUT ")
+                            or s.startswith("DELETE ")
+                        )
+
+                    def is_traceback_start(s: str) -> bool:
+                        s_low = s.lower()
+                        return (
+                            s.startswith("Traceback (most recent call last):")
+                            or s.startswith("--- Logging error ---")
+                            or s.startswith('File "')
+                            or "fatal application crash:" in s_low
+                            or "zerodivisionerror" in s_low
+                            or "during handling of the above exception" in s_low
+                            or "call stack:" in s_low
+                        )
+
+                    tb_buffer = []
+                    tb_start_item = None
+
+                    def flush_tb():
+                        nonlocal tb_buffer, tb_start_item
+                        if not tb_buffer or not tb_start_item:
+                            tb_buffer = []
+                            tb_start_item = None
+                            return
+
+                        combined_text = "\n".join(tb_buffer)
+                        err_summary = "Application Exception"
+                        err_m = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|Exception|Error):[^\n]+)", combined_text)
+                        if err_m:
+                            err_summary = err_m.group(1).strip()
+                        elif "FATAL APPLICATION CRASH" in combined_text:
+                            crash_m = re.search(r"FATAL APPLICATION CRASH:[^\n']+", combined_text)
+                            if crash_m:
+                                err_summary = crash_m.group(0).strip()
+
+                        logs.append({
+                            "id": tb_start_item.get("id"),
+                            "timestamp": tb_start_item.get("timestamp", ""),
+                            "level": "ERROR",
+                            "message": combined_text,
+                            "service": svc_name,
+                            "is_traceback": True,
+                            "error_summary": err_summary,
+                        })
                         tb_buffer = []
                         tb_start_item = None
 
-                        def flush_tb():
-                            nonlocal tb_buffer, tb_start_item
-                            if not tb_buffer or not tb_start_item:
-                                tb_buffer = []
-                                tb_start_item = None
-                                return
-                            
-                            combined_text = "\n".join(tb_buffer)
-                            err_summary = "Application Exception"
-                            err_m = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|Exception|Error):[^\n]+)", combined_text)
-                            if err_m:
-                                err_summary = err_m.group(1).strip()
-                            elif "FATAL APPLICATION CRASH" in combined_text:
-                                crash_m = re.search(r"FATAL APPLICATION CRASH:[^\n']+", combined_text)
-                                if crash_m:
-                                    err_summary = crash_m.group(0).strip()
+                    for item in raw_logs:
+                        raw_msg = item.get("message", "")
+                        clean_msg = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]', '', raw_msg).strip()
+                        if not clean_msg:
+                            continue
 
-                            logs.append({
-                                "id": tb_start_item.get("id"),
-                                "timestamp": tb_start_item.get("timestamp", ""),
-                                "level": "ERROR",
-                                "message": combined_text,
-                                "service": svc_name,
-                                "is_traceback": True,
-                                "error_summary": err_summary,
-                            })
-                            tb_buffer = []
-                            tb_start_item = None
-
-                        for item in raw_logs:
-                            raw_msg = item.get("message", "")
-                            clean_msg = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]', '', raw_msg).strip()
-                            if not clean_msg:
-                                continue
-
-                            labels = item.get("labels", [])
-                            raw_lvl = next((l.get("value") for l in labels if l.get("name") == "level"), "INFO").upper()
-
-                            if tb_buffer:
-                                if is_new_log_boundary(clean_msg):
-                                    flush_tb()
-                                    logs.append({
-                                        "id": item.get("id"),
-                                        "timestamp": item.get("timestamp", ""),
-                                        "level": raw_lvl,
-                                        "message": clean_msg,
-                                        "service": svc_name,
-                                        "is_traceback": False,
-                                    })
-                                else:
-                                    tb_buffer.append(clean_msg)
-                            else:
-                                if is_traceback_start(clean_msg):
-                                    tb_buffer.append(clean_msg)
-                                    tb_start_item = item
-                                else:
-                                    logs.append({
-                                        "id": item.get("id"),
-                                        "timestamp": item.get("timestamp", ""),
-                                        "level": raw_lvl,
-                                        "message": clean_msg,
-                                        "service": svc_name,
-                                        "is_traceback": False,
-                                    })
+                        labels = item.get("labels", [])
+                        raw_lvl = next((l.get("value") for l in labels if l.get("name") == "level"), "INFO").upper()
 
                         if tb_buffer:
-                            flush_tb()
+                            if is_new_log_boundary(clean_msg):
+                                flush_tb()
+                                logs.append({
+                                    "id": item.get("id"),
+                                    "timestamp": item.get("timestamp", ""),
+                                    "level": raw_lvl,
+                                    "message": clean_msg,
+                                    "service": svc_name,
+                                    "is_traceback": False,
+                                })
+                            else:
+                                tb_buffer.append(clean_msg)
+                        else:
+                            if is_traceback_start(clean_msg):
+                                tb_buffer.append(clean_msg)
+                                tb_start_item = item
+                            else:
+                                logs.append({
+                                    "id": item.get("id"),
+                                    "timestamp": item.get("timestamp", ""),
+                                    "level": raw_lvl,
+                                    "message": clean_msg,
+                                    "service": svc_name,
+                                    "is_traceback": False,
+                                })
+
+                    if tb_buffer:
+                        flush_tb()
 
                 # Sort logs by timestamp descending (newest first)
                 logs.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
@@ -405,11 +429,28 @@ class RenderClient:
             return {"ok": False, "error": str(e), "logs": []}
 
     @staticmethod
-    def probe_health(health_url: str, timeout_sec: float = 4.0) -> Dict[str, Any]:
+    def probe_health(health_url: str, timeout_sec: Optional[float] = None) -> Dict[str, Any]:
         """Pings a health endpoint and calculates live round-trip latency in ms."""
-        url = health_url.strip()
+        url = (health_url or "").strip()
         if not url:
             return {"status": "UNKNOWN", "latency_ms": 0.0, "code": None, "error": "No health URL provided"}
+
+        if not url.startswith(("http://", "https://")):
+            return {"status": "ERROR", "latency_ms": 0.0, "code": None, "error": f"Invalid health URL scheme: '{url}'"}
+
+        if timeout_sec is None:
+            try:
+                import os
+                from backend.prodpilot.db import get_setting
+                timeout_val = (
+                    os.environ.get("HEALTH_PROBE_TIMEOUT_SEC")
+                    or os.environ.get("RENDER_HEALTH_TIMEOUT_SEC")
+                    or get_setting("HEALTH_PROBE_TIMEOUT_SEC")
+                    or get_setting("RENDER_HEALTH_TIMEOUT_SEC")
+                )
+                timeout_sec = float(timeout_val) if timeout_val else 4.0
+            except Exception:
+                timeout_sec = 4.0
 
         t0 = time.perf_counter()
         try:
@@ -427,6 +468,8 @@ class RenderClient:
             latency_ms = round((time.perf_counter() - t0) * 1000, 1)
             return {"status": "OFFLINE", "code": None, "latency_ms": latency_ms, "error": "Connection refused"}
         except httpx.TimeoutException:
-            return {"status": "ERROR", "code": None, "latency_ms": round(timeout_sec * 1000, 1), "error": "Health probe timed out"}
+            latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+            return {"status": "ERROR", "code": None, "latency_ms": latency_ms, "error": f"Health probe timed out after {timeout_sec:.1f}s"}
         except Exception as e:
-            return {"status": "ERROR", "code": None, "latency_ms": 0.0, "error": str(e)}
+            latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+            return {"status": "ERROR", "code": None, "latency_ms": latency_ms, "error": str(e)}

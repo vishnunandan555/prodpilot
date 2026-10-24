@@ -14,7 +14,7 @@ os.environ["PRODPILOT_DB_PATH"] = TEST_DB_PATH
 
 # Default to fast, deterministic execution unless overridden
 os.environ.setdefault("PRODPILOT_AGENT_ADAPTER", "mock")
-os.environ.setdefault("PRODPILOT_DEPLOY_TARGET", "local_process")
+os.environ.setdefault("PRODPILOT_DEPLOY_TARGET", "disabled")
 os.environ.setdefault("PRODPILOT_WATCHDOG_DURATION", "1")
 os.environ.setdefault("PRODPILOT_WATCHDOG_INTERVAL", "0.05")
 os.environ.setdefault("CLOUDFLARE_TUNNEL_URL", "http://localhost:8765")

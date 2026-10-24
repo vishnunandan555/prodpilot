@@ -489,7 +489,7 @@ export default function AgentExecutionConsole({
                   Human-in-the-Loop Approval Required
                 </h3>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
-                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review the candidate diff before promoting to production.
+                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review the candidate diff before promoting to local demo deployment (Port 8000). (Local process adapter; not a Render cloud deployment).
                 </p>
               </div>
             </div>
@@ -498,19 +498,19 @@ export default function AgentExecutionConsole({
               <button
                 onClick={() => onApprove && onApprove('fix_forward')}
                 disabled={actionLoading}
-                className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
+                className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <Check size={14} />
-                <span>Approve & Promote Fix-Forward</span>
+                <span>{actionLoading ? 'Deploying...' : 'Approve Local Demo Deployment (Port 8000)'}</span>
               </button>
 
               <button
                 onClick={() => onRollback && onRollback()}
                 disabled={actionLoading}
-                className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#30363d] flex items-center gap-1.5 transition"
+                className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#30363d] flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <RotateCcw size={14} className="text-[#f85149]" />
-                <span>Trigger Safe Rollback</span>
+                <span>Trigger Local Demo Rollback</span>
               </button>
 
               <button

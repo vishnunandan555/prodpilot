@@ -136,9 +136,15 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
     setProbingId(id);
     try {
       const res = await fetch(`${apiUrl}/servers/${id}/probe`, { method: 'POST' });
+      const data = await res.json();
       if (res.ok) {
         await fetchServers();
         await fetchRenderDetails();
+        if (data.probe && data.probe.status !== 'HEALTHY') {
+          alert(`Health Probe Warning: Target returned ${data.probe.status}. Reason: ${data.probe.error || 'Endpoint offline or non-200 HTTP response'}`);
+        }
+      } else {
+        alert('Probe request failed: ' + (data.detail || res.statusText));
       }
     } catch (err) {
       alert('Probe failed: ' + err.message);
@@ -179,50 +185,21 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
     }
 
     setRegisterProgress({
-      step: 1,
+      step: 2,
       total_steps: 4,
-      stage: 'validating',
-      title: 'Validating Configuration & Target',
-      detail: `Setting up target '${form.name}'...`,
+      stage: 'probing',
+      title: 'Connecting & Dispatching Live Health Probe',
+      detail: `Connecting '${form.name}' and probing ${form.health_url}...`,
       logs: [
         `Target Name: ${form.name}`,
         `Health Probe Target: ${form.health_url}`,
-        form.render_service_id ? `Render Service ID: ${form.render_service_id}` : 'Provider: Custom/Render Web Service'
+        form.render_service_id ? `Render Service ID: ${form.render_service_id}` : 'Provider: Custom/Render Web Service',
+        'Dispatching live HTTP probe...'
       ],
       status: 'running'
     });
 
     try {
-      // Step 2 timer simulation
-      setTimeout(() => {
-        setRegisterProgress((prev) => {
-          if (!prev || prev.status !== 'running') return prev;
-          return {
-            ...prev,
-            step: 2,
-            stage: 'probing',
-            title: 'Probing Health Check Endpoint',
-            detail: `Dispatching live HTTP probe to ${form.health_url}...`,
-            logs: [...prev.logs, `Probing healthcheck: ${form.health_url}`]
-          };
-        });
-      }, 350);
-
-      // Step 3 timer simulation
-      setTimeout(() => {
-        setRegisterProgress((prev) => {
-          if (!prev || prev.status !== 'running') return prev;
-          return {
-            ...prev,
-            step: 3,
-            stage: 'render',
-            title: 'Verifying Cloud Telemetry & Render API',
-            detail: form.render_service_id ? `Querying Render API for ${form.render_service_id}...` : 'Verifying uptime monitoring configuration...',
-            logs: [...prev.logs, form.render_service_id ? `Authenticating with Render API for service ${form.render_service_id}...` : 'Configuring health probe watcher...']
-          };
-        });
-      }, 700);
-
       const res = await fetch(`${apiUrl}/servers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,22 +209,26 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
       if (!res.ok) throw new Error(data.detail || 'Failed to connect server');
 
       const probe = data.probe || {};
-      const statusText = probe.status || 'ONLINE';
-      const latencyStr = probe.latency_ms ? `${probe.latency_ms.toFixed(0)}ms` : 'healthy';
+      const statusText = probe.status || 'UNKNOWN';
+      const isHealthy = statusText === 'HEALTHY';
+      const latencyStr = probe.latency_ms ? `${probe.latency_ms.toFixed(0)}ms` : (isHealthy ? 'healthy' : 'failed');
 
       setRegisterProgress({
         step: 4,
         total_steps: 4,
         stage: 'completed',
-        title: 'Production Server Verified & Connected!',
-        detail: `Status: ${statusText} • Latency: ${latencyStr} • Monitoring Active`,
+        title: isHealthy ? 'Production Server Verified & Connected!' : 'Server Registered (Health Probe Alert)',
+        detail: isHealthy
+          ? `Status: ${statusText} • Latency: ${latencyStr} • Monitoring Active`
+          : `Status: ${statusText} • Warning: ${probe.error || 'Endpoint offline or non-200 response'}`,
         logs: [
           `Probe Response: ${statusText} (${latencyStr})`,
+          ...(probe.error ? [`Probe Warning: ${probe.error}`] : []),
           `Server ID: ${data.server?.id}`,
           'Watchdog health probe scheduled every 15 seconds.',
           'Autonomous SRE watchdog is active for this service.'
         ],
-        status: 'success',
+        status: isHealthy ? 'success' : 'warning',
         server: data.server,
         probe: probe
       });
@@ -257,22 +238,22 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
         setSelectedServerId(data.server.id);
       }
 
-      // Automatically close modal after brief appreciation delay
-      setTimeout(() => {
-        setShowConnectModal(false);
-        setRegisterProgress(null);
-        setForm({
-          name: '',
-          project_id: '',
-          provider: 'render',
-          render_service_id: '',
-          render_api_key: '',
-          health_url: '',
-          port: 8000,
-          host: '127.0.0.1'
-        });
-      }, 2000);
-
+      if (isHealthy) {
+        setTimeout(() => {
+          setShowConnectModal(false);
+          setRegisterProgress(null);
+          setForm({
+            name: '',
+            project_id: '',
+            provider: 'render',
+            render_service_id: '',
+            render_api_key: '',
+            health_url: '',
+            port: 8000,
+            host: '127.0.0.1'
+          });
+        }, 1500);
+      }
     } catch (err) {
       setRegisterProgress({
         step: 4,
@@ -363,7 +344,7 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
           <h2 className="text-base font-bold text-[#f0f6fc] mb-2">No Production Servers Connected</h2>
           <p className="text-xs text-[#8b949e] max-w-md mb-6 leading-relaxed">
             Connect your live production service hosted on Render. ProdPilot queries Render's REST API
-            v1 to ingest deployment logs, monitor container health, and trigger automated rollbacks upon incident detection.
+            v1 to ingest deployment logs and monitor container health. ProdPilot can prepare local remediation candidates; a Render cloud deployment or rollback adapter is not configured.
           </p>
           <button
             onClick={() => setShowConnectModal(true)}
@@ -624,6 +605,9 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                     {registerProgress.status === 'success' && (
                       <CheckCircle2 size={16} className="text-[#3fb950]" />
                     )}
+                    {registerProgress.status === 'warning' && (
+                      <AlertTriangle size={16} className="text-[#d29922]" />
+                    )}
                     {registerProgress.status === 'error' && (
                       <AlertTriangle size={16} className="text-[#f85149]" />
                     )}
@@ -632,6 +616,8 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                         ? 'Provisioning & Probing Server...'
                         : registerProgress.status === 'success'
                         ? 'Server Connected & Verified'
+                        : registerProgress.status === 'warning'
+                        ? 'Connected (Health Probe Alert)'
                         : 'Registration Failed'}
                     </span>
                   </div>
@@ -743,6 +729,18 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                     >
                       <CheckCircle2 size={13} />
                       <span>View Server Dashboard</span>
+                    </button>
+                  ) : registerProgress.status === 'warning' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowConnectModal(false);
+                        setRegisterProgress(null);
+                      }}
+                      className="px-5 py-2 rounded-lg bg-[#b08800] hover:bg-[#c69a00] text-black text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <AlertTriangle size={13} />
+                      <span>Acknowledge Warning & View Server</span>
                     </button>
                   ) : (
                     <div className="text-xs text-[#8b949e] flex items-center gap-2">

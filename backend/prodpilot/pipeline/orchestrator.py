@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -56,6 +57,9 @@ def resolve_target_repo_path(custom_path: Optional[str] = None) -> str:
 # Backward compatibility alias
 resolve_demo_repo_path = resolve_target_repo_path
 
+_ORCHESTRATOR_LOCK = threading.Lock()
+_IN_FLIGHT_INCIDENTS: set = set()
+
 
 def process_incident(
     incident: Dict[str, Any],
@@ -72,6 +76,30 @@ def process_incident(
     5. Run Decision Engine to compute recommendation and probabilities.
     6. Transition status to AWAITING_APPROVAL & log awaiting_approval event.
     """
+    incident_id = incident["id"]
+    with _ORCHESTRATOR_LOCK:
+        if incident_id in _IN_FLIGHT_INCIDENTS:
+            raise RuntimeError(f"Incident {incident_id} is already being processed concurrently")
+        _IN_FLIGHT_INCIDENTS.add(incident_id)
+
+    try:
+        return _run_process_incident(
+            incident=incident,
+            repo_path=repo_path,
+            mock_staging=mock_staging,
+            db_path=db_path,
+        )
+    finally:
+        with _ORCHESTRATOR_LOCK:
+            _IN_FLIGHT_INCIDENTS.discard(incident_id)
+
+
+def _run_process_incident(
+    incident: Dict[str, Any],
+    repo_path: Optional[str] = None,
+    mock_staging: bool = False,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
     incident_id = incident["id"]
     target_repo = resolve_demo_repo_path(repo_path)
     if not (Path(target_repo) / ".git").exists():

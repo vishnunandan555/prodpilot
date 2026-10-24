@@ -28,7 +28,8 @@ sleep 1
 # 1. Start FastAPI server on port 8765
 echo "Starting FastAPI server on port 8765..."
 cd "$REPO_ROOT"
-PYTHONPATH=. setsid "$PYTHON_BIN" -m uvicorn backend.prodpilot.api.server:app --host 0.0.0.0 --port 8765 >> "$LOG_DIR/api-server.log" 2>&1 &
+API_HOST="${PRODPILOT_API_HOST:-127.0.0.1}"
+PYTHONPATH=. setsid "$PYTHON_BIN" -m uvicorn backend.prodpilot.api.server:app --host "$API_HOST" --port 8765 >> "$LOG_DIR/api-server.log" 2>&1 &
 API_PID=$!
 echo "$API_PID" > "$PID_DIR/api-server.pid"
 echo "  ✓ FastAPI server running (PID: $API_PID, log: $LOG_DIR/api-server.log)"

@@ -44,6 +44,8 @@ export default function IncidentDetail({
   onTakeover,
   actionLoading = false,
   deploySuccess = false,
+  deployError = null,
+  onClearDeployError,
   onBack,
   isStandaloneMobile = false,
   onNavigate,
@@ -131,9 +133,9 @@ export default function IncidentDetail({
   const githubPr = typeof artifacts.github_pr === 'string'
     ? (() => { try { return JSON.parse(artifacts.github_pr); } catch { return {}; } })()
     : artifacts.github_pr || {};
-  const prUrl = githubPr.pr_url || (isResolved ? 'https://github.com/vishnunandan555/chunkstream/pulls' : null);
-  const prNumber = githubPr.pr_number;
-  const prBranch = githubPr.branch || `prodpilot/fix-${incident.id?.slice(0, 8)}`;
+  const prUrl = githubPr.pr_url || null;
+  const prNumber = githubPr.pr_number || null;
+  const prBranch = githubPr.branch || null;
 
   const generateNaturalIssue = () => {
     const b = incident.brief || {};
@@ -318,14 +320,36 @@ export default function IncidentDetail({
           key: 'STAGED',
           label: 'Staged',
           title: 'Stage 5: Dual Canary Staging (Ports 8001 & 8002)',
-          badge: 'COMPLETED • Dual Canaries 200 OK',
-          badgeColor: 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]',
-          whatHappened: 'What is Canary Staging? ProdPilot spun up two isolated side-port instances: Port 8001 running the candidate Fix-Forward hotfix, and Port 8002 running the Rollback revert. Both were health-probed side-by-side to compare runtime health without exposing live production traffic to risk.',
-          plainEnglish: 'Canary staging proves the fix works in real running processes, not just unit tests. We spun up the patched server on port 8001 and a rollback server on port 8002, and confirmed both are healthy before deploying to production.',
+          badge: staging.fix_forward?.health === true && staging.rollback?.health === true
+            ? 'COMPLETED • Dual Canaries 200 OK'
+            : staging.fix_forward?.health === false || staging.rollback?.health === false
+            ? 'FAILED • Canary Health Probe Failed'
+            : 'PENDING • Awaiting Canary Staging',
+          badgeColor: staging.fix_forward?.health === true && staging.rollback?.health === true
+            ? 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]'
+            : staging.fix_forward?.health === false || staging.rollback?.health === false
+            ? 'text-[#ff7b72] bg-[#261317] border-[#4a1c24]'
+            : 'text-[#8b949e] bg-[#161b22] border-[#30363d]',
+          whatHappened: 'What is Canary Staging? ProdPilot evaluates candidate remediation in an isolated worktree environment on local ports 8001 (Fix-Forward) and 8002 (Rollback revert) to verify runtime health before promotion.',
+          plainEnglish: 'Canary staging tests the candidate patch in a local side-port process before promoting. We test the patched server on port 8001 and rollback on port 8002.',
           evidence: [
-            { label: 'Canary 8001 (Fix-Forward)', value: 'Healthy (HTTP 200 OK)' },
-            { label: 'Canary 8002 (Rollback)', value: 'Healthy (HTTP 200 OK)' },
-            { label: 'Production Port 8000', value: 'Zero Impact / Protected' },
+            {
+              label: 'Canary 8001 (Fix-Forward)',
+              value: staging.fix_forward?.health === true
+                ? 'Healthy (HTTP 200 OK)'
+                : staging.fix_forward?.health === false
+                ? 'Probe Failed (Non-200)'
+                : 'Not Staged / Awaiting Evidence',
+            },
+            {
+              label: 'Canary 8002 (Rollback)',
+              value: staging.rollback?.health === true
+                ? 'Healthy (HTTP 200 OK)'
+                : staging.rollback?.health === false
+                ? 'Probe Failed (Non-200)'
+                : 'Not Staged / Awaiting Evidence',
+            },
+            { label: 'Local Port 8000', value: 'Zero Impact / Protected' },
           ],
         };
       case 5:
@@ -350,19 +374,20 @@ export default function IncidentDetail({
           number: 7,
           key: 'DEPLOYED',
           label: 'Restored',
-          title: 'Stage 7: Production Restored & Deployed via GitHub PR',
-          badge: isResolved ? 'COMPLETED • Live & Healthy' : 'PENDING • Awaiting Gate',
+          title: 'Stage 7: Local Demo Deployment (Port 8000)',
+          badge: isResolved ? 'COMPLETED • Local Demo Deployed' : 'PENDING • Awaiting Gate',
           badgeColor: isResolved ? 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]' : 'text-[#8b949e] bg-[#161b22] border-[#30363d]',
           whatHappened: isResolved
-            ? `Was it redeployed? YES! The verified hotfix was promoted via Fix-Forward. ProdPilot created branch ${prBranch}, opened Pull Request #${prNumber || '42'}, and auto-merged it into main. This triggered Render CI/CD to redeploy production, and the post-deploy watchdog confirmed production health is 200 OK.`
-            : 'Once approved, ProdPilot will create a branch, open a Pull Request, auto-merge it into main, and trigger the Render production deployment.',
+            ? `Remediation executed via local process deployment on Port 8000. (Local demo deployment; not a Render production deployment). Worktree patch was applied directly to the local server process.`
+            : 'Upon operator approval, ProdPilot executes a local process deployment on Port 8000. (Local demo deployment; not a Render production deployment).',
           plainEnglish: isResolved
-            ? 'The service was redeployed and fixed! The hotfix was merged to your GitHub main branch, triggering your normal CI/CD deploy pipeline. Production is now running the verified patch and is 100% healthy.'
-            : 'Production deployment will be executed as soon as the operator approves the hotfix.',
+            ? 'The fix was applied to the local demo process on port 8000 and confirmed healthy. This is a local process remediation; real cloud provider (Render) deployment adapter is not configured.'
+            : 'Local demo deployment will be executed as soon as the operator approves the remediation candidate.',
           evidence: [
-            { label: 'Deployment Mode', value: incident.status === 'ROLLED_BACK' ? 'Automated Rollback' : 'Fix-Forward Hotfix' },
-            { label: 'Pull Request', value: prUrl ? `PR #${prNumber || '42'} (Merged into main)` : 'Merged to main' },
-            { label: 'Live Production Health', value: 'HTTP 200 OK (Watchdog Passed)' },
+            { label: 'Deployment Mode', value: incident.status === 'ROLLED_BACK' ? 'Local Demo Rollback' : 'Local Demo Hotfix' },
+            { label: 'Target', value: 'Local Process (Port 8000) [Render Deployment Not Configured]' },
+            { label: 'GitHub PR', value: prUrl ? `PR #${prNumber || ''} (${prUrl})` : 'None (Local demo action; no PR created)' },
+            { label: 'Local Port 8000 Health', value: isResolved ? 'HTTP 200 OK (Watchdog Passed)' : 'Awaiting Promotion' },
           ],
         };
     }
@@ -479,26 +504,19 @@ export default function IncidentDetail({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xs font-semibold text-[#f0f6fc]">
-                    Production Redeployed & Restored
+                    Local Demo Deployment Completed
                   </h3>
                   <span className="text-[11px] text-[#3fb950] font-mono px-1.5 py-0.2 rounded bg-[#162e21] border border-[#235836]">
-                    Health 200 OK
+                    Local Port 8000 Healthy
                   </span>
-                  <span className="text-[11px] text-[#58a6ff] font-mono px-1.5 py-0.2 rounded bg-[#161f30] border border-[#2b3a58] flex items-center gap-1">
-                    <GitPullRequest size={11} />
-                    {prUrl ? (
-                      <a href={prUrl} target="_blank" rel="noreferrer" className="underline hover:text-white">
-                        PR #{prNumber || '42'} Auto-Merged
-                      </a>
-                    ) : (
-                      `PR #${prNumber || '42'} Auto-Merged`
-                    )}
+                  <span className="text-[11px] text-[#79c0ff] font-mono px-1.5 py-0.2 rounded bg-[#161f30] border border-[#263550]">
+                    Local Demo Deployment
                   </span>
                 </div>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
                   {incident.status === 'ROLLED_BACK'
-                    ? 'Codebase automatically rolled back to prior stable commit and redeployed. Post-deploy watchdog verified production health.'
-                    : `Verified Fix-Forward hotfix was merged into main branch (branch: ${prBranch || 'prodpilot-hotfix'}), triggering CI/CD container redeployment. Live watchdog verified HTTP 200 OK.`}
+                    ? 'Local demo server rolled back to prior commit on port 8000. (Local process deployment; not a Render cloud deployment).'
+                    : 'Fix-forward hotfix applied to local demo process on port 8000. Verified HTTP 200 OK. (Local process deployment; not a Render cloud deployment).'}
                 </p>
               </div>
             </div>
@@ -509,6 +527,27 @@ export default function IncidentDetail({
             >
               <X size={14} />
             </button>
+          </div>
+        )}
+
+        {/* Deploy / Action Error Banner */}
+        {deployError && (
+          <div className="p-4 rounded-lg bg-[#241316] border border-[#ff7b72]/40 text-xs text-[#ff7b72] flex items-start justify-between gap-3 shadow-md animate-in fade-in">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle size={18} className="shrink-0 text-[#ff7b72] mt-0.5" />
+              <div>
+                <p className="font-bold text-sm text-[#ff7b72]">Action Failed / Missing Prerequisite</p>
+                <p className="mt-1 text-[#f0f6fc] font-mono leading-relaxed">{deployError}</p>
+                <p className="mt-1 text-[11px] text-[#8b949e]">
+                  Note: Real cloud provider (Render) deployment adapter is not configured. Local process deployment requires PRODPILOT_DEPLOY_TARGET=local_process and verified canary health evidence.
+                </p>
+              </div>
+            </div>
+            {onClearDeployError && (
+              <button onClick={onClearDeployError} className="p-1 text-[#8b949e] hover:text-[#f0f6fc]">
+                <X size={14} />
+              </button>
+            )}
           </div>
         )}
 
@@ -533,15 +572,31 @@ export default function IncidentDetail({
                         </span>
                       </div>
                       <p className="text-xs text-[#c9d1d9] mt-1 leading-relaxed">
-                        The autonomous agent has reproduced the error, verified a fix-forward patch against tests, and staged dual canaries on ports 8001 & 8002.
+                        The autonomous agent has investigated the error, verified a candidate patch against regression tests, and staged dual canaries on ports 8001 & 8002.
                       </p>
                       <div className="flex items-center gap-3 text-xs text-[#8b949e] mt-1.5 flex-wrap">
-                        <span className="flex items-center gap-1 text-[#3fb950] font-mono">
-                          <CheckCircle2 size={13} /> Dual Canaries 200 OK
+                        <span className={`flex items-center gap-1 font-mono ${
+                          staging.fix_forward?.health === true
+                            ? 'text-[#3fb950]'
+                            : staging.fix_forward?.health === false
+                            ? 'text-[#ff7b72]'
+                            : 'text-[#8b949e]'
+                        }`}>
+                          {staging.fix_forward?.health === true ? (
+                            <><CheckCircle2 size={13} /> Fix Canary 200 OK</>
+                          ) : staging.fix_forward?.health === false ? (
+                            <><AlertTriangle size={13} /> Canary Probe Failed</>
+                          ) : (
+                            <><Radio size={13} /> Awaiting Canary Probe</>
+                          )}
                         </span>
                         <span>•</span>
                         <span className="font-mono text-[#d29922]">
                           Recommended: Fix-Forward ({ffConfidence}% confidence)
+                        </span>
+                        <span>•</span>
+                        <span className="text-[#8b949e] font-mono text-[11px]">
+                          Local Demo Deployment (Port 8000)
                         </span>
                       </div>
                     </div>
@@ -577,7 +632,7 @@ export default function IncidentDetail({
                     className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50"
                   >
                     <Zap size={14} />
-                    <span>{actionLoading ? 'Promoting...' : 'Approve & Promote Fix to Production (Port 8000)'}</span>
+                    <span>{actionLoading ? 'Deploying...' : 'Approve Local Demo Deployment (Port 8000)'}</span>
                   </button>
 
                   <button
@@ -586,7 +641,7 @@ export default function IncidentDetail({
                     className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <RotateCcw size={13} />
-                    <span>Rollback Codebase</span>
+                    <span>Local Demo Rollback</span>
                   </button>
 
                   <button
@@ -1121,8 +1176,18 @@ export default function IncidentDetail({
                     Staged Canary Verification Environments
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-[#3fb950]">
-                  Dual Canaries Live
+                <span className={`text-[10px] font-mono ${
+                  staging.fix_forward?.health === true && staging.rollback?.health === true
+                    ? 'text-[#3fb950]'
+                    : staging.fix_forward?.health === false || staging.rollback?.health === false
+                    ? 'text-[#ff7b72]'
+                    : 'text-[#8b949e]'
+                }`}>
+                  {staging.fix_forward?.health === true && staging.rollback?.health === true
+                    ? 'Dual Canaries Verified (200 OK)'
+                    : staging.fix_forward?.health === false || staging.rollback?.health === false
+                    ? 'Canary Health Probe Failed'
+                    : 'Awaiting Canary Verification'}
                 </span>
               </div>
 
@@ -1131,18 +1196,36 @@ export default function IncidentDetail({
                 <div className="p-3 rounded bg-[#07090f] border border-[#1b3d2b] space-y-1.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#3fb950]" />
+                      <span className={`w-2 h-2 rounded-full ${
+                        staging.fix_forward?.health === true
+                          ? 'bg-[#3fb950]'
+                          : staging.fix_forward?.health === false
+                          ? 'bg-[#f85149]'
+                          : 'bg-[#8b949e]'
+                      }`} />
                       <span className="font-bold text-[#f0f6fc] font-mono text-xs">Canary 8001 (Fix-Forward)</span>
                     </div>
-                    <span className="px-1.5 py-0.2 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] text-[9px] font-mono font-bold">
-                      200 OK
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${
+                      staging.fix_forward?.health === true
+                        ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
+                        : staging.fix_forward?.health === false
+                        ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                        : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'
+                    }`}>
+                      {staging.fix_forward?.health === true
+                        ? '200 OK'
+                        : staging.fix_forward?.health === false
+                        ? 'PROBE FAILED'
+                        : 'NOT STAGED'}
                     </span>
                   </div>
                   <p className="text-[11px] text-[#8b949e] font-mono">
                     {incident.brief?.summary ? `Staged candidate fix for: ${incident.brief.summary}` : 'Candidate fix synthesized and verified in worktree.'}
                   </p>
                   <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
-                    <div>Test Status: <strong className="text-[#3fb950]">5/5 Passed (100%)</strong></div>
+                    <div>Health Evidence: <strong className={staging.fix_forward?.health ? 'text-[#3fb950]' : 'text-[#8b949e]'}>
+                      {staging.fix_forward?.health ? 'Verified Passing (200 OK)' : 'Awaiting passing probe'}
+                    </strong></div>
                     <div className="mt-0.5">Probe URL: <code className="text-[#58a6ff]">http://127.0.0.1:8001/health</code></div>
                   </div>
                 </div>
@@ -1151,18 +1234,36 @@ export default function IncidentDetail({
                 <div className="p-3 rounded bg-[#07090f] border border-[#2e2350] space-y-1.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#a371f7]" />
+                      <span className={`w-2 h-2 rounded-full ${
+                        staging.rollback?.health === true
+                          ? 'bg-[#a371f7]'
+                          : staging.rollback?.health === false
+                          ? 'bg-[#f85149]'
+                          : 'bg-[#8b949e]'
+                      }`} />
                       <span className="font-bold text-[#f0f6fc] font-mono text-xs">Canary 8002 (Rollback)</span>
                     </div>
-                    <span className="px-1.5 py-0.2 rounded bg-[#161226] text-[#a371f7] border border-[#2e2350] text-[9px] font-mono font-bold">
-                      200 OK
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${
+                      staging.rollback?.health === true
+                        ? 'bg-[#161226] text-[#a371f7] border-[#2e2350]'
+                        : staging.rollback?.health === false
+                        ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                        : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'
+                    }`}>
+                      {staging.rollback?.health === true
+                        ? '200 OK'
+                        : staging.rollback?.health === false
+                        ? 'PROBE FAILED'
+                        : 'NOT STAGED'}
                     </span>
                   </div>
                   <p className="text-[11px] text-[#8b949e] font-mono">
                     Clean checkout of parent commit <code className="text-[#a371f7]">{suspectHash || 'parent'}</code>.
                   </p>
                   <div className="p-1.5 rounded bg-[#0b0e14] border border-[#1b2234] text-[10px] font-mono text-[#6e7681]">
-                    <div>Test Status: <strong className="text-[#a371f7]">Known Good Head</strong></div>
+                    <div>Health Evidence: <strong className={staging.rollback?.health ? 'text-[#a371f7]' : 'text-[#8b949e]'}>
+                      {staging.rollback?.health ? 'Verified Passing (200 OK)' : 'Awaiting passing probe'}
+                    </strong></div>
                     <div className="mt-0.5">Probe URL: <code className="text-[#58a6ff]">http://127.0.0.1:8002/health</code></div>
                   </div>
                 </div>
@@ -1313,7 +1414,7 @@ export default function IncidentDetail({
                 className="flex-1 sm:flex-none px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
               >
                 <Zap size={14} />
-                <span>{actionLoading ? 'Promoting...' : 'Promote Fix to Production'}</span>
+                <span>{actionLoading ? 'Deploying...' : 'Promote Local Demo Deployment (Port 8000)'}</span>
               </button>
 
               <button
@@ -1322,7 +1423,7 @@ export default function IncidentDetail({
                 className="flex-1 sm:flex-none px-3.5 py-2 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
               >
                 <RotateCcw size={13} />
-                <span>Rollback</span>
+                <span>Local Demo Rollback</span>
               </button>
 
               <button

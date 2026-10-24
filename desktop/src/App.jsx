@@ -51,6 +51,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState(false);
+  const [deployError, setDeployError] = useState(null);
   const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [showMobileList, setShowMobileList] = useState(false);
   const [logsNavParams, setLogsNavParams] = useState(null);
@@ -94,6 +95,12 @@ export default function App() {
   };
 
   const eventSourceRef = useRef(null);
+
+  const authenticatedEventUrl = (path) => {
+    if (!token) return `${apiUrl}${path}`;
+    const separator = path.includes('?') ? '&' : '?';
+    return `${apiUrl}${path}${separator}access_token=${encodeURIComponent(token)}`;
+  };
 
   // Responsive screen check
   useEffect(() => {
@@ -247,7 +254,7 @@ export default function App() {
     }
 
     try {
-      const sseUrl = `${apiUrl}/incidents/${selectedIncident.id}/events`;
+      const sseUrl = authenticatedEventUrl(`/incidents/${selectedIncident.id}/events`);
       const es = new EventSource(sseUrl);
       eventSourceRef.current = es;
 
@@ -283,11 +290,12 @@ export default function App() {
         eventSourceRef.current.close();
       }
     };
-  }, [selectedIncident?.id, apiUrl]);
+  }, [selectedIncident?.id, apiUrl, token]);
 
   const handleSelectIncident = (inc) => {
     setSelectedIncident(inc);
     setEvents([]);
+    setDeployError(null);
     setDeploySuccess(inc.status === 'DEPLOYED' || inc.status === 'RESOLVED');
     fetchIncidentDetail(inc.id);
 
@@ -301,6 +309,7 @@ export default function App() {
   const handleApprove = async (actionType = 'fix_forward') => {
     if (!selectedIncident) return;
     setActionLoading(true);
+    setDeployError(null);
     try {
       const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/approve`, {
         method: 'POST',
@@ -310,14 +319,20 @@ export default function App() {
       if (res.ok) {
         const result = await res.json();
         setDeploySuccess(true);
+        setDeployError(null);
         setSelectedIncident((curr) => ({
           ...curr,
           status: result.status || 'DEPLOYED',
         }));
         setTimeout(fetchIncidents, 1000);
+      } else {
+        const errData = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        const errMsg = errData.detail || errData.error || `Deployment approval failed (HTTP ${res.status})`;
+        setDeployError(errMsg);
       }
     } catch (err) {
       console.error('Approve failed:', err);
+      setDeployError(err.message || 'Network error approving deployment');
     } finally {
       setActionLoading(false);
     }
@@ -330,6 +345,7 @@ export default function App() {
   const handleTakeover = async () => {
     if (!selectedIncident) return;
     setActionLoading(true);
+    setDeployError(null);
     try {
       const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/takeover`, {
         method: 'POST',
@@ -340,9 +356,13 @@ export default function App() {
           status: 'MANUAL_TAKEOVER',
         }));
         setTimeout(fetchIncidents, 1000);
+      } else {
+        const errData = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        setDeployError(errData.detail || errData.error || `Takeover failed (HTTP ${res.status})`);
       }
     } catch (err) {
       console.error('Takeover failed:', err);
+      setDeployError(err.message || 'Takeover request failed');
     } finally {
       setActionLoading(false);
     }
@@ -462,6 +482,8 @@ export default function App() {
               onTakeover={handleTakeover}
               actionLoading={actionLoading}
               deploySuccess={deploySuccess}
+              deployError={deployError}
+              onClearDeployError={() => setDeployError(null)}
               isStandaloneMobile={isMobileScreen}
               onBack={isMobileScreen ? () => setShowMobileList(true) : null}
               onNavigate={handleNavigate}

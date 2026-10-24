@@ -74,8 +74,9 @@ start_backend() {
 
     echo -e "  Starting FastAPI backend on port 8765..."
     cd "$REPO_ROOT"
+    API_HOST="${PRODPILOT_API_HOST:-127.0.0.1}"
     PYTHONPATH=. setsid "$PYTHON_BIN" -m uvicorn backend.prodpilot.api.server:app \
-        --host 0.0.0.0 \
+        --host "$API_HOST" \
         --port 8765 >> "$LOG_DIR/api-server.log" 2>&1 &
     API_PID=$!
     echo "$API_PID" > "$PID_DIR/api-server.pid"

@@ -7,9 +7,13 @@ Provides REST & SSE endpoints for:
 5. Telemetry & On-Call Team
 """
 
+import base64
+import hashlib
+import hmac
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -122,19 +126,54 @@ class LoginRequest(BaseModel):
     password: str
 
 
+_SESSION_TTL_SECONDS = max(300, int(os.environ.get("PRODPILOT_SESSION_TTL_SECONDS", "43200")))
+
+
+def _session_secret() -> bytes:
+    """Return a stable local signing secret without exposing it to API clients."""
+    configured = os.environ.get("PRODPILOT_SESSION_SECRET") or get_setting("PRODPILOT_SESSION_SECRET")
+    if not configured:
+        configured = secrets.token_urlsafe(48)
+        set_setting("PRODPILOT_SESSION_SECRET", configured)
+    return configured.encode("utf-8")
+
+
+def _urlsafe_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
 def make_token(user_id: str) -> str:
-    return f"ppt_{user_id}_{os.urandom(8).hex()}"
+    """Create an HMAC-signed, expiring operator session token.
+
+    Tokens are deliberately opaque to clients: possession is required, and changing
+    the user ID or expiry invalidates the signature. This replaces the old token
+    shape, where a caller could construct a token for any known user ID.
+    """
+    expires_at = int(time.time()) + _SESSION_TTL_SECONDS
+    payload = f"{user_id}:{expires_at}".encode("utf-8")
+    encoded = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    signature = hmac.new(_session_secret(), payload, hashlib.sha256).hexdigest()
+    return f"ppt.v1.{encoded}.{signature}"
 
 
 def parse_token_user_id(auth_header: Optional[str]) -> Optional[str]:
     if not auth_header:
         return None
     token = auth_header.replace("Bearer ", "").strip()
-    if token.startswith("ppt_"):
-        parts = token.split("_")
-        if len(parts) >= 2:
-            return parts[1]
-    return None
+    parts = token.split(".")
+    if len(parts) != 4 or parts[0] != "ppt" or parts[1] != "v1":
+        return None
+    try:
+        payload = _urlsafe_decode(parts[2])
+        expected_signature = hmac.new(_session_secret(), payload, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(parts[3], expected_signature):
+            return None
+        user_id, expiry_text = payload.decode("utf-8").rsplit(":", 1)
+        if not user_id or int(expiry_text) < int(time.time()):
+            return None
+        return user_id
+    except (ValueError, UnicodeDecodeError):
+        return None
 
 
 @router.post("/auth/signup")
@@ -184,10 +223,6 @@ def me_endpoint(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
         user = get_user_by_id(user_id)
         if user:
             return {"authenticated": True, "user": user}
-
-    admin = get_user_by_id("usr-admin")
-    if admin:
-        return {"authenticated": True, "user": admin, "is_default": True}
 
     raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -553,8 +588,8 @@ def get_server_render_logs_endpoint(server_id: str, limit: int = 100, force: boo
                     resolved_inc_id = res_row["id"]
                     # If already resolved and server is currently healthy, do not flag as live crash
                     health_url = server.get("health_url")
-                    probe = RenderClient.probe_health(health_url) if health_url else {"status": "HEALTHY"}
-                    if probe.get("status") == "HEALTHY":
+                    probe = RenderClient.probe_health(health_url) if health_url else {"status": "UNKNOWN", "error": "No health URL"}
+                    if probe.get("status") == "HEALTHY" or (res_row and res_row["fingerprint"] == fp):
                         is_crash = False
                         severity = "NORMAL"
 
@@ -572,19 +607,73 @@ def get_server_render_logs_endpoint(server_id: str, limit: int = 100, force: boo
     return logs_res
 
 
+_LOG_TRIAGE_COOLDOWN: Dict[str, float] = {}
+_LOG_TRIAGE_FAILURES: Dict[str, int] = {}
+
+
 def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
     """Analyzes server logs, detects crashes/tracebacks, creates incident, and evaluates with TypeSafe Jev."""
     server = get_server(server_id)
     if not server:
-        return {"ok": False, "error": f"Server {server_id} not found"}
+        return {"ok": False, "incident_created": False, "error": f"Server {server_id} not found"}
 
     service_id = server.get("render_service_id")
     if not service_id:
-        return {"ok": False, "error": "No Render Service ID attached"}
+        return {"ok": False, "incident_created": False, "error": "No Render Service ID attached"}
+
+    # Cooldown & failure backoff guard against hammering Render
+    now = time.time()
+    cooldown_until = _LOG_TRIAGE_COOLDOWN.get(server_id, 0)
+    if now < cooldown_until:
+        rem_sec = int(cooldown_until - now)
+        return {
+            "ok": False,
+            "incident_created": False,
+            "rate_limited": True,
+            "error": f"Log triage on cooldown for server {server_id} ({rem_sec}s remaining to avoid hammering Render)",
+        }
 
     key = get_effective_render_key(server.get("render_api_key"))
     client = RenderClient(api_key=key)
-    logs_res = client.get_logs(service_id, limit=limit)
+    try:
+        logs_res = client.get_logs(service_id, limit=limit)
+    except Exception as e:
+        failures = _LOG_TRIAGE_FAILURES.get(server_id, 0) + 1
+        _LOG_TRIAGE_FAILURES[server_id] = failures
+        backoff_sec = min(300, 20 * (2 ** (failures - 1)))
+        _LOG_TRIAGE_COOLDOWN[server_id] = now + backoff_sec
+        logger.warning(f"Log triage exception for {server_id}: {e} (backing off {backoff_sec}s)")
+        return {
+            "ok": False,
+            "incident_created": False,
+            "error": f"Failed to fetch logs: {e}",
+            "rate_limited": False,
+        }
+
+    if not logs_res.get("ok"):
+        failures = _LOG_TRIAGE_FAILURES.get(server_id, 0) + 1
+        _LOG_TRIAGE_FAILURES[server_id] = failures
+        is_429 = logs_res.get("rate_limited", False)
+        reset_time = logs_res.get("rate_limit", {}).get("reset", 60) if is_429 else min(300, 20 * (2 ** (failures - 1)))
+        _LOG_TRIAGE_COOLDOWN[server_id] = now + max(15, reset_time)
+        return {
+            "ok": False,
+            "incident_created": False,
+            "rate_limited": is_429,
+            "error": logs_res.get("error", "Log triage failed to fetch logs from Render"),
+        }
+
+    if logs_res.get("rate_limited"):
+        return {
+            "ok": False,
+            "incident_created": False,
+            "rate_limited": True,
+            "error": "Render API rate quota conserved; skipping automated incident creation from cached logs",
+        }
+
+    # Successful fetch: reset failure counter
+    _LOG_TRIAGE_FAILURES[server_id] = 0
+
     logs = logs_res.get("logs", [])
 
     from backend.prodpilot.triage.classifier import classify_logs, Severity
@@ -652,13 +741,13 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
 
     if resolved_row:
         health_url = server.get("health_url")
-        probe = RenderClient.probe_health(health_url) if health_url else {"status": "HEALTHY"}
-        if probe.get("status") == "HEALTHY":
+        probe = RenderClient.probe_health(health_url) if health_url else {"status": "UNKNOWN", "error": "No health URL"}
+        if probe.get("status") == "HEALTHY" or (resolved_row["fingerprint"] == fp):
             return {
                 "ok": True,
                 "incident_created": False,
                 "severity": "NORMAL",
-                "message": f"Service is currently HEALTHY (200 OK). Crash in log stream was already resolved in incident {resolved_row['id']}.",
+                "message": f"Service is currently {probe.get('status')} and crash in log stream was already resolved in incident {resolved_row['id']}.",
             }
 
     # Create new Incident
@@ -761,7 +850,8 @@ def get_settings_endpoint() -> Dict[str, Any]:
     for k, v in env_fallbacks.items():
         if not all_s.get(k) and v:
             all_s[k] = v
-    return {"settings": all_s}
+    deploy_target = os.environ.get("PRODPILOT_DEPLOY_TARGET", "disabled").strip().lower()
+    return {"settings": all_s, "deploy_target": deploy_target}
 
 
 @router.post("/settings")
@@ -839,9 +929,13 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
     jev_activity = "Triage rule engine active, monitoring incoming error traces" if jev_key else "Missing OpenRouter / Jev API key"
 
     # 2. Antigravity SDK (Gemini)
-    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    antigravity_status = "ONLINE"
-    antigravity_activity = "AST code analysis, blame correlation & worktree patching engine ready"
+    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or get_setting("GEMINI_API_KEY")
+    antigravity_status = "ONLINE" if gemini_key else "STANDBY"
+    antigravity_activity = (
+        "AST code analysis, blame correlation & Gemini code synthesis active"
+        if gemini_key
+        else "Local AST blame correlation ready; Gemini API key not configured (local remediation fallback)"
+    )
 
     # 3. Telegram Bot
     tg_token = get_setting("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -850,30 +944,38 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
     tg_activity = f"Dispatching alerts & listening for 1-tap approvals (Chat: {tg_chat or 'Not Set'})" if tg_token else "Missing Telegram Bot Token"
 
     # 4. Twilio Voice Calling
-    twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    twilio_status = "ONLINE" if twilio_sid else "STANDBY"
-    twilio_activity = "Emergency Sev-1 voice escalation ready to dial on-call phone numbers" if twilio_sid else "Awaiting Twilio Account SID (Voice escalation standby)"
+    twilio_sid = get_setting("TWILIO_ACCOUNT_SID") or os.environ.get("TWILIO_ACCOUNT_SID")
+    twilio_token = get_setting("TWILIO_AUTH_TOKEN") or os.environ.get("TWILIO_AUTH_TOKEN")
+    twilio_configured = bool(twilio_sid and twilio_token)
+    twilio_status = "ONLINE" if twilio_configured else ("STANDBY" if twilio_sid else "UNCONFIGURED")
+    twilio_activity = (
+        "Emergency Sev-1 voice escalation ready to dial on-call phone numbers"
+        if twilio_configured
+        else "Missing Twilio Auth Token or Account SID (Voice escalation unconfigured)"
+    )
 
     # 5. Render Watchdog & Ingest
     active_srv = get_active_server()
     render_key = get_setting("RENDER_API_KEY") or os.environ.get("RENDER_API_KEY")
     has_render = active_srv and active_srv.get("render_service_id")
-    watchdog_status = "ONLINE" if has_render else "STANDBY"
+    watchdog_status = "ONLINE" if (has_render and render_key) else "STANDBY"
     watchdog_activity = (
         f"Polling Render service '{active_srv['render_service_id']}' logs & health probes every 15s"
-        if has_render
-        else "Standby - Add Render Service ID in Production Servers to activate live watcher"
+        if (has_render and render_key)
+        else ("Standby - Add Render API Key in Settings to stream Render logs" if has_render else "Standby - Add Render Service ID in Production Servers to activate live watcher")
     )
 
     # 6. Cloudflare Tunnel Gateway
     is_tunnel_running = _TUNNEL_PROCESS is not None and _TUNNEL_PROCESS.poll() is None
     tunnel_url = _TUNNEL_URL if is_tunnel_running else None
-    tunnel_status = "ONLINE" if is_tunnel_running else "STANDBY"
+    tunnel_status = "ONLINE" if is_tunnel_running else "OFFLINE"
     tunnel_activity = (
         f"Live ingress active at {tunnel_url}"
         if is_tunnel_running and tunnel_url
-        else "Standby - Tunnel is offline (Local daemon active on port 8765)"
+        else "Offline - Tunnel is offline (Local daemon active on port 8765; public webhook callbacks require tunnel)"
     )
+
+    deploy_target = os.environ.get("PRODPILOT_DEPLOY_TARGET", "disabled").strip().lower()
 
     services = [
         {
@@ -894,9 +996,9 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
             "category": "Remediation",
             "status": antigravity_status,
             "activity": antigravity_activity,
-            "configured": True,
-            "latency_ms": 28.0,
-            "config_hint": "Built-in Google DeepMind Antigravity runtime",
+            "configured": bool(gemini_key),
+            "latency_ms": 28.0 if gemini_key else None,
+            "config_hint": "GEMINI_API_KEY in environment" if not gemini_key else "Gemini Code Engine ready",
         },
         {
             "id": "telegram",
@@ -916,9 +1018,9 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
             "category": "Voice Escalation",
             "status": twilio_status,
             "activity": twilio_activity,
-            "configured": bool(twilio_sid),
+            "configured": twilio_configured,
             "latency_ms": None,
-            "config_hint": "TWILIO_ACCOUNT_SID / AUTH_TOKEN",
+            "config_hint": "TWILIO_ACCOUNT_SID & AUTH_TOKEN in Settings",
         },
         {
             "id": "render_watchdog",
@@ -927,9 +1029,9 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
             "category": "Infrastructure Ingest",
             "status": watchdog_status,
             "activity": watchdog_activity,
-            "configured": bool(has_render),
+            "configured": bool(has_render and render_key),
             "latency_ms": active_srv.get("latency_ms", 12.0) if active_srv else None,
-            "config_hint": "Production Servers -> Attach Render Service ID",
+            "config_hint": "Production Servers -> Attach Render Service ID" if not has_render else "RENDER_API_KEY in Settings",
         },
         {
             "id": "tunnel",
@@ -946,7 +1048,7 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
         },
     ]
 
-    return {"services": services, "count": len(services)}
+    return {"services": services, "count": len(services), "deploy_target": deploy_target}
 
 
 @router.get("/agents")
@@ -1011,11 +1113,12 @@ def get_agents_endpoint() -> Dict[str, Any]:
     )
 
     # On-Call Dispatcher Agent
-    dispatch_status = "DISPATCHING" if (active_inc and active_inc.get("status") == "AWAITING_APPROVAL") else ("ONLINE" if tg_token else "STANDBY")
+    dispatch_status = "DISPATCHING" if (active_inc and active_inc.get("status") == "AWAITING_APPROVAL") else ("ONLINE" if tg_token else "UNCONFIGURED")
     dispatch_detail = "Telegram bot @prodpilotbot 1-tap decision buttons + Twilio voice emergency escalation tree"
     dispatch_action = (
         f"Awaiting 1-tap operator approval for {active_inc['id']}"
-        if (active_inc and active_inc.get("status") == "AWAITING_APPROVAL") else "Listening for operator approvals & Telegram polling active"
+        if (active_inc and active_inc.get("status") == "AWAITING_APPROVAL")
+        else ("Listening for operator approvals & Telegram polling active" if tg_token else "Telegram bot token not configured in Settings. Standing by.")
     )
 
     agents = [
@@ -1029,7 +1132,10 @@ def get_agents_endpoint() -> Dict[str, Any]:
             "last_action": watchdog_action,
             "capabilities": ["Render REST API v1", "HTTP Health Probing", "Crash Log Ingestion"],
             "safety_guard": "Non-intrusive probe only",
-            "health": "HEALTHY" if active_srv else "STANDBY",
+            "health": (
+                "ERROR" if (active_srv and active_srv.get("status") in ("ERROR", "OFFLINE"))
+                else ("HEALTHY" if (active_srv and active_srv.get("status") == "HEALTHY") else "STANDBY")
+            ),
             "icon": "Activity"
         },
         {

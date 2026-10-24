@@ -480,6 +480,23 @@ def update_incident_status(incident_id: str, status: str, db_path: Optional[str]
         )
 
 
+def claim_incident_for_processing(
+    incident_id: str,
+    target_status: str = "INVESTIGATING",
+    expected_status: str = "OPEN",
+    db_path: Optional[str] = None,
+) -> bool:
+    """Atomically claims an incident by transitioning from expected_status to target_status.
+    Returns True if successfully claimed, False if already claimed/transitioned.
+    """
+    with get_db(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE incidents SET status = ?, updated_at = ? WHERE id = ? AND status = ?",
+            (target_status, datetime.utcnow().isoformat(), incident_id, expected_status),
+        )
+        return cursor.rowcount > 0
+
+
 def update_incident_brief(incident_id: str, brief: Any, db_path: Optional[str] = None) -> None:
     brief_str = json.dumps(brief) if isinstance(brief, (dict, list)) else brief
     with get_db(db_path) as conn:

@@ -102,14 +102,21 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
   const [activeCallData, setActiveCallData] = useState(null);
 
   const handleTestCall = async () => {
+    const twilioSvc = services.find((s) => s.id === 'twilio');
+    if (twilioSvc && !twilioSvc.configured) {
+      setPingResults((prev) => ({
+        ...prev,
+        twilio: { ok: false, error: 'Twilio Auth Token and Account SID not configured. Configure in Settings.' }
+      }));
+      return;
+    }
     setCallingPhone(true);
-    setShowTwilioModal(true);
-    setActiveCallData({ status: 'initiating' });
     try {
       const res = await fetch(`${apiUrl}/voice/test-call`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         setActiveCallData(data);
+        setShowTwilioModal(true);
         setPingResults((prev) => ({
           ...prev,
           twilio: { ok: true, message: `Emergency call placed to ${data.to}! Phone ringing...` }
@@ -117,7 +124,7 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
       } else {
         setPingResults((prev) => ({
           ...prev,
-          twilio: { ok: false, error: data.error || 'Failed to place call' }
+          twilio: { ok: false, error: data.error || 'Failed to place call. Check Twilio credentials.' }
         }));
       }
     } catch (err) {
@@ -290,8 +297,13 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
                     {svc.id === 'twilio' && (
                       <button
                         onClick={handleTestCall}
-                        disabled={callingPhone}
-                        className="px-2.5 py-1 rounded bg-[#122419] hover:bg-[#1a3824] text-[#3fb950] border border-[#1f4a2b] text-[11px] font-medium flex items-center gap-1.5 transition disabled:opacity-50"
+                        disabled={callingPhone || !svc.configured}
+                        title={!svc.configured ? 'Twilio credentials unconfigured. Add TWILIO_ACCOUNT_SID & TWILIO_AUTH_TOKEN in Settings.' : 'Trigger test emergency call'}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1.5 transition ${
+                          !svc.configured
+                            ? 'bg-[#1b2234] text-[#8b949e] border border-[#26334f] opacity-50 cursor-not-allowed'
+                            : 'bg-[#122419] hover:bg-[#1a3824] text-[#3fb950] border border-[#1f4a2b]'
+                        }`}
                       >
                         <PhoneCall size={11} className={callingPhone ? 'animate-bounce text-[#3fb950]' : ''} />
                         <span>{callingPhone ? 'Calling...' : 'Call Phone'}</span>

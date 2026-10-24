@@ -150,36 +150,6 @@ export default function ProjectsView({ apiUrl }) {
       status: 'running'
     });
 
-    // Step 2 timer simulation
-    setTimeout(() => {
-      setProjectProgress((prev) => {
-        if (!prev || prev.status !== 'running') return prev;
-        return {
-          ...prev,
-          step: 2,
-          stage: 'workspace',
-          title: 'Preparing Local Workspace & Storage',
-          detail: 'Allocating directory and verifying filesystem permissions...',
-          logs: [...prev.logs, 'Resolving target filesystem directory...']
-        };
-      });
-    }, 400);
-
-    // Step 3 timer simulation
-    setTimeout(() => {
-      setProjectProgress((prev) => {
-        if (!prev || prev.status !== 'running') return prev;
-        return {
-          ...prev,
-          step: 3,
-          stage: 'cloning',
-          title: 'Synchronizing Git Repository',
-          detail: 'Cloning repository objects, tree, and checking out branch...',
-          logs: [...prev.logs, `Running git clone/checkout for ${form.github_repo}...`]
-        };
-      });
-    }, 850);
-
     try {
       const res = await fetch(`${apiUrl}/projects`, {
         method: 'POST',
@@ -189,20 +159,24 @@ export default function ProjectsView({ apiUrl }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to create project');
 
+      const isGhVerified = data.github_status?.ok === true;
+
       setProjectProgress({
         step: 4,
         total_steps: 4,
         stage: 'completed',
-        title: 'Project Initialized & Verified!',
+        title: isGhVerified ? 'Project Initialized & Verified!' : 'Project Initialized (GitHub Warning)',
         detail: `Local path: ${data.project?.local_path} • Branch: ${data.project?.default_branch || 'main'} • Test: ${data.project?.test_cmd || 'pytest'}`,
         logs: [
-          `Repository verified on GitHub: ${data.github_status?.repo?.full_name || form.github_repo}`,
-          `Cloned to: ${data.project?.local_path}`,
+          isGhVerified
+            ? `Repository verified on GitHub: ${data.github_status?.repo?.full_name || form.github_repo}`
+            : `GitHub Warning: ${data.github_status?.error || 'GitHub PAT missing or repo unverified (local operations available)'}`,
+          `Cloned/Initialized at: ${data.project?.local_path}`,
           `Default branch: ${data.project?.default_branch || 'main'}`,
           `Test runner: ${data.project?.test_cmd || 'pytest'}`,
           'Autonomous SRE watchdog and worktree sandbox ready.'
         ],
-        status: 'success',
+        status: isGhVerified ? 'success' : 'warning',
         project: data.project
       });
 
@@ -544,11 +518,21 @@ export default function ProjectsView({ apiUrl }) {
                   </div>
                 ) : issues.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
-                    <CheckCircle2 size={28} className="mx-auto text-[#3fb950] mb-2" />
-                    <p className="text-xs text-[#f0f6fc] font-semibold">No issues found</p>
-                    <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
-                      No issues matching state "{issueFilter}" in {currentProject?.github_repo}.
-                    </p>
+                    {errorMsg ? (
+                      <>
+                        <ShieldAlert size={28} className="mx-auto text-[#d29922] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">GitHub Issues Unavailable</p>
+                        <p className="text-[11px] text-[#ff7b72] mt-1 mb-4">{errorMsg}</p>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={28} className="mx-auto text-[#3fb950] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">No issues found</p>
+                        <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
+                          No issues matching state "{issueFilter}" in {currentProject?.github_repo}.
+                        </p>
+                      </>
+                    )}
                     <button
                       onClick={fetchSubData}
                       disabled={dataLoading}
@@ -678,9 +662,19 @@ export default function ProjectsView({ apiUrl }) {
                   </div>
                 ) : prs.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
-                    <GitPullRequest size={28} className="mx-auto text-[#8b949e] mb-2" />
-                    <p className="text-xs text-[#f0f6fc] font-semibold">No pull requests</p>
-                    <p className="text-[11px] text-[#8b949e] mt-1 mb-4">No pull requests found with state "{prFilter}".</p>
+                    {errorMsg ? (
+                      <>
+                        <ShieldAlert size={28} className="mx-auto text-[#d29922] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">GitHub Pull Requests Unavailable</p>
+                        <p className="text-[11px] text-[#ff7b72] mt-1 mb-4">{errorMsg}</p>
+                      </>
+                    ) : (
+                      <>
+                        <GitPullRequest size={28} className="mx-auto text-[#8b949e] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">No pull requests</p>
+                        <p className="text-[11px] text-[#8b949e] mt-1 mb-4">No pull requests found with state "{prFilter}".</p>
+                      </>
+                    )}
                     <button
                       onClick={fetchSubData}
                       disabled={dataLoading}
@@ -793,11 +787,21 @@ export default function ProjectsView({ apiUrl }) {
                   </div>
                 ) : deploys.length === 0 ? (
                   <div className="p-12 text-center border border-dashed border-[#1b2234] rounded-xl bg-[#0a0e17]">
-                    <CheckCircle2 size={28} className="mx-auto text-[#8b949e] mb-2" />
-                    <p className="text-xs text-[#f0f6fc] font-semibold">No GitHub Actions workflow runs found</p>
-                    <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
-                      Configure <code className="text-[#79c0ff]">.github/workflows</code> in your repo to see live deployment status.
-                    </p>
+                    {errorMsg ? (
+                      <>
+                        <ShieldAlert size={28} className="mx-auto text-[#d29922] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">GitHub Actions Runs Unavailable</p>
+                        <p className="text-[11px] text-[#ff7b72] mt-1 mb-4">{errorMsg}</p>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={28} className="mx-auto text-[#8b949e] mb-2" />
+                        <p className="text-xs text-[#f0f6fc] font-semibold">No GitHub Actions workflow runs found</p>
+                        <p className="text-[11px] text-[#8b949e] mt-1 mb-4">
+                          Configure <code className="text-[#79c0ff]">.github/workflows</code> in your repo to see live deployment status.
+                        </p>
+                      </>
+                    )}
                     <button
                       onClick={fetchSubData}
                       disabled={dataLoading}

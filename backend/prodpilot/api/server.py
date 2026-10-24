@@ -15,6 +15,8 @@ import asyncio
 import json
 import logging
 import os
+import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -44,7 +46,10 @@ from backend.prodpilot.db import (
     clear_incidents_by_status,
     get_active_repo,
     get_active_server,
+    update_server_status,
+    claim_incident_for_processing,
     get_project,
+    get_user_by_id,
 )
 from backend.prodpilot.decide.rules import decide
 from backend.prodpilot.pipeline.brief import analyze_issue_readiness
@@ -59,10 +64,22 @@ app = FastAPI(
     description="ProdPilot Autonomous SRE Engine Backend & SSE API",
 )
 
-# Enable CORS for desktop/Electron and browser clients
+# Allow only local desktop/dev origins by default. A public frontend must be
+# explicitly listed in PRODPILOT_ALLOWED_ORIGINS before a tunnel is exposed.
+_configured_origins = os.environ.get("PRODPILOT_ALLOWED_ORIGINS", "")
+_allowed_origins = [origin.strip() for origin in _configured_origins.split(",") if origin.strip()]
+if not _allowed_origins:
+    _allowed_origins = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+        "null",  # packaged Electron renderer
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,6 +90,38 @@ from backend.prodpilot.ingest.router import router as ingest_router
 
 app.include_router(connect_router)
 app.include_router(ingest_router)
+
+
+_PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/auth/login", "/auth/signup"}
+
+
+@app.middleware("http")
+async def strict_api_auth_guard(request: Request, call_next):
+    """Require an authenticated operator only when explicitly enabled.
+
+    Strict mode is safe to enable for a public tunnel after the desktop app has
+    signed in. It deliberately remains opt-in for local development so existing
+    command-line and test workflows keep working without a bootstrap account.
+    """
+    strict_mode = os.environ.get("PRODPILOT_REQUIRE_AUTH", "").strip().lower() in {"1", "true", "yes"}
+    if not strict_mode or request.method == "OPTIONS" or request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+
+    from backend.prodpilot.api.connect_router import parse_token_user_id
+
+    token = request.headers.get("authorization", "")
+    # EventSource cannot set custom headers; the desktop client uses this only
+    # for SSE when strict mode is opted in.
+    if not token and request.query_params.get("access_token"):
+        token = f"Bearer {request.query_params['access_token']}"
+    user_id = parse_token_user_id(token)
+    if not user_id or not get_user_by_id(user_id):
+        return Response(
+            content=json.dumps({"detail": "Authenticated operator session required"}),
+            status_code=401,
+            media_type="application/json",
+        )
+    return await call_next(request)
 
 # Autonomous Watchdog Daemon Loop (every 12s)
 @app.on_event("startup")
@@ -93,18 +142,29 @@ async def startup_watchdog_event():
         await asyncio.sleep(6)
         while True:
             try:
-                from backend.prodpilot.db import get_active_server
+                from backend.prodpilot.db import get_active_server, update_server_status
+                from backend.prodpilot.integrations.render_client import RenderClient
                 from backend.prodpilot.api.connect_router import run_server_log_triage
                 active_srv = get_active_server()
-                if active_srv and active_srv.get("render_service_id"):
-                    res = run_server_log_triage(active_srv["id"], limit=50)
-                    if res.get("incident_created"):
-                        logger.info(f"🚨 Autonomous Watchdog created incident: {res.get('incident', {}).get('id')}")
+                if active_srv:
+                    # Proactively probe health if health_url is configured and update server status
+                    health_url = active_srv.get("health_url")
+                    if health_url:
+                        probe = RenderClient.probe_health(health_url)
+                        update_server_status(active_srv["id"], status=probe["status"], latency_ms=probe.get("latency_ms", 0.0))
+
+                    if active_srv.get("render_service_id"):
+                        res = run_server_log_triage(active_srv["id"], limit=50)
+                        if res.get("incident_created"):
+                            logger.info(f"🚨 Autonomous Watchdog created incident: {res.get('incident', {}).get('id')}")
             except Exception as e:
                 logger.debug(f"Watchdog tick note: {e}")
             await asyncio.sleep(20)
 
     asyncio.create_task(autonomous_render_watchdog_loop())
+
+    _WORKER_DISPATCH_LOCK = threading.Lock()
+    _WORKER_IN_FLIGHT: set = set()
 
     async def incident_remediation_worker_loop():
         """Process one eligible incident at a time and supervise failures."""
@@ -124,24 +184,50 @@ async def startup_watchdog_event():
                             None,
                         )
                         if eligible:
-                            logger.info("Dispatching incident %s to supervised remediation worker", eligible["id"])
-                            try:
-                                from backend.prodpilot.pipeline.orchestrator import process_incident
-                                await asyncio.to_thread(
-                                    process_incident,
-                                    incident=eligible,
-                                    repo_path=repo_path,
-                                )
-                            except Exception as exc:
-                                logger.exception("Incident worker failed for %s", eligible["id"])
-                                update_incident_status(eligible["id"], "FAILED")
+                            incident_id = eligible["id"]
+                            with _WORKER_DISPATCH_LOCK:
+                                if incident_id in _WORKER_IN_FLIGHT:
+                                    eligible = None
+                                elif not claim_incident_for_processing(incident_id, target_status="INVESTIGATING", expected_status="OPEN"):
+                                    eligible = None
+                                else:
+                                    _WORKER_IN_FLIGHT.add(incident_id)
+
+                            if eligible:
+                                logger.info("Dispatching incident %s to supervised remediation worker", incident_id)
                                 log_event(
                                     run_id=None,
-                                    incident_id=eligible["id"],
-                                    stage="WORKER",
-                                    kind="error",
-                                    payload={"error": str(exc), "message": "Remediation worker failed"},
+                                    incident_id=incident_id,
+                                    stage="DISPATCH",
+                                    kind="dispatched",
+                                    payload={
+                                        "worker": "supervised_incident_remediation_worker",
+                                        "service": eligible.get("service"),
+                                        "dispatched_at": datetime.utcnow().isoformat(),
+                                        "status": "INVESTIGATING",
+                                        "message": f"Dispatched eligible OPEN incident {incident_id} to remediation worker",
+                                    },
                                 )
+                                try:
+                                    from backend.prodpilot.pipeline.orchestrator import process_incident
+                                    await asyncio.to_thread(
+                                        process_incident,
+                                        incident=eligible,
+                                        repo_path=repo_path,
+                                    )
+                                except Exception as exc:
+                                    logger.exception("Incident worker failed for %s", incident_id)
+                                    update_incident_status(incident_id, "FAILED")
+                                    log_event(
+                                        run_id=None,
+                                        incident_id=incident_id,
+                                        stage="WORKER",
+                                        kind="error",
+                                        payload={"error": str(exc), "message": "Remediation worker failed"},
+                                    )
+                                finally:
+                                    with _WORKER_DISPATCH_LOCK:
+                                        _WORKER_IN_FLIGHT.discard(incident_id)
                 await asyncio.sleep(3)
             except asyncio.CancelledError:
                 raise

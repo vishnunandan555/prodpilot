@@ -85,7 +85,8 @@ export default function SettingsView({
     twilio_account_sid: '',
     twilio_auth_token: '',
     twilio_from_number: '',
-    engineer_phone: ''
+    engineer_phone: '',
+    deploy_target: 'disabled'
   });
 
   // Test states
@@ -137,7 +138,8 @@ export default function SettingsView({
           twilio_account_sid: s.TWILIO_ACCOUNT_SID || '',
           twilio_auth_token: s.TWILIO_AUTH_TOKEN || '',
           twilio_from_number: s.TWILIO_FROM_NUMBER || '',
-          engineer_phone: s.ENGINEER_PHONE || ''
+          engineer_phone: s.ENGINEER_PHONE || '',
+          deploy_target: data.deploy_target || 'disabled'
         });
       }
     } catch (e) {
@@ -266,14 +268,20 @@ export default function SettingsView({
   const [activeCallData, setActiveCallData] = useState(null);
 
   const handleTestTwilioCall = async () => {
-    if (!settings.twilio_auth_token) {
-      setTwilioStatus({ ok: false, error: 'Please enter your Twilio Auth Token in the field below first.' });
+    if (!settings.twilio_auth_token || !settings.twilio_account_sid) {
+      setTwilioStatus({ ok: false, error: 'Please enter both your Twilio Account SID and Auth Token first.' });
+      return;
+    }
+    if (!settings.twilio_from_number) {
+      setTwilioStatus({ ok: false, error: 'Please specify your Twilio From Number first.' });
+      return;
+    }
+    if (!settings.engineer_phone) {
+      setTwilioStatus({ ok: false, error: 'Please specify an On-Call Engineer Phone Number first.' });
       return;
     }
     setTestingTwilio(true);
     setTwilioStatus(null);
-    setShowTwilioModal(true);
-    setActiveCallData({ status: 'initiating' });
 
     try {
       // First save current twilio settings so backend has them
@@ -291,9 +299,10 @@ export default function SettingsView({
       const data = await res.json();
       if (data.ok) {
         setActiveCallData(data);
+        setShowTwilioModal(true);
         setTwilioStatus({ ok: true, message: `Call initiated! SID: ${data.call_sid}. Your phone should ring in a few seconds.` });
       } else {
-        setTwilioStatus({ ok: false, error: data.error || 'Failed to place call' });
+        setTwilioStatus({ ok: false, error: data.error || 'Failed to place call via Twilio API' });
       }
     } catch (err) {
       setTwilioStatus({ ok: false, error: err.message });
@@ -948,6 +957,44 @@ export default function SettingsView({
                   <span>{twilioStatus.message || twilioStatus.error}</span>
                 </div>
               )}
+            </div>
+
+            {/* 7. Deployment Target Adapter */}
+            <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-[#f0f6fc] flex items-center gap-2">
+                    <Server size={14} className="text-[#a371f7]" />
+                    <span>Deployment Target Adapter</span>
+                  </h3>
+                  <p className="text-xs text-[#8b949e] mt-0.5">
+                    Controls where approved remediations and rollbacks are executed.
+                  </p>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${
+                  settings.deploy_target === 'local_process'
+                    ? 'bg-[#121d2f] text-[#58a6ff] border-[#223d66]'
+                    : 'bg-[#241a12] text-[#d29922] border-[#442c16]'
+                }`}>
+                  {settings.deploy_target || 'DISABLED'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234] text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8b949e]">Target Mode:</span>
+                  <span className="text-[#f0f6fc] font-mono font-medium">
+                    {settings.deploy_target === 'local_process'
+                      ? 'Local Process (Demo Server on Port 8000)'
+                      : 'Disabled (No Production Adapter)'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#6e7681] leading-relaxed">
+                  {settings.deploy_target === 'local_process'
+                    ? 'Remediation promotions and rollbacks restart the local demo process on port 8000. Real Render cloud production deployment & rollback adapters are not currently configured.'
+                    : 'No production deployment adapter is configured. Set PRODPILOT_DEPLOY_TARGET=local_process to enable the local demo server deployment adapter.'}
+                </p>
+              </div>
             </div>
 
             {/* Save Credentials Button */}

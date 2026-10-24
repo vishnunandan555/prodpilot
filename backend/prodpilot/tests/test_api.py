@@ -72,6 +72,16 @@ def test_incidents_crud_and_endpoints():
         payload={"options": {"fix_forward": {"health_ok": True}}},
     )
 
+    # 5a. POST /incidents/{id}/approve with deployment disabled -> 501 fail-closed
+    with patch.dict(os.environ, {"PRODPILOT_DEPLOY_TARGET": "disabled"}):
+        res_disabled = client.post(
+            f"/incidents/{inc_id}/approve",
+            json={"action": "fix_forward", "source": "telegram", "repo_path": repo_dir},
+        )
+        assert res_disabled.status_code == 501
+        assert "disabled" in res_disabled.json()["detail"].lower()
+
+    # 5b. POST /incidents/{id}/approve with local_process explicitly set -> 200 OK
     with patch.dict(os.environ, {"PRODPILOT_DEPLOY_TARGET": "local_process"}):
         with patch.object(deploy_adapter, "deploy", return_value={"status": "DEPLOYED", "health_check": "ok"}):
             res = client.post(

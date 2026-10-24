@@ -3,9 +3,9 @@
 
 **Realm Hack 2026 | Agentic AI Track**  
 **Author**: Vishnu Nandan, Christ College of Engineering  
-**Version**: 2.2 (Model 1 Hybrid Architecture)
+**Version**: 3.0 (Model 1 Hybrid Architecture — Truthful Implementation Baseline)
 
-> **Implementation status — 24 Oct 2026, 05:20 IST:** This is the target blueprint, not a claim that every stage runs against production today. The current repository is approximately **55% properly implemented and locally validated, 25% partial, 12% barely implemented, and 8% missing/out-of-scope** when weighted by the safe autonomous-recovery promise. Unified automated test suite (29 tests), worktree lifecycle management, triage/deduplication, local canaries, decision engine, and local watchdog auto-revert are fully validated. Render read operations (service details, deploy history, and logs) are live-validated. Render cloud-native deployment promotion and public authentication are out of scope for the 11:00 AM demo. See the Build Plan for complete test evidence and the timeboxed delivery plan.
+> **Implementation status — 24 Oct 2026, 06:00 IST:** This is the target blueprint, not a claim that every stage runs against cloud production today. The current repository is approximately **65% properly implemented and locally validated, 20% partial, 10% scoped for local demo execution, and 5% missing/out-of-scope** when weighted by the safe autonomous-recovery promise. The complete unified automated test suite (**41 passing tests** in ~12s), git worktree lifecycle management, triage/SHA-256 deduplication, red-to-green reproduction tests, side-port canaries, decision engine, and local watchdog auto-revert are fully validated. The UI has undergone a full truthfulness refactor (zero timer mocks, truthful engine telemetry, and explicit prerequisite error surfacing). Live Render read operations (service details, deploy history, and logs) are validated. Cloud-native Render deploy promotion is out of scope for the 10:00 AM demo; the platform truthfully executes and displays recovery as **"Local Demo Deployment (Port 8000)"**. See the Build Plan for complete test evidence and the 4-hour roadmap.
 
 ---
 
@@ -168,11 +168,11 @@ RESOLVED <── VERIFYING <── DEPLOYING <── AWAITING_APPROVAL <── P
   - Incident Summary & RCA Report.
   - Rollback Canary status (Port 8002).
   - Fix-Forward Canary status (Port 8001) & GitHub PR diff.
-- Developer taps: **`[🚀 Approve & Deploy Fix]`**, **`[⏪ Instant Rollback]`**, or **`[🛑 Take Over]`**.
+- Developer taps: **`[🚀 Approve Local Demo Deployment (Port 8000)]`**, **`[⏪ Local Demo Rollback]`**, or **`[🛑 Take Over]`**.
 
 #### Stage 9 — Deployment & Verification Watchdog
-- Approved build is deployed to production (Port 8000 or Render service).
-- If fix was approved, PR is merged.
+- Approved build is deployed to the local demo server process on Port 8000 (cloud deployment adapter is disabled).
+- If fix was approved, Git worktree branch is promoted to target.
 - **Verification Watchdog** monitors production `/health` for 10 seconds.
 - If health check fails: **automatic emergency rollback** is triggered, and incident is marked `AUTO_REVERTED`.
 
@@ -263,7 +263,7 @@ On mobile devices (accessed via the Telegram notification link), the Incident De
    - Pull request opened on GitHub.
 4. **Minute 2:00 – 2:40 (Remote Mobile Decision)**:
    - Tap the link on phone. Show the live Render webpage: RCA report, diff, and green canaries.
-   - Tap **`[🚀 Approve & Deploy Fix]`** directly from mobile.
+   - Tap **`[🚀 Approve Local Demo Deployment (Port 8000)]`** directly from mobile.
 5. **Minute 2:40 – 3:00 (Watchdog Verification & Resolution)**:
    - Request reaches laptop via Cloudflare Tunnel.
    - Laptop promotes Fix canary to production port 8000.

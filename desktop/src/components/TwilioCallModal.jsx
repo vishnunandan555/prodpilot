@@ -28,6 +28,7 @@ export default function TwilioCallModal({
 }) {
   const [callSid, setCallSid] = useState(initialCallData?.call_sid || null);
   const [callStatus, setCallStatus] = useState(initialCallData?.status || 'initiating');
+  const [callError, setCallError] = useState(initialCallData?.error || null);
   const [callDetails, setCallDetails] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,17 +44,23 @@ export default function TwilioCallModal({
     if (initialCallData?.call_sid) {
       setCallSid(initialCallData.call_sid);
       setCallStatus(initialCallData.status || 'queued');
+      setCallError(null);
+    } else if (initialCallData?.status === 'failed' || initialCallData?.error) {
+      setCallStatus('failed');
+      setCallError(initialCallData.error || 'Failed to place call via Twilio');
     }
   }, [initialCallData]);
 
-  // Duration timer when active
+  // Duration timer only when call is actively answered/in-progress
   useEffect(() => {
     if (!isOpen) return;
+    const isActiveCall = ['in-progress', 'answered'].includes(callStatus?.toLowerCase());
+    if (!isActiveCall) return;
     const timer = setInterval(() => {
       setDuration((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, [isOpen]);
+  }, [isOpen, callStatus]);
 
   // Poll Twilio call status and logs every 1.2s
   useEffect(() => {
@@ -111,9 +118,15 @@ export default function TwilioCallModal({
       if (data.ok) {
         setCallSid(data.call_sid);
         setCallStatus(data.status || 'queued');
+        setCallError(null);
+      } else {
+        setCallStatus('failed');
+        setCallError(data.error || 'Failed to place call via Twilio API');
       }
     } catch (err) {
       console.error('Redial error:', err);
+      setCallStatus('failed');
+      setCallError(err.message || 'Network error while contacting Twilio');
     } finally {
       setLoading(false);
     }
@@ -228,6 +241,17 @@ export default function TwilioCallModal({
             </button>
           </div>
         </div>
+
+        {/* Telephony Error Alert */}
+        {callError && (
+          <div className="mx-6 mt-3 p-3 rounded-xl bg-[#261317] border border-[#4a1c24] text-xs text-[#ff7b72] flex items-center gap-2 flex-shrink-0">
+            <AlertTriangle size={15} className="text-[#f85149] shrink-0" />
+            <div className="flex-1">
+              <span className="font-bold">Telephony Error: </span>
+              <span>{callError}</span>
+            </div>
+          </div>
+        )}
 
         {/* Telemetry Bar */}
         <div className="p-4 bg-[#080b11] border-b border-[#1b2438] grid grid-cols-1 md:grid-cols-4 gap-3 flex-shrink-0">
