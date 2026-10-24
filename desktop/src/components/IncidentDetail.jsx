@@ -21,6 +21,10 @@ import {
   GitPullRequest,
   Check,
   UserX,
+  UserCheck,
+  Loader2,
+  KeyRound,
+  AlertCircle,
   ArrowLeft,
   Copy,
   Info,
@@ -29,6 +33,7 @@ import {
   Bot,
   Trash2,
   HelpCircle,
+  Play,
   GitBranch,
   PhoneCall
 } from 'lucide-react';
@@ -74,6 +79,24 @@ export default function IncidentDetail({
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [resuming, setResuming] = useState(false);
+
+  const handleResume = async () => {
+    setResuming(true);
+    try {
+      const res = await fetch(`${apiUrl}/incidents/${incident.id}/resume`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        if (onClearDeployError) onClearDeployError();
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to resume autonomous remediation:', err);
+    } finally {
+      setResuming(false);
+    }
+  };
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [copiedTrace, setCopiedTrace] = useState(false);
   const [copiedReproTest, setCopiedReproTest] = useState(false);
@@ -157,9 +180,10 @@ export default function IncidentDetail({
     );
   }
 
-  const isResolved = isIncidentInactive(incident.status);
-  const isAwaiting = incident.status === 'AWAITING_APPROVAL';
   const isTakeover = incident.status === 'MANUAL_TAKEOVER';
+  const isFailed = incident.status === 'FAILED' || incident.status === 'ERROR' || incident.status === 'CRASHED';
+  const isAwaiting = incident.status === 'AWAITING_APPROVAL';
+  const isResolved = (incident.status === 'DEPLOYED' || incident.status === 'RESOLVED' || incident.status === 'ROLLED_BACK') && !isTakeover;
 
   const suspect = incident.suspect_commit || {};
   const suspectHash = typeof suspect === 'string' ? suspect.slice(0, 7) : suspect.hash?.slice(0, 7) || null;
@@ -198,18 +222,20 @@ export default function IncidentDetail({
   const prBranch = githubPr?.branch || null;
 
   const STAGES_LIST = [
-    { key: 'INVESTIGATE', label: 'Investigation', shortDesc: 'Trace & Blame', tab: 'investigation' },
-    { key: 'ANALYSIS', label: 'Analysis', shortDesc: 'Root Cause', tab: 'overview' },
-    { key: 'REPRODUCE', label: 'Reproduction', shortDesc: 'Sandbox Proof', tab: 'investigation' },
-    { key: 'FIX', label: 'Fix & Patch', shortDesc: 'Synthesize Patch', tab: 'changes' },
-    { key: 'VERIFY', label: 'Canary Test', shortDesc: 'Canary Health', tab: 'recovery' },
-    { key: 'AWAITING_APPROVAL', label: 'Approval Gate', shortDesc: 'Standby for Sign-off', tab: 'overview' },
-    { key: 'RESOLVED', label: 'Restored', shortDesc: 'Live 200 OK', tab: 'overview' },
+    { key: 'INVESTIGATE', label: 'Investigation', shortDesc: 'Trace & Blame', tab: 'investigation', duration: '4s' },
+    { key: 'ANALYSIS', label: 'Analysis', shortDesc: 'Root Cause', tab: 'overview', duration: '8s' },
+    { key: 'REPRODUCE', label: 'Reproduction', shortDesc: 'Sandbox Proof', tab: 'investigation', duration: '26s' },
+    { key: 'FIX', label: 'Fix & Patch', shortDesc: 'Synthesize Patch', tab: 'changes', duration: '18s' },
+    { key: 'VERIFY', label: 'Canary Test', shortDesc: 'Canary Health', tab: 'recovery', duration: '35s' },
+    { key: 'AWAITING_APPROVAL', label: 'Approval Gate', shortDesc: 'Standby for Sign-off', tab: 'overview', duration: '14s' },
+    { key: 'RESOLVED', label: 'Restored', shortDesc: 'Live 200 OK', tab: 'overview', duration: '6s' },
   ];
 
   const getStageStatusIndex = () => {
     if (isResolved) return 6;
-    if (isAwaiting || isTakeover) return 5;
+    if (isTakeover) return 5;
+    if (isAwaiting) return 5;
+    if (isFailed) return 3;
     if (staging?.fix_forward?.health !== undefined) return 4;
     if (diffContent || artifacts?.patch_diff) return 4;
     switch (incident.status) {
@@ -457,13 +483,25 @@ export default function IncidentDetail({
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setDismissRestoredBanner(true)}
-              className="text-[#8b949e] hover:text-[#c9d1d9] p-1 rounded hover:bg-[#212a3d] transition shrink-0"
-              title="Dismiss banner"
-            >
-              <X size={14} />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleResume}
+                disabled={resuming}
+                className="px-2.5 py-1 rounded bg-[#1f2d47] hover:bg-[#2b3d60] text-[#79c0ff] border border-[#3b5280] text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-sm"
+                title="Release manual takeover and resume autonomous remediation"
+              >
+                <Play size={11} className={resuming ? "animate-spin text-[#58a6ff]" : "text-[#79c0ff] fill-[#79c0ff]"} />
+                <span>Resume Autonomous Loop</span>
+              </button>
+              <button
+                onClick={() => setDismissRestoredBanner(true)}
+                className="text-[#8b949e] hover:text-[#c9d1d9] p-1 rounded hover:bg-[#212a3d] transition shrink-0"
+                title="Dismiss banner"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -738,32 +776,64 @@ export default function IncidentDetail({
             <div className="rounded-xl bg-[#0d111a] border border-[#1b2234] p-3.5 sm:p-4 space-y-3.5 shadow-md">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#161f30] pb-2.5">
                 <div className="flex items-center gap-2">
-                  <Activity size={14} className="text-[#58a6ff]" />
+                  <Activity size={14} className={
+                    isResolved ? "text-[#3fb950]" :
+                    isTakeover ? "text-[#bc8cff]" :
+                    isFailed ? "text-[#f85149]" :
+                    isAwaiting ? "text-[#d29922]" :
+                    "text-[#58a6ff]"
+                  } />
                   <span className="text-xs font-semibold text-[#f0f6fc]">Incident Resolution Lifecycle</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#161f30] text-[#79c0ff] border border-[#273855] font-mono">
-                    {Math.min(currentStageIdx + (isResolved ? 1 : 0), STAGES_LIST.length)} of {STAGES_LIST.length} Completed
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
+                    isResolved ? "bg-[#122419] text-[#3fb950] border-[#1f4a2b]" :
+                    isTakeover ? "bg-[#211833] text-[#bc8cff] border-[#492f70]" :
+                    isFailed ? "bg-[#261317] text-[#ff7b72] border-[#ff7b72]/30" :
+                    isAwaiting ? "bg-[#241a0c] text-[#d29922] border-[#442c16]" :
+                    "bg-[#161f30] text-[#79c0ff] border-[#273855]"
+                  }`}>
+                    {isResolved
+                      ? `7 of 7 Completed • Restored`
+                      : isTakeover
+                      ? `5 of 7 Completed • Operator Override`
+                      : isFailed
+                      ? `${Math.max(0, currentStageIdx)} of 7 Completed • Remediation Blocked`
+                      : isAwaiting
+                      ? `5 of 7 Completed • Standby for Sign-off`
+                      : `${currentStageIdx} of 7 Completed • In Progress`}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-xs">
-                  <span className="text-[11px] text-[#8b949e]">Current Stage:</span>
+                  <span className="text-[11px] text-[#8b949e]">Status:</span>
                   <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded border flex items-center gap-1.5 ${
                     isResolved
                       ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
+                      : isTakeover
+                      ? 'bg-[#211833] text-[#bc8cff] border-[#492f70]'
+                      : isFailed
+                      ? 'bg-[#261317] text-[#ff7b72] border-[#ff7b72]/40'
                       : isAwaiting
                       ? 'bg-[#241a0c] text-[#d29922] border-[#442c16]'
-                      : isTakeover
-                      ? 'bg-[#161f30] text-[#79c0ff] border-[#273855]'
                       : 'bg-[#161f30] text-[#58a6ff] border-[#273855]'
                   }`}>
                     {isResolved ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+                    ) : isTakeover ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#bc8cff] animate-ping" />
+                    ) : isFailed ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#f85149] animate-ping" />
+                    ) : isAwaiting ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#d29922] animate-ping" />
                     ) : (
-                      <span className={`w-1.5 h-1.5 rounded-full animate-ping ${isAwaiting ? 'bg-[#d29922]' : 'bg-[#58a6ff]'}`} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#58a6ff] animate-ping" />
                     )}
                     <span>
                       {isResolved
                         ? 'Production Restored (200 OK)'
+                        : isTakeover
+                        ? 'Operator Control Active (Autonomous Loop Bypassed)'
+                        : isFailed
+                        ? 'Remediation Blocked — Manual Operator Intervention Required'
                         : isAwaiting
                         ? 'Approval Gate: Standby for Operator Sign-off'
                         : `${STAGES_LIST[currentStageIdx]?.label}: ${STAGES_LIST[currentStageIdx]?.shortDesc}`}
@@ -774,83 +844,139 @@ export default function IncidentDetail({
 
               {/* Horizontal Stepper Row */}
               <div className="overflow-x-auto pb-1 pt-1">
-                <div className="flex items-center min-w-[700px] justify-between">
+                <div className="flex items-center min-w-[720px] justify-between">
                   {STAGES_LIST.map((stg, idx) => {
                     const isLast = idx === STAGES_LIST.length - 1;
-                    const isCompleted = isResolved ? true : idx < currentStageIdx;
-                    const isActive = !isResolved && idx === currentStageIdx;
-                    const isStandbyActive = isActive && (stg.key === 'AWAITING_APPROVAL' || isAwaiting);
+                    const isStageTakeover = isTakeover && idx === 5;
+                    const isStageFailed = isFailed && idx === currentStageIdx;
+                    const isStandbyActive = !isResolved && !isTakeover && !isFailed && idx === 5 && (stg.key === 'AWAITING_APPROVAL' || isAwaiting);
+                    const isActive = !isResolved && !isTakeover && !isFailed && !isStandbyActive && idx === currentStageIdx;
+
+                    const isCompleted = isResolved
+                      ? true
+                      : isTakeover
+                      ? idx < 5
+                      : isFailed
+                      ? idx < currentStageIdx
+                      : idx < currentStageIdx;
+
+                    let pillText = stg.duration;
+                    let pillStyle = 'bg-[#090d14] text-[#485263] border-[#1b2234]';
+
+                    if (isCompleted) {
+                      pillText = stg.duration;
+                      pillStyle = 'bg-[#122419] text-[#3fb950]/90 border-[#1f4a2b]/70';
+                    } else if (isStageTakeover) {
+                      pillText = 'OVERRIDE';
+                      pillStyle = 'bg-[#211833] text-[#bc8cff] border-[#492f70] font-semibold';
+                    } else if (isStageFailed) {
+                      pillText = 'BLOCKED';
+                      pillStyle = 'bg-[#261317] text-[#ff7b72] border-[#ff7b72]/50 font-semibold animate-pulse';
+                    } else if (isStandbyActive) {
+                      pillText = 'GATE';
+                      pillStyle = 'bg-[#241a0c] text-[#d29922] border-[#442c16] font-semibold animate-pulse';
+                    } else if (isActive) {
+                      pillText = 'LIVE';
+                      pillStyle = 'bg-[#161f30] text-[#58a6ff] border-[#273855] font-semibold animate-pulse';
+                    }
+
+                    const circleStyle = isCompleted
+                      ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b] shadow-sm'
+                      : isStageTakeover
+                      ? 'bg-[#211833] text-[#bc8cff] border-[#a371f7] ring-2 ring-[#a371f7]/30 shadow-md'
+                      : isStageFailed
+                      ? 'bg-[#261317] text-[#ff7b72] border-[#f85149] ring-2 ring-[#f85149]/40 shadow-md animate-pulse'
+                      : isStandbyActive
+                      ? 'bg-[#241a0c] text-[#d29922] border-[#d29922] ring-2 ring-[#d29922]/40 shadow-md'
+                      : isActive
+                      ? 'bg-[#161f30] text-[#58a6ff] border-[#388bfd] ring-2 ring-[#58a6ff]/40 shadow-md'
+                      : 'bg-[#090d14] text-[#6e7681] border-[#1b2234] group-hover:border-[#2b3a58]';
+
+                    const labelStyle = isCompleted
+                      ? 'text-[#c9d1d9] group-hover:text-[#f0f6fc]'
+                      : isStageTakeover
+                      ? 'text-[#bc8cff] font-bold'
+                      : isStageFailed
+                      ? 'text-[#ff7b72] font-bold'
+                      : isStandbyActive
+                      ? 'text-[#d29922] font-bold'
+                      : isActive
+                      ? 'text-[#58a6ff] font-bold'
+                      : 'text-[#6e7681] group-hover:text-[#8b949e]';
+
+                    const descStyle = isCompleted
+                      ? 'text-[#3fb950]/80'
+                      : isStageTakeover
+                      ? 'text-[#d2a8ff]'
+                      : isStageFailed
+                      ? 'text-[#ff7b72]'
+                      : isStandbyActive
+                      ? 'text-[#d29922]/90'
+                      : isActive
+                      ? 'text-[#79c0ff]'
+                      : 'text-[#485263]';
+
+                    const getConnectorClass = () => {
+                      if (isResolved) return 'bg-[#238636]';
+                      if (isTakeover) {
+                        if (idx < 4) return 'bg-[#238636]';
+                        if (idx === 4) return 'pipeline-purple-line';
+                        return 'bg-transparent';
+                      }
+                      if (isFailed) {
+                        if (idx + 1 < currentStageIdx) return 'bg-[#238636]';
+                        if (idx + 1 === currentStageIdx) return 'pipeline-crimson-line';
+                        return 'bg-transparent';
+                      }
+                      if (idx + 1 < currentStageIdx) return 'bg-[#238636]';
+                      if (idx + 1 === currentStageIdx) {
+                        return isAwaiting ? 'pipeline-amber-line' : 'pipeline-flowing-line';
+                      }
+                      return 'bg-transparent';
+                    };
 
                     return (
                       <React.Fragment key={stg.key}>
                         <button
                           type="button"
                           onClick={() => stg.tab && setActiveTab(stg.tab)}
-                          className="flex flex-col items-center group flex-shrink-0 focus:outline-none"
+                          className="flex flex-col items-center group flex-shrink-0 focus:outline-none cursor-pointer"
                           title={`Navigate to ${stg.label}`}
                         >
-                          <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono transition-all duration-200 border ${
-                              isCompleted
-                                ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b] shadow-sm'
-                                : isStandbyActive
-                                ? 'bg-[#241a0c] text-[#d29922] border-[#d29922] ring-2 ring-[#d29922]/30 animate-pulse'
-                                : isActive
-                                ? 'bg-[#161f30] text-[#58a6ff] border-[#388bfd] ring-2 ring-[#58a6ff]/30 animate-pulse'
-                                : 'bg-[#090d14] text-[#6e7681] border-[#1b2234] group-hover:border-[#2b3a58]'
-                            }`}
-                          >
+                          <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded border leading-none mb-1.5 ${pillStyle}`}>
+                            {pillText}
+                          </span>
+
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono transition-all duration-200 border ${circleStyle}`}>
                             {isCompleted ? (
                               <Check size={12} className="stroke-[3]" />
+                            ) : isStageTakeover ? (
+                              <UserCheck size={13} className="text-[#bc8cff]" />
+                            ) : isStageFailed ? (
+                              <AlertCircle size={13} className="text-[#f85149] animate-bounce" />
+                            ) : isStandbyActive ? (
+                              <KeyRound size={13} className="text-[#d29922] animate-pulse" />
+                            ) : isActive ? (
+                              <Loader2 size={13} className="animate-spin text-[#58a6ff]" />
                             ) : (
                               <span>{idx + 1}</span>
                             )}
                           </div>
 
                           <div className="text-center mt-1.5 space-y-0.5">
-                            <span
-                              className={`block text-[11px] font-semibold transition ${
-                                isCompleted
-                                  ? 'text-[#c9d1d9] group-hover:text-[#f0f6fc]'
-                                  : isStandbyActive
-                                  ? 'text-[#d29922] font-bold'
-                                  : isActive
-                                  ? 'text-[#58a6ff] font-bold'
-                                  : 'text-[#6e7681] group-hover:text-[#8b949e]'
-                              }`}
-                            >
-                              {stg.label}
+                            <span className={`block text-[11px] font-semibold transition ${labelStyle}`}>
+                              {isStageTakeover ? 'Operator Override' : stg.label}
                             </span>
-                            <span
-                              className={`block text-[10px] font-mono leading-none ${
-                                isStandbyActive
-                                  ? 'text-[#d29922]/90'
-                                  : isActive
-                                  ? 'text-[#79c0ff]'
-                                  : isCompleted
-                                  ? 'text-[#3fb950]/80'
-                                  : 'text-[#485263]'
-                              }`}
-                            >
-                              {stg.shortDesc}
+                            <span className={`block text-[10px] font-mono leading-none ${descStyle}`}>
+                              {isStageTakeover ? 'Manual Bypass' : isStageFailed ? 'Blocked' : stg.shortDesc}
                             </span>
                           </div>
                         </button>
 
                         {!isLast && (
-                          <div className="flex-1 mx-2 mb-5 h-[2px] min-w-[24px] relative">
+                          <div className="flex-1 mx-2 -mt-3.5 h-[2px] min-w-[24px] relative rounded-full overflow-hidden">
                             <div className="absolute inset-0 bg-[#161f30]" />
-                            <div
-                              className={`absolute inset-0 transition-all duration-300 ${
-                                isCompleted
-                                  ? 'bg-[#238636]'
-                                  : isActive
-                                  ? isStandbyActive
-                                    ? 'bg-gradient-to-r from-[#238636] to-[#d29922]'
-                                    : 'bg-gradient-to-r from-[#238636] to-[#58a6ff]'
-                                  : 'bg-transparent'
-                              }`}
-                            />
+                            <div className={`absolute inset-0 transition-all duration-300 ${getConnectorClass()}`} />
                           </div>
                         )}
                       </React.Fragment>

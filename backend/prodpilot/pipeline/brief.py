@@ -17,30 +17,110 @@ def extract_traceback_info(trace: Optional[str]) -> Dict[str, Any]:
         return {"error_type": "Unknown", "error_message": "", "file": None, "line": None, "func": None}
 
     lines = trace.strip().splitlines()
-    error_line = lines[-1] if lines else ""
 
     error_type = "Unknown"
     error_message = ""
-    if ":" in error_line:
-        parts = error_line.split(":", 1)
-        error_type = parts[0].strip()
-        error_message = parts[1].strip()
-    else:
-        error_type = error_line.strip()
 
-    # Find the deepest frame: File "app.py", line 45, in calculate_order
+    # 1. Search for actual Python exception classes in trace
+    # Look for standard Python exception patterns: e.g. ZeroDivisionError: division by zero
+    # or inside logging arguments tuple: Arguments: ('...', ZeroDivisionError('division by zero'))
+    re_nested_exc = re.compile(
+        r"\b([A-Z][a-zA-Z0-9]+(?:Error|Exception))\(['\"]?(.*?)['\"]?\)"
+    )
+    re_standard_exc = re.compile(
+        r"^\s*(?:[a-zA-Z_.]+\.)?([A-Z][a-zA-Z0-9]+(?:Error|Exception))(?::\s*(.*))?$"
+    )
+    re_crash_line = re.compile(
+        r"(?:FATAL APPLICATION CRASH|CRITICAL|ERROR):\s*([^\n]+)"
+    )
+
+    # Check from bottom up for an explicit exception line or nested exception
+    for line in reversed(lines):
+        m_std = re_standard_exc.match(line.strip())
+        if m_std:
+            candidate_type = m_std.group(1)
+            if candidate_type not in ("Arguments", "Message"):
+                error_type = candidate_type
+                error_message = (m_std.group(2) or "").strip()
+                break
+
+        m_nest = re_nested_exc.search(line)
+        if m_nest:
+            candidate_type = m_nest.group(1)
+            if candidate_type not in ("Arguments", "Message"):
+                error_type = candidate_type
+                error_message = m_nest.group(2).strip()
+                break
+
+    # If still Unknown, check for FATAL APPLICATION CRASH messages
+    if error_type == "Unknown":
+        for line in reversed(lines):
+            m_crash = re_crash_line.search(line)
+            if m_crash:
+                msg = m_crash.group(1).strip()
+                m_nest = re_nested_exc.search(msg)
+                if m_nest:
+                    error_type = m_nest.group(1)
+                    error_message = m_nest.group(2).strip()
+                    break
+                m_type = re.search(r"\b([A-Z][a-zA-Z0-9]+(?:Error|Exception))\b", msg)
+                if m_type:
+                    error_type = m_type.group(1)
+                    error_message = msg
+                    break
+
+    # If still Unknown, fallback to splitting the last line if it has ':'
+    if error_type == "Unknown" and lines:
+        error_line = lines[-1].strip()
+        if ":" in error_line:
+            parts = error_line.split(":", 1)
+            candidate = parts[0].strip()
+            if candidate not in ("Arguments", "Message"):
+                error_type = candidate
+                error_message = parts[1].strip()
+
+    # Find target frame, prioritizing user/application code over logging/framework internals
     frame_pattern = re.compile(r'File\s+"([^"]+)",\s+line\s+(\d+)(?:,\s+in\s+(\w+))?')
     target_file = None
     target_line = None
     target_func = None
+    fallback_file = None
+    fallback_line = None
+    fallback_func = None
+
+    ignored_frame_substrings = (
+        "logging/__init__.py",
+        "logging_config.py",
+        "site-packages/uvicorn",
+        "site-packages/starlette",
+        "site-packages/fastapi",
+        "/lib/python",
+        "/lib64/python",
+    )
 
     for line in reversed(lines):
         match = frame_pattern.search(line)
         if match:
-            target_file = match.group(1)
-            target_line = int(match.group(2))
-            target_func = match.group(3)
-            break
+            fpath = match.group(1)
+            fline = int(match.group(2))
+            ffunc = match.group(3)
+
+            if not fallback_file:
+                fallback_file = fpath
+                fallback_line = fline
+                fallback_func = ffunc
+
+            # Check if this frame is user application code
+            if not any(ign in fpath for ign in ignored_frame_substrings):
+                target_file = fpath
+                target_line = fline
+                target_func = ffunc
+                break
+
+    if not target_file:
+        target_file = fallback_file
+        target_line = fallback_line
+        target_func = fallback_func
 
     return {
         "error_type": error_type,
@@ -78,6 +158,14 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
 
     tb_info = extract_traceback_info(trace)
 
+    # If traceback error_type is Unknown, check root_cause_report for hints
+    rc_report = incident.get("root_cause_report") or ""
+    if tb_info["error_type"] == "Unknown" and rc_report:
+        for err_candidate in ("ZeroDivisionError", "KeyError", "ValueError", "TypeError", "TimeoutError"):
+            if err_candidate in rc_report:
+                tb_info["error_type"] = err_candidate
+                break
+
     # Determine suspect area
     suspect_file = suspect_commit.get("suspect_file") or tb_info["file"] or "unknown"
     suspect_line = suspect_commit.get("suspect_line") or tb_info["line"] or 0
@@ -98,12 +186,26 @@ def create_brief(incident: Dict[str, Any]) -> Dict[str, Any]:
 
     # One sentence summary
     func_str = f" in {tb_info['func']}" if tb_info['func'] else ""
-    summary = f"{error_repr}{func_str} in {suspect_file}:{suspect_line}."
+    summary = f"Unhandled {error_repr}{func_str} in {suspect_file}:{suspect_line}."
 
-    hypothesis = (
-        f"Suspect commit '{introduced_by}' introduced direct access to '{key_name or 'a required field'}' "
-        f"without fallback or null check, triggering unhandled {error_type} in {suspect_file}."
-    )
+    if error_type == "KeyError":
+        hypothesis = (
+            f"Suspect commit '{introduced_by}' introduced direct access to '{key_name or 'a required field'}' "
+            f"without fallback or null check, triggering unhandled {error_type} in {suspect_file}."
+        )
+    elif error_type == "ZeroDivisionError":
+        hypothesis = (
+            f"Unhandled ZeroDivisionError in {suspect_file}:{suspect_line} during throughput calculation "
+            f"where interval elapsed time evaluated to zero."
+        )
+    elif "Timeout" in error_type:
+        hypothesis = (
+            f"Unhandled {error_type} in {suspect_file}:{suspect_line} caused by acknowledgement timeout."
+        )
+    else:
+        hypothesis = (
+            f"Unhandled {error_type} in {suspect_file}:{suspect_line} causing worker process termination."
+        )
 
     brief = {
         "summary": summary,

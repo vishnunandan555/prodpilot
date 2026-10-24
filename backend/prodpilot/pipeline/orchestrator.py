@@ -63,6 +63,34 @@ resolve_demo_repo_path = resolve_target_repo_path
 
 _ORCHESTRATOR_LOCK = threading.Lock()
 _IN_FLIGHT_INCIDENTS: set = set()
+_DISENGAGED_INCIDENTS: set = set()
+
+
+def disengage_incident_pipeline(incident_id: str) -> None:
+    """Signals an active remediation pipeline to halt immediately (e.g. on manual takeover)."""
+    with _ORCHESTRATOR_LOCK:
+        _DISENGAGED_INCIDENTS.add(incident_id)
+
+
+def resume_incident_pipeline(incident_id: str) -> None:
+    """Clears disengagement signal for an incident when operator resumes autonomous loop."""
+    with _ORCHESTRATOR_LOCK:
+        _DISENGAGED_INCIDENTS.discard(incident_id)
+
+
+def is_incident_disengaged(incident_id: str, db_path: Optional[str] = None) -> bool:
+    """Checks in-memory flag and persistent database status to verify if pipeline is halted."""
+    with _ORCHESTRATOR_LOCK:
+        if incident_id in _DISENGAGED_INCIDENTS:
+            return True
+    try:
+        from backend.prodpilot.db import get_incident
+        inc = get_incident(incident_id, db_path=db_path)
+        if inc and inc.get("status") in ("MANUAL_TAKEOVER", "RESOLVED", "ROLLED_BACK", "DEPLOYED", "FAILED", "DISMISSED"):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def process_incident(
@@ -96,6 +124,7 @@ def process_incident(
     finally:
         with _ORCHESTRATOR_LOCK:
             _IN_FLIGHT_INCIDENTS.discard(incident_id)
+            _DISENGAGED_INCIDENTS.discard(incident_id)
 
 
 def _run_process_incident(
@@ -109,6 +138,11 @@ def _run_process_incident(
     if not (Path(target_repo) / ".git").exists():
         raise FileNotFoundError(f"Target path is not a Git repository: {target_repo}")
     logger.info(f"Processing incident {incident_id} (service: {incident.get('service')}) in repo {target_repo}")
+
+    # Checkpoint 0: Entry guard against processing an incident already under manual takeover / disengaged
+    if is_incident_disengaged(incident_id, db_path=db_path):
+        logger.info(f"Pipeline disengaged for {incident_id} at entry point.")
+        return {"status": "MANUAL_TAKEOVER", "incident_id": incident_id, "disengaged": True}
 
     # a. Transition status to INVESTIGATING
     update_incident_status(incident_id, "INVESTIGATING", db_path=db_path)
@@ -192,6 +226,11 @@ def _run_process_incident(
         logger.warning(f"Telegram stage 2 alert error: {e}")
 
 
+    # Checkpoint 1: Check if incident was disengaged before running agent repro & fix
+    if is_incident_disengaged(incident_id, db_path=db_path):
+        logger.info(f"Pipeline disengaged for {incident_id} before repro-and-fix stage.")
+        return {"status": "MANUAL_TAKEOVER", "incident_id": incident_id, "disengaged": True}
+
     # c. Transition status to FIXING and run repro pipeline
     update_incident_status(incident_id, "FIXING", db_path=db_path)
     adapter = get_agent_adapter()
@@ -251,6 +290,22 @@ The failure was reproduced in an isolated worktree and verified against the cand
         post_github_issue_comment(incident_id, fix_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:
         logger.warning(f"Could not post GitHub fix verification comment: {e}")
+
+    # Checkpoint 2: Check if incident was disengaged before spinning up canaries
+    if is_incident_disengaged(incident_id, db_path=db_path):
+        logger.info(f"Pipeline disengaged for {incident_id} before canary staging. Preserving worktree {pipeline_res.worktree_path}.")
+        log_event(
+            run_id=pipeline_res.run_id,
+            incident_id=incident_id,
+            stage="TAKEOVER",
+            kind="pipeline_disengaged",
+            payload={
+                "message": f"Autonomous remediation halted: Preserving worktree {pipeline_res.worktree_path} for engineer inspection.",
+                "worktree_path": pipeline_res.worktree_path,
+            },
+            db_path=db_path,
+        )
+        return {"status": "MANUAL_TAKEOVER", "incident_id": incident_id, "disengaged": True, "worktree_path": pipeline_res.worktree_path}
 
     # d. Stage Canaries (8001 & 8002)
     log_event(
@@ -347,6 +402,11 @@ The failure was reproduced in an isolated worktree and verified against the cand
     except Exception as e:
         logger.warning(f"Could not post GitHub decision comment: {e}")
 
+    # Checkpoint 3: Check if incident was disengaged before opening GitHub PR
+    if is_incident_disengaged(incident_id, db_path=db_path):
+        logger.info(f"Pipeline disengaged for {incident_id}; skipping PR creation and review comments.")
+        return {"status": "MANUAL_TAKEOVER", "incident_id": incident_id, "disengaged": True}
+
     # Open a review PR from the verified patch in an isolated worktree. The helper
     # never merges; the PR remains a review artifact until a separate provider flow exists.
     pr_result: Dict[str, Any] = {"ok": False, "error": "GitHub PR was not prepared"}
@@ -371,6 +431,11 @@ The failure was reproduced in an isolated worktree and verified against the cand
         payload=pr_result,
         db_path=db_path,
     )
+
+    # Checkpoint 4: Guard against overwriting MANUAL_TAKEOVER status
+    if is_incident_disengaged(incident_id, db_path=db_path):
+        logger.info(f"Incident {incident_id} disengaged; preserving current status and skipping AWAITING_APPROVAL.")
+        return {"status": "MANUAL_TAKEOVER", "incident_id": incident_id, "disengaged": True}
 
     # f. Transition status to AWAITING_APPROVAL
     update_incident_status(incident_id, "AWAITING_APPROVAL", db_path=db_path)

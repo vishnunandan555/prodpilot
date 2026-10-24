@@ -281,3 +281,37 @@ code, pre, .font-mono {
   margin: 16px 0;
 }
 
+/* Animated Pipeline Circuit Beam */
+@keyframes pipelineBeam {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.pipeline-flowing-line {
+  background: linear-gradient(90deg, #238636 0%, #388bfd 50%, #238636 100%);
+  background-size: 200% 100%;
+  animation: pipelineBeam 2s linear infinite;
+}
+
+.pipeline-amber-line {
+  background: linear-gradient(90deg, #238636 0%, #d29922 50%, #238636 100%);
+  background-size: 200% 100%;
+  animation: pipelineBeam 2s linear infinite;
+}
+
+.pipeline-purple-line {
+  background: linear-gradient(90deg, #238636 0%, #a371f7 50%, #238636 100%);
+  background-size: 200% 100%;
+  animation: pipelineBeam 2.5s linear infinite;
+}
+
+.pipeline-crimson-line {
+  background: linear-gradient(90deg, #238636 0%, #f85149 50%, #238636 100%);
+  background-size: 200% 100%;
+  animation: pipelineBeam 1.8s linear infinite;
+}
+

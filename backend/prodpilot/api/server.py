@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -339,11 +340,18 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
             (brief.get("suspected_area") if isinstance(brief, dict) else None)
             or inc.get("suspected_area")
         )
-        title = inc.get("title") or (
-            f"Outage in {inc.get('service') or 'Production Service'}"
-            if not summary or "Autonomous failure" in summary
-            else summary[:80]
-        )
+        rc_report = inc.get("root_cause_report") or ""
+        clean_rc = re.sub(r"^Autonomous Watchdog detected:\s*", "", rc_report).strip()
+
+        if clean_rc and not clean_rc.startswith("Arguments:"):
+            title = clean_rc
+        elif brief.get("error_type") and brief["error_type"] not in ("Unknown", "Arguments"):
+            err_msg_snippet = f": {brief.get('error_message')}" if brief.get("error_message") else ""
+            title = f"Unhandled {brief['error_type']}{err_msg_snippet}"
+        elif inc.get("title") and not str(inc.get("title")).startswith("Arguments:"):
+            title = inc.get("title")
+        else:
+            title = f"Outage in {inc.get('service') or 'Production Service'}"
         severity = (inc.get("severity") or "SEV-1").upper()
         if not severity.startswith("SEV-") and severity in ("CRITICAL", "HIGH", "1"):
             severity = "SEV-1 CRITICAL"
@@ -416,13 +424,9 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
             brief = json.loads(brief)
         except Exception:
             brief = {}
-    if not brief:
-        # Fallback synthesis of brief
-        brief = {
-            "summary": f"{inc.get('suspected_area', 'KeyError')} in order calculation endpoint.",
-            "suspected_area": inc.get("suspected_area", "app.py:45"),
-            "introduced_by": suspect_commit.get("hash", "unknown"),
-        }
+    if not brief or brief.get("error_type") in ("Arguments", "Unknown") or (isinstance(brief.get("summary"), str) and "Arguments:" in brief["summary"]):
+        from backend.prodpilot.pipeline.brief import create_brief
+        brief = create_brief(inc)
 
     # Fetch artifacts
     art_rows = get_artifacts(incident_id)
@@ -496,11 +500,23 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
     if not decision_info:
         decision_info = decide(inc, staging_info, patch_diff=artifacts_map.get("patch_diff"))
 
+    rc_report = inc.get("root_cause_report") or ""
+    clean_rc = re.sub(r"^Autonomous Watchdog detected:\s*", "", rc_report).strip()
+    if clean_rc and not clean_rc.startswith("Arguments:"):
+        detail_title = clean_rc
+    elif brief.get("error_type") and brief["error_type"] not in ("Unknown", "Arguments"):
+        err_msg_snippet = f": {brief.get('error_message')}" if brief.get("error_message") else ""
+        detail_title = f"Unhandled {brief['error_type']}{err_msg_snippet}"
+    else:
+        detail_title = inc.get("title") or f"Outage in {inc.get('service') or 'Production Service'}"
+
     res_data = {
         "id": inc["id"],
+        "title": detail_title,
         "service": inc["service"],
         "detected_at": inc["detected_at"],
         "status": inc["status"],
+        "summary": brief.get("summary") or rc_report or "Autonomous failure detection and diagnostics in progress.",
         "trace": inc.get("trace", ""),
         "log_tail": inc.get("log_tail", ""),
         "recent_commits": recent_commits,
@@ -627,6 +643,28 @@ def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
     prev_status = inc.get("status", "UNKNOWN")
     update_incident_status(incident_id, "MANUAL_TAKEOVER")
 
+    # 1. Immediately signal in-flight orchestrator background workers to halt
+    try:
+        from backend.prodpilot.pipeline.orchestrator import disengage_incident_pipeline
+        disengage_incident_pipeline(incident_id)
+    except Exception as e:
+        logger.warning(f"Could not signal pipeline disengagement: {e}")
+
+    # 2. Immediately disengage Twilio voice hotline companion if active
+    try:
+        from backend.prodpilot.integrations.twilio_client import update_active_voice_call, get_active_voice_call, hangup_call
+        active_call = get_active_voice_call(incident_id=incident_id)
+        if active_call.get("is_active"):
+            update_active_voice_call(
+                step="ACTION_EXECUTED",
+                step_label="Manual Takeover Active",
+                status="completed"
+            )
+            if active_call.get("call_sid"):
+                hangup_call(active_call["call_sid"])
+    except Exception as e:
+        logger.warning(f"Could not disengage active voice session: {e}")
+
     msg = f"[BUTTON: TAKEOVER] SUCCESS: Operator initiated manual takeover for incident #{incident_id[:8]} ({svc}). Autonomous pipeline paused (previous state: {prev_status})."
     log_event(
         run_id=None,
@@ -641,18 +679,49 @@ def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
     )
     insert_service_log(service=svc, level="WARN", message=msg)
 
-    # Post comment to GitHub issue
+    # 3. Post takeover comment to GitHub issue
     try:
         from backend.prodpilot.pipeline.github_pr_workflow import post_github_issue_comment
-        takeover_comment = f"""### Manual Takeover
+        takeover_comment = f"""### 🧑‍💻 Manual Takeover Initiated
 
-- **Status**: `MANUAL_TAKEOVER`
-- **Action**: Manual control assumed by operator from dashboard.
+- **Remediation Status**: `MANUAL_TAKEOVER`
+- **Operator Action**: Manual control assumed by operator from dashboard.
 - **Environment**: Isolated worktrees and canary instances (ports 8001 and 8002) preserved for inspection.
+- **Autonomous Remediation**: Suspended. Autonomous agent will not open PRs or merge changes.
 """
         post_github_issue_comment(incident_id, takeover_comment)
     except Exception as e:
         logger.warning(f"Could not post takeover comment to GitHub issue: {e}")
+
+    # 4. If a GitHub PR was already created before takeover, annotate it with a safety notice
+    try:
+        art_rows = get_artifacts(incident_id)
+        pr_artifact = next((a for a in art_rows if a.get("kind") == "github_pr"), None)
+        if pr_artifact:
+            pr_data = json.loads(pr_artifact.get("content") or "{}")
+            pr_num = pr_data.get("pr_number")
+            if pr_num:
+                from backend.prodpilot.pipeline.github_pr_workflow import resolve_repo_slug_and_token
+                from backend.prodpilot.integrations.github_client import GitHubClient
+                active = get_active_repo()
+                target_repo = (active or {}).get("local_path")
+                if target_repo:
+                    slug, token = resolve_repo_slug_and_token(target_repo)
+                    if slug and token:
+                        gh_client = GitHubClient(token=token)
+                        pr_warning = (
+                            "### ⚠️ Manual Takeover Initiated\n\n"
+                            "Operator has assumed manual control of this incident from the ProdPilot dashboard.\n"
+                            "**Autonomous merge, deployment, and remediation are suspended.**\n\n"
+                            "*Reviewers: Do not merge this pull request without direct on-call engineer authorization.*"
+                        )
+                        gh_client.add_issue_comment(slug, pr_num, pr_warning)
+                        try:
+                            gh_client.add_labels_to_issue(slug, pr_num, ["manual-takeover"])
+                        except Exception:
+                            pass
+    except Exception as e:
+        logger.warning(f"Could not tag existing PR for takeover: {e}")
 
     return {
         "ok": True,
@@ -660,6 +729,50 @@ def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
         "incident_id": incident_id,
         "message": f"Manual takeover successful for incident {incident_id}",
     }
+
+
+@app.post("/incidents/{incident_id}/resume")
+def resume_incident_endpoint(incident_id: str) -> Dict[str, Any]:
+    """Resumes an incident from MANUAL_TAKEOVER or ON_HOLD back to active remediation or approval."""
+    inc = get_incident(incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    svc = inc.get("service") or "service"
+    try:
+        from backend.prodpilot.pipeline.orchestrator import resume_incident_pipeline
+        resume_incident_pipeline(incident_id)
+    except Exception as e:
+        logger.warning(f"Could not clear disengagement signal: {e}")
+
+    art_rows = get_artifacts(incident_id)
+    has_diff = any(a.get("kind") == "patch_diff" for a in art_rows)
+    has_pr = any(a.get("kind") == "github_pr" for a in art_rows)
+
+    new_st = "AWAITING_APPROVAL" if (has_diff or has_pr) else "INVESTIGATING"
+    update_incident_status(incident_id, new_st)
+
+    msg = f"[BUTTON: RESUME] SUCCESS: Operator resumed incident #{incident_id[:8]} ({svc}) to {new_st}. Autonomous pipeline re-engaged."
+    log_event(None, incident_id, "RESUME", "resumed", {"message": msg, "action": "resume", "new_status": new_st})
+    insert_service_log(service=svc, level="INFO", message=msg)
+
+    try:
+        from backend.prodpilot.pipeline.github_pr_workflow import post_github_issue_comment
+        resume_comment = f"""### 🔄 Autonomous Pipeline Resumed
+- **Remediation Status**: `{new_st}`
+- **Action**: Operator released manual takeover and resumed autonomous remediation flow.
+"""
+        post_github_issue_comment(incident_id, resume_comment)
+    except Exception as e:
+        logger.warning(f"Could not post resume comment: {e}")
+
+    return {
+        "ok": True,
+        "status": new_st,
+        "incident_id": incident_id,
+        "message": f"Incident resumed to {new_st}",
+    }
+
 
 
 @app.post("/platform/audit-log")

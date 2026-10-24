@@ -393,7 +393,7 @@ def find_active_incident_by_service(service: str, suspected_area: Optional[str] 
         cursor = conn.execute(
             """
             SELECT * FROM incidents
-            WHERE service = ? AND status IN ('OPEN', 'DETECTED', 'INVESTIGATING', 'TRIAGED', 'REPRODUCED', 'FIXING', 'STAGED', 'AWAITING_APPROVAL')
+            WHERE service = ? AND status IN ('OPEN', 'DETECTED', 'INVESTIGATING', 'TRIAGED', 'REPRODUCED', 'FIXING', 'STAGED', 'AWAITING_APPROVAL', 'MANUAL_TAKEOVER')
             ORDER BY detected_at DESC LIMIT 1
             """,
             (service,)
