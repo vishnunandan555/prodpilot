@@ -644,10 +644,11 @@ def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
     # Post comment to GitHub issue
     try:
         from backend.prodpilot.pipeline.github_pr_workflow import post_github_issue_comment
-        takeover_comment = f"""### 🧑‍💻 Manual Takeover Initiated
-- **Remediation Status**: `MANUAL_TAKEOVER`
-- **Operator Action**: Manual takeover initiated from dashboard.
-- **Environment**: Isolated worktrees and side-port canaries (8001 / 8002) are preserved for engineer inspection.
+        takeover_comment = f"""### Manual Takeover
+
+- **Status**: `MANUAL_TAKEOVER`
+- **Action**: Manual control assumed by operator from dashboard.
+- **Environment**: Isolated worktrees and canary instances (ports 8001 and 8002) preserved for inspection.
 """
         post_github_issue_comment(incident_id, takeover_comment)
     except Exception as e:

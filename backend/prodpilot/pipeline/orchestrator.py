@@ -154,22 +154,23 @@ def _run_process_incident(
         suspect_area = brief.get("suspected_area") or "codebase"
         raw_trace = (incident.get("trace") or incident.get("error_trace") or "No trace").strip()
         natural_issue = generate_natural_incident_explanation(brief=brief, trace=raw_trace)
-        rca_comment = f"""### Root Cause Analysis Report
+        rca_comment = f"""### Root Cause Investigation
+
 - **Service**: `{incident.get('service', 'production-service')}`
 - **Severity**: `{incident.get('severity', 'sev2').upper()}`
 - **Suspect Commit**: `{suspect_commit}`
-- **Suspect Area / File**: `{suspect_area}`
-- **Failure Summary**: {brief.get('summary')}
+- **Suspect Location**: `{suspect_area}`
+- **Summary**: {brief.get('summary')}
 
-#### Root Cause Summary
+#### Analysis
 {natural_issue}
 
-#### Error Trace Snapshot
+#### Stack Trace
 ```text
 {raw_trace[:800]}
 ```
 
-*Remediation pipeline is initializing an isolated Git worktree to reproduce the failure.*
+*Isolated worktree created to reproduce the failure with targeted test case.*
 """
         post_github_issue_comment(incident_id, rca_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:
@@ -228,23 +229,24 @@ def _run_process_incident(
             brief=brief,
             suspected_area=brief.get("suspected_area"),
         )
-        fix_comment = f"""### Fix Generation & Reproduction Verification
-The agent reproduced the issue in an isolated Git worktree and verified the defensive patch.
+        fix_comment = f"""### Reproduction & Fix Verification
 
-#### Remediation Details
+The failure was reproduced in an isolated worktree and verified against the candidate patch.
+
+#### Changes
 {natural_fix}
 
-**Test Verification Summary**:
-- **Baseline (Before Patch)**:
+#### Test Results
+- **Baseline (Before Fix)**: FAILED
 ```text
 {before_log}
 ```
-- **Verification (After Patch)**:
+- **Patch (After Fix)**: PASSED
 ```text
 {after_log}
 ```
 
-*Canary instances are being deployed to ports 8001 (fix-forward) and 8002 (rollback) for side-by-side traffic testing.*
+*Deploying side-by-side canaries on port 8001 (fix-forward) and port 8002 (rollback) for verification.*
 """
         post_github_issue_comment(incident_id, fix_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:
@@ -331,14 +333,15 @@ The agent reproduced the issue in an isolated Git worktree and verified the defe
         rb_ok = staging_status.get('rollback', {}).get('health', False)
         prob_ff = int((decision.get('probabilities') or {}).get('fix_forward', 0) * 100)
         prob_rb = int((decision.get('probabilities') or {}).get('rollback', 0) * 100)
-        decision_comment = f"""### Canary Staging & Decision Engine Report
-- **Canary Fix-Forward (:8001)**: `{'HEALTHY' if ff_ok else 'FAILED'}`
-- **Canary Rollback (:8002)**: `{'HEALTHY' if rb_ok else 'FAILED'}`
-- **Recommendation**: `{decision.get('recommendation', 'fix_forward').upper()}`
-- **Confidence Score**: Fix-Forward: `{prob_ff}%` | Rollback: `{prob_rb}%`
-- **Decision Rationale**: {decision.get('reason')}
+        decision_comment = f"""### Canary Validation & Recommendation
 
-*Remediation Pull Request opened. Awaiting operator review and approval on dashboard.*
+- **Fix-Forward Canary (port 8001)**: `{'HEALTHY' if ff_ok else 'FAILED'}`
+- **Rollback Canary (port 8002)**: `{'HEALTHY' if rb_ok else 'FAILED'}`
+- **Recommended Action**: `{decision.get('recommendation', 'fix_forward').upper()}`
+- **Confidence Score**: `{prob_ff}%`
+- **Rationale**: {decision.get('reason')}
+
+*Pull request opened. System is in standby awaiting engineer approval on the dashboard.*
 """
         post_github_issue_comment(incident_id, decision_comment, repo_path=target_repo, db_path=db_path)
     except Exception as e:

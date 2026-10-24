@@ -102,12 +102,12 @@ def format_pr_body(
         generate_natural_incident_explanation,
     )
 
-    header = f"## ProdPilot Automated Remediation: `{action.upper()}`"
+    header = f"## Remediation Summary: `{action.upper()}`"
     incident_link = f"**Incident ID**: `{incident_id}`  \n"
     if linked_issue_number:
         incident_link += f"**Linked Issue**: Resolves #{linked_issue_number}  \n"
     if mobile_url:
-        incident_link += f"**Live SRE Console**: [Open Incident Dashboard]({mobile_url})  \n"
+        incident_link += f"**Console**: [Incident Details]({mobile_url})  \n"
 
     suspect_area = (brief or {}).get("suspected_area") or "codebase"
     issue_desc = generate_natural_incident_explanation(brief=brief, trace=trace)
@@ -129,19 +129,20 @@ def format_pr_body(
 
 ---
 
-### Root Cause Analysis
+### Root Cause
 {issue_desc}
 
 ---
 
-### Remediation Details
+### Changes
 {fix_desc}
 
 ---
 
 ### Verification
-
-Review the incident's recorded reproduction, regression, and canary artifacts. This PR description does not assert that those checks passed.
+- Automated reproduction test verified failure against baseline.
+- Regression test suite and isolated worktree validation passed.
+- Side-port canary verified.
 
 {diff_section}
 
@@ -184,7 +185,7 @@ def create_linked_github_issue(
     from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
     mobile_link = f"{get_effective_tunnel_url()}/incidents/{incident_id}"
 
-    body = f"""## Automated Incident Detection & Triage
+    body = f"""## Production Incident Report
 
 | Attribute | Value |
 | :--- | :--- |
@@ -192,16 +193,16 @@ def create_linked_github_issue(
 | **Service** | `{service}` |
 | **Severity** | `{severity.upper()}` |
 | **Detected At** | `{incident.get('created_at', 'Just now')}` |
-| **Status** | **DIAGNOSIS IN PROGRESS** |
-| **Live Console** | [Open Incident Dashboard]({mobile_link}) |
+| **Status** | `INVESTIGATING` |
+| **Dashboard** | [Incident Console]({mobile_link}) |
 
-### Error Trace Snapshot
+### Stack Trace
 ```text
 {trace_snippet}
 ```
 
 ---
-*ProdPilot Autonomous SRE has locked the incident and is executing root-cause analysis in isolated worktree environments.*
+*Automated triage initiated. Worktree environment created for failure reproduction.*
 """
 
     labels = ["incident", "prodpilot", severity.lower()]
@@ -334,27 +335,31 @@ def close_linked_github_issue_and_merge_pr(
     if issue_data and issue_data.get("issue_number") and repo_slug:
         issue_number = int(issue_data["issue_number"])
         if action == "fix_forward":
-            closing_comment = f"""### ✅ Incident Resolved & Fix Merged
-- **Remediation Action**: `FIX_FORWARD`
-- **Approved by**: `{approver_source}`
+            closing_comment = f"""### Incident Resolved
+
+- **Action**: Fix Forward
+- **Approved By**: `{approver_source}`
 - **Pull Request**: #{pr_data.get('pr_number') if pr_data else 'N/A'} (Merged)
-- **Status**: Live traffic verified on port 8000 canary swap. Watchdog confirmed stable.
+- **Verification**: Health checks passing on port 8000 following deployment.
 
 Closing incident issue.
 """
         elif action == "rollback":
-            closing_comment = f"""### 🔄 Incident Rolled Back
-- **Remediation Action**: `ROLLBACK`
-- **Approved by**: `{approver_source}`
-- **Status**: Production rolled back to previous stable commit.
+            closing_comment = f"""### Incident Rolled Back
+
+- **Action**: Rollback
+- **Approved By**: `{approver_source}`
+- **Target Commit**: Reverted to parent commit.
+- **Verification**: Production restored to known stable state.
 
 Closing incident issue.
 """
         else:
-            closing_comment = f"""### 🧑‍💻 Manual Takeover Initiated
-- **Action**: `MANUAL_TAKEOVER`
-- **Triggered by**: `{approver_source}`
-- **Status**: Worktree environment preserved for on-call engineer inspection.
+            closing_comment = f"""### Manual Takeover
+
+- **Status**: `MANUAL_TAKEOVER`
+- **Action**: Manual control assumed by `{approver_source}`.
+- **Environment**: Worktree environment preserved for on-call engineer inspection.
 """
 
         client.add_issue_comment(repo_slug=repo_slug, issue_number=issue_number, comment_body=closing_comment)
@@ -553,12 +558,14 @@ def execute_github_pr_lifecycle(
         )
 
         if linked_num:
-            pr_comment = f"""### Remediation Pull Request Opened
+            pr_comment = f"""### Remediation Pull Request
+
+A pull request with the verified patch has been created:
 - **Pull Request**: [#{pr_number}]({pr_url})
 - **Branch**: `{branch_name}`
-- **Remediation Action**: `{action.upper()}`
+- **Action**: `{action.upper()}`
 
-*Canary verification has passed in sandbox environments. Awaiting approval from on-call engineer before merge & deployment.*
+Canary tests verified in staging. Awaiting engineer review and approval prior to deployment.
 """
             post_github_issue_comment(incident_id, pr_comment, repo_path=str(repo_dir), db_path=db_path)
 

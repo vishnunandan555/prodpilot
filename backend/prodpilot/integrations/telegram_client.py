@@ -167,20 +167,20 @@ def generate_natural_fix_explanation(
 
     if "ZeroDivisionError" in combined or "time_delta" in diff_text or "max(" in diff_text:
         return (
-            "Added a defensive floor to the time delta calculation (`max(delta, 0.001)`), "
+            "Added a floor to the time delta calculation (`max(delta, 0.001)`), "
             "preventing sub-second intervals from evaluating to zero and triggering a ZeroDivisionError. "
-            "Also added defensive exception formatting fallback handling in the logging handler to guarantee safe log capture."
+            "Added fallback handling in the logging handler to ensure safe log capture."
         )
     if "streak" in diff_text or "ACK" in combined or "TimeoutError" in combined:
         return (
-            "Added a defensive check for client acknowledgements in the streaming loop. "
+            "Added a check for client acknowledgements in the streaming loop. "
             "The patch resets the consecutive unacknowledged chunk streak counter on partial ACKs "
-            "and adds a graceful timeout recovery guard clause, preventing the transfer stream from halting."
+            "and adds a timeout recovery guard, preventing the transfer stream from halting."
         )
     if ".get(" in diff_text or "KeyError" in combined:
         return (
-            "Replaced direct subscript dictionary access with safe .get() access providing a default fallback. "
-            "Added input validation guard clauses to safely handle missing fields in incoming payloads."
+            "Replaced direct subscript dictionary access with `.get()` and default fallback values. "
+            "Added input validation guards to handle missing payload fields safely."
         )
 
     # Generic diff analysis
@@ -188,13 +188,11 @@ def generate_natural_fix_explanation(
     if added_lines:
         first_few = "; ".join(added_lines[:2])
         return (
-            f"Applied targeted guard clauses to intercept the crash path ({first_few}). "
-            f"Safely handles unexpected edge-case inputs while preserving all existing behaviors."
+            f"Applied guard clauses to intercept the crash path ({first_few}) and handle unexpected inputs while preserving existing behavior."
         )
 
     return (
-        "Synthesized targeted guard clauses to safely intercept the crash condition before execution, "
-        "adding safe fallback handling while preserving 100% backward compatibility."
+        "Applied targeted guard clauses to intercept the crash condition and added fallback handling while preserving existing behavior."
     )
 
 
