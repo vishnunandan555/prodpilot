@@ -394,18 +394,20 @@ class RenderClient:
                 if logs_res.status_code == 200:
                     raw_logs = logs_res.json().get("logs", [])
 
+                    def is_caret_or_frame_fragment(s: str) -> bool:
+                        s_strip = s.strip()
+                        return bool(re.match(r"^[\s\^~|().\-]+$", s_strip) or "...<" in s_strip)
+
                     def is_new_log_boundary(s: str) -> bool:
-                        return (
-                            s.startswith("INFO:")
-                            or s.startswith("DEBUG:")
-                            or s.startswith("WARNING:")
-                            or s.startswith("[2026-")
+                        if is_caret_or_frame_fragment(s):
+                            return False
+                        return bool(
+                            re.match(r"^(INFO|DEBUG|WARNING|WARN|ERROR|CRITICAL|FATAL):", s, re.IGNORECASE)
+                            or re.match(r"^\[\d{4}-\d{2}-\d{2}", s)
+                            or re.match(r"^\d{4}-\d{2}-\d{2}", s)
+                            or re.match(r"^\[(INFO|DEBUG|WARN|WARNING|ERROR|CRITICAL|FATAL)\]", s, re.IGNORECASE)
+                            or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\s+-\s+\"(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)", s)
                             or s.startswith("==>")
-                            or s.startswith("HEAD ")
-                            or s.startswith("GET ")
-                            or s.startswith("POST ")
-                            or s.startswith("PUT ")
-                            or s.startswith("DELETE ")
                         )
 
                     def is_traceback_start(s: str) -> bool:
@@ -414,10 +416,12 @@ class RenderClient:
                             s.startswith("Traceback (most recent call last):")
                             or s.startswith("--- Logging error ---")
                             or s.startswith('File "')
+                            or s.startswith("await ")
                             or "fatal application crash:" in s_low
                             or "zerodivisionerror" in s_low
                             or "during handling of the above exception" in s_low
                             or "call stack:" in s_low
+                            or bool(re.match(r"^[A-Z][a-zA-Z0-9_]*(?:Error|Exception):", s))
                         )
 
                     tb_buffer = []
@@ -432,7 +436,7 @@ class RenderClient:
 
                         combined_text = "\n".join(tb_buffer)
                         err_summary = "Application Exception"
-                        err_m = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|Exception|Error):[^\n]+)", combined_text)
+                        err_m = re.search(r"((?:ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|ConnectionResetError|Exception|Error):[^\n]+)", combined_text)
                         if err_m:
                             err_summary = err_m.group(1).strip()
                         elif "FATAL APPLICATION CRASH" in combined_text:
@@ -478,6 +482,10 @@ class RenderClient:
                             if is_traceback_start(clean_msg):
                                 tb_buffer.append(clean_msg)
                                 tb_start_item = item
+                            elif is_caret_or_frame_fragment(clean_msg):
+                                # Fragment/caret line from truncated log batch - attach to previous traceback if exists
+                                if logs and logs[-1].get("is_traceback"):
+                                    logs[-1]["message"] += "\n" + clean_msg
                             else:
                                 logs.append({
                                     "id": item.get("id"),
@@ -491,8 +499,8 @@ class RenderClient:
                     if tb_buffer:
                         flush_tb()
 
-                # Sort logs by timestamp descending (newest first)
-                logs.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+                # Sort logs chronologically (oldest first at top, newest streaming at bottom)
+                logs.sort(key=lambda x: x.get("timestamp") or "", reverse=False)
 
                 # Cache recent logs for rate limit fallbacks
                 _LAST_LOGS_CACHE[sid] = {

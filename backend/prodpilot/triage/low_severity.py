@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from backend.prodpilot.db import create_incident_with_fingerprint, log_event
+from backend.prodpilot.db import create_incident_with_fingerprint, log_event, update_incident_brief
 from backend.prodpilot.triage.classifier import TriageResult
 
 logger = logging.getLogger(__name__)
@@ -62,11 +62,17 @@ def handle_low_severity(
         trace=triage_result.trace,
         log_tail=triage_result.log_tail,
         suspected_area=triage_result.suspected_area or "warning_logs",
-        root_cause_report=json.dumps(brief, indent=2),
+        root_cause_report=brief["summary"],
         recovery_action="WAITING_FOR_DEVELOPER",
         fingerprint=triage_result.fingerprint,
         db_path=db_path,
     )
+
+    # Store structured brief in brief_json
+    try:
+        update_incident_brief(incident_id, brief, db_path=db_path)
+    except Exception as e:
+        logger.debug(f"Failed to update brief_json: {e}")
 
     # Log an event for observability
     try:

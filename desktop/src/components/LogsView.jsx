@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Terminal,
   Search,
@@ -18,10 +18,11 @@ import {
   Zap,
   ArrowRight,
   Bug,
-  ArrowDown
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
-import { formatIncidentId, isIncidentActive, isIncidentInactive } from '../utils/formatters';
+import { formatIncidentId, isIncidentActive, isIncidentInactive, formatTime } from '../utils/formatters';
 
 export default function LogsView({
   apiUrl = 'http://127.0.0.1:8765',
@@ -55,14 +56,20 @@ export default function LogsView({
   const [triageAlert, setTriageAlert] = useState(null);
   const [collapsedTracebacks, setCollapsedTracebacks] = useState({});
   const [autoScroll, setAutoScroll] = useState(true);
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' = chronological (oldest at top, newest at bottom)
   const logsEndRef = useRef(null);
+  const logsTopRef = useRef(null);
 
-  // Auto-scroll when logs change if enabled
+  // Auto-scroll when logs change if enabled (tracks newest logs based on sort direction)
   useEffect(() => {
-    if (autoScroll && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (autoScroll) {
+      if (sortOrder === 'asc' && logsEndRef.current) {
+        logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else if (sortOrder === 'desc' && logsTopRef.current) {
+        logsTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
-  }, [logs.length, autoScroll]);
+  }, [logs.length, autoScroll, sortOrder]);
 
   // Auto-refresh cadence: 15s default (consumes 4 req/min of 30 quota, leaving 26 for manual refreshes)
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(15);
@@ -318,6 +325,14 @@ export default function LogsView({
     return true;
   });
 
+  const sortedLogs = useMemo(() => {
+    return [...filteredLogs].sort((a, b) => {
+      const tsA = a.timestamp || '';
+      const tsB = b.timestamp || '';
+      return sortOrder === 'asc' ? tsA.localeCompare(tsB) : tsB.localeCompare(tsA);
+    });
+  }, [filteredLogs, sortOrder]);
+
   const getLevelStyle = (level) => {
     switch (level?.toUpperCase()) {
       case 'ERROR':
@@ -547,6 +562,17 @@ export default function LogsView({
               ))}
             </div>
 
+            {/* Sort Order Toggle */}
+            <button
+              type="button"
+              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="px-2 py-1 rounded text-[10px] font-mono transition border flex items-center gap-1 bg-[#07090f] text-[#8b949e] hover:text-[#f0f6fc] border-[#1b2234]"
+              title="Toggle log order: Chronological (oldest at top, newest streaming at bottom) vs Newest First"
+            >
+              <ArrowUpDown size={10} />
+              <span>{sortOrder === 'asc' ? 'Order: Live Stream (▲)' : 'Order: Newest First (▼)'}</span>
+            </button>
+
             {/* Auto-scroll toggle */}
             <button
               type="button"
@@ -567,6 +593,7 @@ export default function LogsView({
 
       {/* Log Feed */}
       <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-2.5 bg-[#080b11]">
+        <div ref={logsTopRef} />
         {/* Triage Action Alert Notification */}
         {triageAlert && (
           <div
@@ -691,7 +718,7 @@ export default function LogsView({
             </div>
             <LogStreamSkeleton count={9} />
           </div>
-        ) : filteredLogs.length === 0 ? (
+        ) : sortedLogs.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[#6e7681] space-y-3">
             <Terminal size={36} className="text-[#2b354b]" />
             <div>
@@ -712,7 +739,7 @@ export default function LogsView({
             </div>
           </div>
         ) : (
-          filteredLogs.map((log, idx) => {
+          sortedLogs.map((log, idx) => {
             const logKey = log.id || `log-${idx}`;
 
             // SPECIALIZED SENTRY-GRADE TRACEBACK CARD
@@ -739,7 +766,7 @@ export default function LogsView({
                         </span>
                       )}
                       <span className="text-[#8b949e] text-[10px] font-mono">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
+                        {formatTime(log.timestamp, 'LIVE')}
                       </span>
                     </div>
 
@@ -805,7 +832,7 @@ export default function LogsView({
                 className="group flex items-start gap-3 px-3 py-2 rounded bg-[#0d111a]/70 hover:bg-[#121824] border border-[#1b2234]/50 transition"
               >
                 <span className="text-[#485263] select-none text-[11px] min-w-[70px] shrink-0 font-mono">
-                  {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'LIVE'}
+                  {formatTime(log.timestamp, 'LIVE')}
                 </span>
 
                 <span
