@@ -31,12 +31,12 @@ export default function WindowHeader({
           {apiConnected ? (
             <span className="flex items-center gap-1.5 text-[#3fb950] px-2 py-0.5 rounded bg-[#0d1e17] border border-[#1b3d2b] text-[11px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
-              <span>Connected</span>
+              <span>System Online</span>
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-[#ff7b72] px-2 py-0.5 rounded bg-[#261317] border border-[#4a1c24] text-[11px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-[#ff7b72]" />
-              <span>Daemon Offline</span>
+              <span>Backend Offline</span>
             </span>
           )}
         </div>

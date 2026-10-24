@@ -8,6 +8,7 @@ import {
   AlertOctagon,
   Award
 } from 'lucide-react';
+import { formatIncidentId, formatDate } from '../utils/formatters';
 
 export default function PostMortemReport({ incident, events = [] }) {
   const [copied, setCopied] = useState(false);
@@ -24,11 +25,11 @@ export default function PostMortemReport({ incident, events = [] }) {
     incident?.brief?.summary ||
     incident?.description ||
     incident?.title ||
-    `Production error detected on ${incident?.service || 'service'}. Autonomous remediation pipeline investigated root cause, verified candidate mitigation in an isolated worktree, and restored healthy operational state.`;
+    `Production error detected on ${incident?.service || 'service'}. Automated diagnosis and verification pipeline investigated root cause, validated patch mitigation in an isolated worktree, and restored service health.`;
 
   const diffBlock = artifacts.patch_diff || incident?.diff || 'No file changes committed (operational or configuration action taken).';
 
-  const markdownReport = `# 📋 Incident Post-Mortem: ${incident?.id || 'INCIDENT'}
+  const markdownReport = `# Incident Post-Mortem: ${formatIncidentId(incident?.id) || 'INCIDENT'} (${incident?.id || ''})
 **Service**: ${incident?.service || 'target-service'}  
 **Status**: ${incident?.status || 'RESOLVED'}  
 **Severity**: ${incident?.severity || 'HIGH'}  

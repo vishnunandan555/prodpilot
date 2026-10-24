@@ -977,7 +977,81 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
 
     deploy_target = os.environ.get("PRODPILOT_DEPLOY_TARGET", "disabled").strip().lower()
 
+    def is_service_enabled(sid: str) -> bool:
+        val = get_setting(f"SERVICE_ENABLED_{sid.upper()}")
+        if val is None:
+            return True
+        return str(val).strip().lower() not in ("false", "0", "off", "no")
+
     services = [
+        {
+            "id": "telegram",
+            "name": "Telegram Alert & Approval Bot",
+            "role": "Instant Push Notifications & 1-Tap Approvals",
+            "category": "Notifications",
+            "status": tg_status,
+            "activity": tg_activity,
+            "configured": bool(tg_token),
+            "latency_ms": 42.0 if tg_token else None,
+            "config_hint": "TELEGRAM_BOT_TOKEN in Settings",
+        },
+        {
+            "id": "twilio",
+            "name": "Twilio Emergency Voice Call",
+            "role": "Sev-1 Outbound Phone Call with DTMF Triage",
+            "category": "Voice Escalation",
+            "status": twilio_status,
+            "activity": twilio_activity,
+            "configured": twilio_configured,
+            "latency_ms": None,
+            "config_hint": "TWILIO_ACCOUNT_SID & AUTH_TOKEN in Settings",
+        },
+        {
+            "id": "render_watchdog",
+            "name": "Render Telemetry Watchdog",
+            "role": "Continuous Container Health Prober & Logs",
+            "category": "Infrastructure Ingest",
+            "status": watchdog_status,
+            "activity": watchdog_activity,
+            "configured": bool(has_render and render_key),
+            "latency_ms": active_srv.get("latency_ms", 12.0) if active_srv else None,
+            "config_hint": "Production Servers -> Attach Render Service ID" if not has_render else "RENDER_API_KEY in Settings",
+        },
+        {
+            "id": "antigravity",
+            "name": "Autonomous AI Remediation",
+            "role": "Git Worktree Repro & Dual Canary Staging",
+            "category": "Remediation",
+            "status": antigravity_status,
+            "activity": antigravity_activity,
+            "configured": bool(gemini_key),
+            "latency_ms": 28.0 if gemini_key else None,
+            "config_hint": "GEMINI_API_KEY in environment" if not gemini_key else "Gemini Code Engine ready",
+        },
+        {
+            "id": "auto_revert",
+            "name": "10s Safety Auto-Revert",
+            "role": "Post-Deploy Safety Watchdog Rollback",
+            "category": "Deployment Guard",
+            "status": "ONLINE",
+            "activity": "Continuous 10s health check watchdog on port 8000; auto-rolls back faulty patches",
+            "configured": True,
+            "latency_ms": None,
+            "config_hint": "Zero-downtime safety guard",
+        },
+        {
+            "id": "tunnel",
+            "name": "Cloudflare Tunnel Ingress",
+            "role": "Public Mobile Gateway & Webhook Ingress",
+            "category": "Gateway",
+            "status": tunnel_status,
+            "activity": tunnel_activity,
+            "configured": bool(tunnel_url),
+            "tunnel_url": tunnel_url,
+            "is_running": is_tunnel_running,
+            "latency_ms": 18.0 if tunnel_url else None,
+            "config_hint": "CLOUDFLARE_TUNNEL_URL in Settings",
+        },
         {
             "id": "jev",
             "name": "Jev Decision Engine (System 1)",
@@ -989,64 +1063,16 @@ def get_platform_services_endpoint() -> Dict[str, Any]:
             "latency_ms": 35.0 if jev_key else None,
             "config_hint": "JEV_API_KEY in Settings",
         },
-        {
-            "id": "antigravity",
-            "name": "Antigravity SDK (Gemini Code Engine)",
-            "role": "Code Blame & Worktree Patching",
-            "category": "Remediation",
-            "status": antigravity_status,
-            "activity": antigravity_activity,
-            "configured": bool(gemini_key),
-            "latency_ms": 28.0 if gemini_key else None,
-            "config_hint": "GEMINI_API_KEY in environment" if not gemini_key else "Gemini Code Engine ready",
-        },
-        {
-            "id": "telegram",
-            "name": "Telegram Alert & Approval Bot",
-            "role": "Interactive Push Alerts & Callbacks",
-            "category": "Notifications",
-            "status": tg_status,
-            "activity": tg_activity,
-            "configured": bool(tg_token),
-            "latency_ms": 42.0 if tg_token else None,
-            "config_hint": "TELEGRAM_BOT_TOKEN in Settings",
-        },
-        {
-            "id": "twilio",
-            "name": "Twilio Voice Call Service",
-            "role": "Sev-1 Emergency On-Call Escalation",
-            "category": "Voice Escalation",
-            "status": twilio_status,
-            "activity": twilio_activity,
-            "configured": twilio_configured,
-            "latency_ms": None,
-            "config_hint": "TWILIO_ACCOUNT_SID & AUTH_TOKEN in Settings",
-        },
-        {
-            "id": "render_watchdog",
-            "name": "Render Telemetry Watchdog",
-            "role": "Live Container Logs & Health Prober",
-            "category": "Infrastructure Ingest",
-            "status": watchdog_status,
-            "activity": watchdog_activity,
-            "configured": bool(has_render and render_key),
-            "latency_ms": active_srv.get("latency_ms", 12.0) if active_srv else None,
-            "config_hint": "Production Servers -> Attach Render Service ID" if not has_render else "RENDER_API_KEY in Settings",
-        },
-        {
-            "id": "tunnel",
-            "name": "Cloudflare Tunnel Ingress",
-            "role": "Secure Mobile Gateway & Webhooks",
-            "category": "Gateway",
-            "status": tunnel_status,
-            "activity": tunnel_activity,
-            "configured": bool(tunnel_url),
-            "tunnel_url": tunnel_url,
-            "is_running": is_tunnel_running,
-            "latency_ms": 18.0 if tunnel_url else None,
-            "config_hint": "CLOUDFLARE_TUNNEL_URL in Settings",
-        },
     ]
+
+    for svc in services:
+        sid = svc["id"]
+        enabled = is_service_enabled(sid)
+        svc["enabled"] = enabled
+        if not enabled:
+            if svc["status"] == "ONLINE":
+                svc["status"] = "MUTED"
+            svc["activity"] = f"Muted by operator — {svc['name']} is temporarily turned off."
 
     return {"services": services, "count": len(services), "deploy_target": deploy_target}
 
@@ -1292,7 +1318,53 @@ def ping_platform_service_endpoint(service_id: str) -> Dict[str, Any]:
             "message": f"Cloudflare Tunnel probed: {probe['status']}",
         }
 
+    elif service_id == "twilio":
+        from backend.prodpilot.integrations.twilio_client import verify_twilio_credentials
+        res = verify_twilio_credentials()
+        lat = round((time.time() - t0) * 1000, 1)
+        res["latency_ms"] = lat
+        return res
+
+    elif service_id == "auto_revert":
+        lat = round((time.time() - t0) * 1000, 1)
+        val = get_setting("SERVICE_ENABLED_AUTO_REVERT")
+        en = True if val is None else str(val).strip().lower() not in ("false", "0", "off", "no")
+        return {
+            "ok": en,
+            "status": "ONLINE" if en else "MUTED",
+            "latency_ms": lat,
+            "message": "10s Safety Auto-Revert watchdog active" if en else "10s Safety Auto-Revert is muted by operator",
+        }
+
     raise HTTPException(status_code=404, detail="Service not found")
+
+
+class ToggleServiceRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/platform-services/{service_id}/toggle")
+def toggle_platform_service_endpoint(service_id: str, body: ToggleServiceRequest) -> Dict[str, Any]:
+    key = f"SERVICE_ENABLED_{service_id.upper()}"
+    val_str = "true" if body.enabled else "false"
+    set_setting(key, val_str)
+    log_event(
+        run_id=None,
+        incident_id=None,
+        stage="CONFIG",
+        kind="service_toggled",
+        payload={
+            "service_id": service_id,
+            "enabled": body.enabled,
+            "message": f"Service '{service_id}' {'enabled' if body.enabled else 'disabled'} by operator",
+        },
+    )
+    return {
+        "ok": True,
+        "service_id": service_id,
+        "enabled": body.enabled,
+        "message": f"Service '{service_id}' successfully {'enabled' if body.enabled else 'disabled'}",
+    }
 
 
 # ---------------------------------------------------------

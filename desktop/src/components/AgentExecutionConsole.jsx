@@ -125,9 +125,9 @@ export default function AgentExecutionConsole({
   const handleCopyAllTerminal = () => {
     const fullText = unifiedStream.map((item) => {
       let line = `[${item.ts}] [${item.stage}] `;
-      if (item.isThought) line += `🧠 ${item.headline}`;
+      if (item.isThought) line += `[PLAN] ${item.headline}`;
       else if (item.commandLine) line += `$ ${item.commandLine}`;
-      else if (item.targetFile) line += `⚙️ [${item.toolName}] ${item.targetFile}`;
+      else if (item.targetFile) line += `[${item.toolName}] ${item.targetFile}`;
       else line += item.headline || item.toolName;
       if (item.result) {
         line += `\nOutput: ${typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)}`;
@@ -169,13 +169,13 @@ export default function AgentExecutionConsole({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">Autonomous SRE Agent Console</span>
+              <span className="text-xs font-bold text-[#f0f6fc] tracking-tight">Pipeline Execution Console</span>
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161f30] text-[#58a6ff] border border-[#2b3a58]">
-                Native Antigravity Engine
+                Worktree Sandbox Runner
               </span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Real-time terminal execution stream, cognitive thoughts & worktree sandbox
+              Real-time execution log, diagnostic steps & sandbox command stream
             </p>
           </div>
         </div>
@@ -253,7 +253,7 @@ export default function AgentExecutionConsole({
           <div className="rounded-lg bg-[#05070a] border border-[#1b2234] p-3 font-mono text-xs text-[#c9d1d9] space-y-2 max-h-[550px] overflow-y-auto select-text">
             <div className="text-[11px] text-[#58a6ff] pb-2 border-b border-[#1b2234] flex flex-wrap items-center justify-between gap-2 select-none">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-[#58a6ff]">=== Antigravity Execution Session Terminal ===</span>
+                <span className="font-semibold text-[#f0f6fc]">Execution Session Terminal</span>
                 <span className="text-[10px] text-[#8b949e] font-mono px-1.5 py-0.2 rounded bg-[#0e1420] border border-[#1e2a40]">
                   Worktree Sandbox
                 </span>
@@ -284,7 +284,7 @@ export default function AgentExecutionConsole({
             </div>
 
             {unifiedStream.length === 0 ? (
-              <div className="text-[#6e7681] italic py-4">Waiting for agent process output...</div>
+              <div className="text-[#6e7681] italic py-4">Waiting for process output...</div>
             ) : (
               <div className={`space-y-1.5 pt-1 ${wrapTerminalLines ? 'break-words' : 'overflow-x-auto'}`}>
                 {unifiedStream.map((item, idx) => (
@@ -292,7 +292,7 @@ export default function AgentExecutionConsole({
                     {item.isThought && (
                       <div className={`text-[#a371f7] text-[11px] leading-relaxed select-text ${wrapTerminalLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
                         <span className="text-[#6e7681] mr-1.5 select-none">[{item.ts}]</span>
-                        <span className="mr-1 select-none">🧠</span>
+                        <span className="mr-1.5 px-1 py-0.2 rounded bg-[#1f1430] text-[#c084fc] border border-[#3b275c] text-[9px] font-mono select-none">STEP</span>
                         <span className="select-text">{item.headline}</span>
                       </div>
                     )}
@@ -306,8 +306,7 @@ export default function AgentExecutionConsole({
                     {item.targetFile && !item.commandLine && (
                       <div className={`text-[#58a6ff] text-[11px] leading-relaxed select-text ${wrapTerminalLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
                         <span className="text-[#6e7681] mr-1.5 select-none">[{item.ts}]</span>
-                        <span className="mr-1 select-none">⚙️</span>
-                        <span className="text-[#8b949e] select-none">[{item.toolName}] </span>
+                        <span className="mr-1.5 px-1 py-0.2 rounded bg-[#162033] text-[#79c0ff] border border-[#27395b] text-[9px] font-mono select-none">{item.toolName}</span>
                         <span className="select-text font-mono">{item.targetFile}</span>
                       </div>
                     )}
@@ -489,7 +488,7 @@ export default function AgentExecutionConsole({
                   Human-in-the-Loop Approval Required
                 </h3>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
-                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review the candidate diff before promoting to local demo deployment (Port 8000). (Local process adapter; not a Render cloud deployment).
+                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review candidate diff before promoting. Approving will merge and push the patch to Git and trigger automated deployment.
                 </p>
               </div>
             </div>
@@ -501,7 +500,7 @@ export default function AgentExecutionConsole({
                 className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <Check size={14} />
-                <span>{actionLoading ? 'Deploying...' : 'Approve Local Demo Deployment (Port 8000)'}</span>
+                <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
               </button>
 
               <button
@@ -510,7 +509,7 @@ export default function AgentExecutionConsole({
                 className="px-3.5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#30363d] flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <RotateCcw size={14} className="text-[#f85149]" />
-                <span>Trigger Local Demo Rollback</span>
+                <span>Trigger Rollback</span>
               </button>
 
               <button

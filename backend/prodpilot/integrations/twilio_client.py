@@ -67,6 +67,14 @@ def verify_twilio_credentials() -> Dict[str, Any]:
 
 def initiate_voice_call(to_phone: str, webhook_url: str) -> Dict[str, Any]:
     """Places an outbound voice call to the target phone number."""
+    if (get_setting("SERVICE_ENABLED_TWILIO") or "true").strip().lower() in ("false", "0", "off", "no"):
+        logger.info("Twilio voice call skipped: SERVICE_ENABLED_TWILIO is set to false.")
+        return {
+            "ok": False,
+            "muted": True,
+            "error": "Twilio emergency voice call is disabled in Service Management",
+        }
+
     client = get_twilio_client()
     creds = get_twilio_credentials()
     if not client or not creds["from_number"]:

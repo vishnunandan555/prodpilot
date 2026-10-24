@@ -20,6 +20,7 @@ import {
   Bug
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
+import { formatIncidentId } from '../utils/formatters';
 
 export default function LogsView({
   apiUrl = 'http://127.0.0.1:8765',
@@ -379,29 +380,28 @@ export default function LogsView({
               </select>
             )}
 
-            {/* Auto-Refresh Cadence Selector with Live Pulse */}
+            {/* Auto-Refresh Cadence Selector */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#121824] border border-[#222f47] text-xs">
               <Clock size={12} className={autoRefreshInterval > 0 ? 'text-[#3fb950]' : 'text-[#6e7681]'} />
               <span className="text-[11px] text-[#8b949e]">Auto:</span>
               <select
                 value={autoRefreshInterval}
                 onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                className="bg-transparent text-[11px] font-semibold text-[#f0f6fc] focus:outline-none cursor-pointer"
+                className="bg-transparent text-[11px] font-medium text-[#f0f6fc] focus:outline-none cursor-pointer"
               >
-                <option value={15} className="bg-[#121824] text-[#f0f6fc]">Every 15s (Optimal - 4 req/min)</option>
-                <option value={20} className="bg-[#121824] text-[#f0f6fc]">Every 20s (Conserve Quota - 3 req/min)</option>
-                <option value={30} className="bg-[#121824] text-[#f0f6fc]">Every 30s (Conservative - 2 req/min)</option>
-                <option value={60} className="bg-[#121824] text-[#f0f6fc]">Every 60s (Slow - 1 req/min)</option>
-                <option value={0} className="bg-[#121824] text-[#8b949e]">Paused (Manual Only)</option>
+                <option value={15} className="bg-[#121824] text-[#f0f6fc]">15s</option>
+                <option value={30} className="bg-[#121824] text-[#f0f6fc]">30s</option>
+                <option value={60} className="bg-[#121824] text-[#f0f6fc]">60s</option>
+                <option value={0} className="bg-[#121824] text-[#8b949e]">Off</option>
               </select>
               {autoRefreshInterval > 0 && (
-                <span className="text-[10px] font-mono text-[#58a6ff] ml-1">
+                <span className="text-[10px] font-mono text-[#58a6ff]">
                   ({secondsUntilRefresh}s)
                 </span>
               )}
             </div>
 
-            {/* Render API Quota Status with dynamic reset countdown */}
+            {/* API Quota Status */}
             {rateLimitInfo && (
               <div
                 className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-mono transition ${
@@ -411,7 +411,7 @@ export default function LogsView({
                     ? 'bg-[#221a0d] border-[#d29922]/40 text-[#e3b341]'
                     : 'bg-[#121824] border-[#222f47]'
                 }`}
-                title={`Render API limit: ${rateLimitInfo.limit}/min on rolling 60s window. Window resets in ${rateLimitInfo.reset}s.`}
+                title={`Render API limit: ${rateLimitInfo.limit}/min on rolling 60s window. Resets in ${rateLimitInfo.reset}s.`}
               >
                 <span className="text-[#8b949e]">Quota:</span>
                 <span
@@ -425,9 +425,6 @@ export default function LogsView({
                 >
                   {rateLimitInfo.remaining}/{rateLimitInfo.limit}
                 </span>
-                <span className="text-[#6e7681]">
-                  ({rateLimitInfo.reset || 0}s reset)
-                </span>
               </div>
             )}
 
@@ -435,7 +432,7 @@ export default function LogsView({
               onClick={handleExport}
               disabled={filteredLogs.length === 0}
               className="px-2.5 py-1.5 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-xs font-medium text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
-              title="Export filtered logs as JSON"
+              title="Export logs as JSON"
             >
               <Download size={13} />
               <span className="hidden sm:inline">Export</span>
@@ -443,14 +440,14 @@ export default function LogsView({
 
             <div className="flex items-center gap-2">
               <div
-                className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition border ${
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition border ${
                   triaging
                     ? 'bg-[#2d1218] text-[#ff7b72] border-[#ff4444]/40'
                     : matchingIncident
                     ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
                     : 'bg-[#121929] text-[#58a6ff] border-[#1f6feb]/30'
                 }`}
-                title="Continuous autonomous log watcher and triage engine"
+                title="Log stream monitor status"
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
@@ -463,10 +460,10 @@ export default function LogsView({
                 />
                 <span>
                   {triaging
-                    ? 'Auto-Triaging...'
+                    ? 'Triaging...'
                     : matchingIncident
-                    ? 'Autonomous Fix Active'
-                    : 'Autonomous Watcher Active'}
+                    ? 'Remediation Attached'
+                    : 'Monitoring Active'}
                 </span>
               </div>
             </div>
@@ -475,7 +472,7 @@ export default function LogsView({
               onClick={() => fetchLogs(false, selectedServerId, true)}
               disabled={loading}
               className="px-2.5 py-1.5 rounded-md bg-[#161b26] hover:bg-[#212a3d] border border-[#212a3d] text-xs font-medium text-[#8b949e] hover:text-[#c9d1d9] flex items-center gap-1.5 transition"
-              title="Force refresh live log stream from Render"
+              title="Refresh log stream"
             >
               <RefreshCw
                 size={13}
@@ -596,14 +593,14 @@ export default function LogsView({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-[#f0f6fc] text-xs tracking-wide">
-                    ANOMALY DETECTED IN RENDER LOG STREAM
+                    Production Exception Detected
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#ff4444]/20 text-[#ff7b72] border border-[#ff4444]/40">
-                    {triageSummary.severity || 'HIGH'}
+                    {triageSummary.severity || 'SEV-1'}
                   </span>
                 </div>
                 <p className="text-[11px] text-[#ff7b72] mt-0.5 font-mono">
-                  {triageSummary.reason || 'Unhandled Python Traceback or Fatal Crash in Service'}
+                  {triageSummary.reason || 'Unhandled Python exception in service runtime'}
                 </p>
                 {triageSummary.suspected_area && (
                   <span className="text-[10px] text-[#8b949e]">
@@ -616,20 +613,20 @@ export default function LogsView({
               {matchingIncident && onSelectIncident ? (
                 <button
                   onClick={() => onSelectIncident(matchingIncident)}
-                  className="px-3.5 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition"
+                  className="px-3.5 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] active:scale-95 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md transition"
                 >
-                  <Sparkles size={13} className="text-[#fff]" />
-                  <span>Inspect Autonomous Fix ({matchingIncident.id.slice(0, 14)}...) ➔</span>
+                  <ShieldAlert size={13} className="text-[#fff]" />
+                  <span>Review Incident {formatIncidentId(matchingIncident.id)} ➔</span>
                 </button>
               ) : triaging ? (
                 <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-[#2d1218] border border-[#ff4444]/40 text-[#ff7b72] text-xs font-mono font-semibold">
-                  <Sparkles size={13} className="animate-spin text-[#ff7b72]" />
-                  <span>Auto-Triaging with Jev & Isolating Worktree...</span>
+                  <RefreshCw size={13} className="animate-spin text-[#ff7b72]" />
+                  <span>Isolating root cause & worktree...</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-[#0d1e17] border border-[#1b3d2b] text-[#3fb950] text-xs font-mono">
                   <span className="w-2 h-2 rounded-full bg-[#3fb950] animate-pulse" />
-                  <span>Auto-Triage Dispatched</span>
+                  <span>Triage Pipeline Dispatched</span>
                 </div>
               )}
             </div>

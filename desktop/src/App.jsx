@@ -305,11 +305,55 @@ export default function App() {
     }
   };
 
+  // Master Audit Log interaction recorder
+  const logAuditAction = async ({
+    service = 'OPERATOR',
+    level = 'INFO',
+    button = null,
+    action = null,
+    incident_id = selectedIncident?.id,
+    status = 'INFO',
+    message,
+  }) => {
+    try {
+      await fetch(`${apiUrl}/platform/audit-log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service,
+          level,
+          button,
+          action,
+          incident_id,
+          status,
+          message,
+        }),
+      });
+    } catch (e) {
+      console.debug('Failed to send audit log entry:', e);
+    }
+  };
+
   // 1-Tap Mobile Action Approvals
   const handleApprove = async (actionType = 'fix_forward') => {
     if (!selectedIncident) return;
     setActionLoading(true);
     setDeployError(null);
+    const incIdShort = selectedIncident.id.slice(0, 8);
+    const svcName = selectedIncident.service || 'service';
+    const btnLabel = actionType === 'rollback' ? 'Rollback to Prior Commit' : 'Approve & Deploy (:8000)';
+
+    // Log button click initiation to Master Audit Log
+    logAuditAction({
+      service: svcName,
+      level: 'INFO',
+      button: btnLabel,
+      action: actionType,
+      incident_id: selectedIncident.id,
+      status: 'INITIATED',
+      message: `Operator pressed [${btnLabel}] (${actionType}) for incident #${incIdShort} on ${svcName}...`,
+    });
+
     try {
       const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/approve`, {
         method: 'POST',
@@ -324,15 +368,47 @@ export default function App() {
           ...curr,
           status: result.status || 'DEPLOYED',
         }));
+
+        logAuditAction({
+          service: svcName,
+          level: 'PASS',
+          button: btnLabel,
+          action: actionType,
+          incident_id: selectedIncident.id,
+          status: 'SUCCESS',
+          message: `[${btnLabel}] SUCCESS: ${actionType} completed for incident #${incIdShort}. Deployment status: ${result.status || 'DEPLOYED'}. Health: ${result.health_check || 'ok'}.`,
+        });
+
         setTimeout(fetchIncidents, 1000);
       } else {
         const errData = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
         const errMsg = errData.detail || errData.error || `Deployment approval failed (HTTP ${res.status})`;
         setDeployError(errMsg);
+
+        logAuditAction({
+          service: svcName,
+          level: 'FAIL',
+          button: btnLabel,
+          action: actionType,
+          incident_id: selectedIncident.id,
+          status: 'FAILED',
+          message: `[${btnLabel}] FAILED for incident #${incIdShort}: ${errMsg}`,
+        });
       }
     } catch (err) {
       console.error('Approve failed:', err);
-      setDeployError(err.message || 'Network error approving deployment');
+      const errMsg = err.message || 'Network error approving deployment';
+      setDeployError(errMsg);
+
+      logAuditAction({
+        service: svcName,
+        level: 'ERROR',
+        button: btnLabel,
+        action: actionType,
+        incident_id: selectedIncident.id,
+        status: 'NETWORK_ERROR',
+        message: `[${btnLabel}] NETWORK_ERROR for incident #${incIdShort}: ${errMsg}`,
+      });
     } finally {
       setActionLoading(false);
     }
@@ -346,6 +422,20 @@ export default function App() {
     if (!selectedIncident) return;
     setActionLoading(true);
     setDeployError(null);
+    const incIdShort = selectedIncident.id.slice(0, 8);
+    const svcName = selectedIncident.service || 'service';
+
+    // Log takeover button initiation
+    logAuditAction({
+      service: svcName,
+      level: 'INFO',
+      button: 'Manual Takeover',
+      action: 'takeover',
+      incident_id: selectedIncident.id,
+      status: 'INITIATED',
+      message: `Operator pressed [Manual Takeover] for incident #${incIdShort} (${svcName}). Halting automated remediation...`,
+    });
+
     try {
       const res = await fetch(`${apiUrl}/incidents/${selectedIncident.id}/takeover`, {
         method: 'POST',
@@ -355,23 +445,78 @@ export default function App() {
           ...curr,
           status: 'MANUAL_TAKEOVER',
         }));
+        setDeployError(null);
+
+        logAuditAction({
+          service: svcName,
+          level: 'WARN',
+          button: 'Manual Takeover',
+          action: 'takeover',
+          incident_id: selectedIncident.id,
+          status: 'SUCCESS',
+          message: `[Manual Takeover] SUCCESS: Operator took manual control for incident #${incIdShort}. Status set to MANUAL_TAKEOVER. Automated agent actions paused.`,
+        });
+
         setTimeout(fetchIncidents, 1000);
       } else {
         const errData = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
-        setDeployError(errData.detail || errData.error || `Takeover failed (HTTP ${res.status})`);
+        const errMsg = errData.detail || errData.error || `Takeover failed (HTTP ${res.status})`;
+        setDeployError(errMsg);
+
+        logAuditAction({
+          service: svcName,
+          level: 'ERROR',
+          button: 'Manual Takeover',
+          action: 'takeover',
+          incident_id: selectedIncident.id,
+          status: 'FAILED',
+          message: `[Manual Takeover] FAILED for incident #${incIdShort}: ${errMsg}`,
+        });
       }
     } catch (err) {
       console.error('Takeover failed:', err);
-      setDeployError(err.message || 'Takeover request failed');
+      const errMsg = err.message || 'Takeover request failed';
+      setDeployError(errMsg);
+
+      logAuditAction({
+        service: svcName,
+        level: 'ERROR',
+        button: 'Manual Takeover',
+        action: 'takeover',
+        incident_id: selectedIncident.id,
+        status: 'NETWORK_ERROR',
+        message: `[Manual Takeover] NETWORK_ERROR for incident #${incIdShort}: ${errMsg}`,
+      });
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDeleteIncident = async (incidentId) => {
+    const incIdShort = incidentId.slice(0, 8);
+    logAuditAction({
+      service: 'OPERATOR',
+      level: 'INFO',
+      button: 'Delete Incident',
+      action: 'delete',
+      incident_id: incidentId,
+      status: 'INITIATED',
+      message: `Operator initiated permanent deletion of incident #${incIdShort}`,
+    });
+
     try {
       const res = await fetch(`${apiUrl}/incidents/${incidentId}`, { method: 'DELETE' });
       if (res.ok) {
+        logAuditAction({
+          service: 'OPERATOR',
+          level: 'INFO',
+          button: 'Delete Incident',
+          action: 'delete',
+          incident_id: incidentId,
+          status: 'SUCCESS',
+          message: `[Delete Incident] SUCCESS: Incident #${incIdShort} deleted successfully`,
+        });
+
         setIncidents((prev) => {
           const remaining = prev.filter((i) => i.id !== incidentId);
           if (selectedIncident?.id === incidentId) {
@@ -390,9 +535,28 @@ export default function App() {
           }
           return remaining;
         });
+      } else {
+        logAuditAction({
+          service: 'OPERATOR',
+          level: 'ERROR',
+          button: 'Delete Incident',
+          action: 'delete',
+          incident_id: incidentId,
+          status: 'FAILED',
+          message: `[Delete Incident] FAILED for incident #${incIdShort} (HTTP ${res.status})`,
+        });
       }
     } catch (err) {
       console.error('Failed to delete incident:', err);
+      logAuditAction({
+        service: 'OPERATOR',
+        level: 'ERROR',
+        button: 'Delete Incident',
+        action: 'delete',
+        incident_id: incidentId,
+        status: 'NETWORK_ERROR',
+        message: `[Delete Incident] NETWORK_ERROR for incident #${incIdShort}: ${err.message}`,
+      });
     }
   };
 
@@ -400,6 +564,14 @@ export default function App() {
     try {
       const res = await fetch(`${apiUrl}/incidents/clear?status=${status}`, { method: 'POST' });
       if (res.ok) {
+        logAuditAction({
+          service: 'OPERATOR',
+          level: 'INFO',
+          button: 'Clear Incidents',
+          action: 'clear',
+          status: 'SUCCESS',
+          message: `[Clear Incidents] SUCCESS: Cleared incidents matching filter '${status}'`,
+        });
         fetchIncidents(true);
       }
     } catch (err) {
@@ -488,6 +660,7 @@ export default function App() {
               onBack={isMobileScreen ? () => setShowMobileList(true) : null}
               onNavigate={handleNavigate}
               onDeleteIncident={handleDeleteIncident}
+              onLogAudit={logAuditAction}
             />
           )}
 

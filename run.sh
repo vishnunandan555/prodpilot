@@ -2,9 +2,10 @@
 # ==============================================================================
 # ProdPilot - Root Launcher & Development Runner
 # Usage:
-#   ./run.sh          # Start backend daemon & launch Desktop Electron UI
+#   ./run.sh          # Start backend daemon & launch Desktop Electron App
 #   ./run.sh --backend# Start only backend daemon (port 8765)
-#   ./run.sh --ui     # Launch only Desktop UI
+#   ./run.sh --ui     # Launch Desktop Electron App (or --electron)
+#   ./run.sh --browser# Launch web UI in browser (Vite only)
 #   ./run.sh --status # Check status of all ProdPilot components
 #   ./run.sh --stop   # Stop all running ProdPilot processes
 # ==============================================================================
@@ -77,7 +78,8 @@ start_backend() {
     API_HOST="${PRODPILOT_API_HOST:-127.0.0.1}"
     PYTHONPATH=. setsid "$PYTHON_BIN" -m uvicorn backend.prodpilot.api.server:app \
         --host "$API_HOST" \
-        --port 8765 >> "$LOG_DIR/api-server.log" 2>&1 &
+        --port 8765 \
+        --reload >> "$LOG_DIR/api-server.log" 2>&1 &
     API_PID=$!
     echo "$API_PID" > "$PID_DIR/api-server.pid"
 
@@ -99,9 +101,9 @@ start_backend() {
     fi
 }
 
-# Helper: launch desktop UI
+# Helper: launch desktop UI (Electron)
 start_ui() {
-    echo -e "${BLUE}▶ Launching ProdPilot Desktop UI...${NC}"
+    echo -e "${BLUE}▶ Launching ProdPilot Desktop App (Electron)...${NC}"
     cd "$REPO_ROOT/desktop"
 
     if [ ! -d "node_modules" ]; then
@@ -110,7 +112,29 @@ start_ui() {
     fi
 
     echo -e "  Starting Electron workspace..."
-    # If running in desktop mode, start npm run dev (Vite + Electron concurrently)
+    # If Vite dev server is already responding on port 5173, launch Electron directly.
+    # Otherwise run electron:dev to start Vite and Electron concurrently.
+    if curl -s http://127.0.0.1:5173 >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ Vite dev server already running on http://127.0.0.1:5173${NC}"
+        echo -e "  Starting Electron window..."
+        npx electron .
+    else
+        echo -e "  Starting Vite dev server + Electron desktop window..."
+        npm run electron:dev
+    fi
+}
+
+# Helper: launch web UI in browser
+start_browser_ui() {
+    echo -e "${BLUE}▶ Launching ProdPilot Web UI (Browser mode)...${NC}"
+    cd "$REPO_ROOT/desktop"
+
+    if [ ! -d "node_modules" ]; then
+        echo -e "  Installing desktop dependencies..."
+        npm install
+    fi
+
+    echo -e "  Starting Vite dev server..."
     npm run dev
 }
 
@@ -129,8 +153,12 @@ case "${1:-all}" in
         echo -e "${GREEN}Backend daemon is running in background.${NC}"
         exit 0
         ;;
-    --ui|ui)
+    --ui|ui|--electron|electron)
         start_ui
+        exit 0
+        ;;
+    --browser|browser)
+        start_browser_ui
         exit 0
         ;;
     --test|test)
@@ -139,9 +167,10 @@ case "${1:-all}" in
         ;;
     --help|help|-h)
         echo -e "${BOLD}ProdPilot Launcher${NC}"
-        echo "  ./run.sh           Start backend daemon and launch Desktop UI"
+        echo "  ./run.sh           Start backend daemon and launch Desktop Electron App"
         echo "  ./run.sh --backend Start only the backend API server (:8765)"
-        echo "  ./run.sh --ui      Launch only the Desktop UI"
+        echo "  ./run.sh --ui      Launch only the Desktop Electron App"
+        echo "  ./run.sh --browser Launch web UI in browser (Vite only)"
         echo "  ./run.sh --test    Run unified fast test suite"
         echo "  ./run.sh --status  Check system health and status"
         echo "  ./run.sh --stop    Stop all running ProdPilot background tasks"

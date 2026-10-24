@@ -85,14 +85,15 @@ export default function MasterLogsView({ apiUrl }) {
   });
 
   const getLevelColor = (level) => {
-    switch ((level || '').trim()) {
+    switch ((level || '').trim().toUpperCase()) {
       case 'ERROR':
       case 'FAIL':
         return 'text-[#f85149] font-bold';
       case 'WARN':
         return 'text-[#d29922] font-semibold';
       case 'PASS':
-        return 'text-[#3fb950] font-semibold';
+      case 'SUCCESS':
+        return 'text-[#3fb950] font-bold';
       case 'TOOL':
         return 'text-[#a371f7] font-semibold';
       case 'LLM':
@@ -103,14 +104,20 @@ export default function MasterLogsView({ apiUrl }) {
         return 'text-[#58a6ff] font-semibold';
       case 'JEV':
         return 'text-[#bc8cff] font-semibold';
+      case 'INFO':
+        return 'text-[#79c0ff]';
       default:
-        return 'text-[#3fb950]';
+        return 'text-[#8b949e]';
     }
   };
 
   const getTagColor = (tag) => {
     const t = (tag || '').trim().toUpperCase();
     if (t.includes('WATCHDOG')) return 'text-[#ff7b72]';
+    if (t.includes('TAKEOVER')) return 'text-[#f0883e] font-bold';
+    if (t.includes('DEPLOY') || t.includes('APPROVAL')) return 'text-[#3fb950] font-bold';
+    if (t.includes('OPERATOR') || t.includes('BUTTON')) return 'text-[#58a6ff] font-semibold';
+    if (t.includes('HOLD') || t.includes('RESUME')) return 'text-[#db61a2] font-semibold';
     if (t.includes('GEMINI') || t.includes('ANTIGRAV') || t.includes('LLM')) return 'text-[#d2a8ff] font-semibold';
     if (t.includes('TELEGRAM') || t.includes('MSG')) return 'text-[#39c5bb] font-semibold';
     if (t.includes('AGENT')) return 'text-[#d2a8ff]';

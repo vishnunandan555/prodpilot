@@ -66,7 +66,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
   const agents = fleetData?.agents || [
     {
       id: 'watchdog',
-      name: 'Production Telemetry & Watchdog Agent',
+      name: 'Telemetry Watchdog Worker',
       type: 'Ingestion & Health Probing',
       status: 'STANDBY',
       status_detail: 'Standby — Connect a server in Production Servers tab to activate watchdog probes',
@@ -79,11 +79,11 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     },
     {
       id: 'triage',
-      name: 'Triage & Fingerprint Agent',
-      type: 'Crash Normalization & Severity Scoring',
+      name: 'Triage & Classification Worker',
+      type: 'Exception Normalization & Severity Scoring',
       status: 'READY',
-      status_detail: 'SHA-256 stack trace fingerprinter & Jev / OpenRouter rule evaluation engine',
-      current_target: 'Jev Decision Engine (System 1)',
+      status_detail: 'SHA-256 stack trace fingerprinter & rule evaluation engine',
+      current_target: 'Decision Policy Engine',
       last_action: 'Triage rule index warm. 0 active incident alerts.',
       capabilities: ['Traceback Extraction', 'SHA-256 Deduplication', 'Severity Tagging'],
       safety_guard: 'Deterministic rule filtering',
@@ -92,7 +92,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     },
     {
       id: 'investigation',
-      name: 'AST Code Investigation & Blame Agent',
+      name: 'Code Investigation & Blame Worker',
       type: 'Git Blame & Syntax Tree Correlation',
       status: 'STANDBY',
       status_detail: 'Standby — Link a repository in Projects tab to enable blame correlation',
@@ -105,10 +105,10 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     },
     {
       id: 'patch_sandbox',
-      name: 'Patch Synthesis & Worktree Sandbox Agent',
-      type: 'Autonomous Code Repair',
+      name: 'Patch Synthesis & Worktree Worker',
+      type: 'Automated Code Repair & Testing',
       status: 'READY',
-      status_detail: 'Isolated Git Worktree sandbox (/worktrees). Deterministic 1-attempt anti-loop guard.',
+      status_detail: 'Isolated Git Worktree sandbox (/worktrees). 1-attempt anti-loop guard.',
       current_target: 'Isolated Git Worktree',
       last_action: '0 active worktrees. Worktree isolation lock free.',
       capabilities: ['Repro Test Synthesis', 'AST Code Patching', 'Pytest Suite Runner'],
@@ -118,10 +118,10 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     },
     {
       id: 'canary_verifier',
-      name: 'Canary Verification & Gatekeeper Agent',
+      name: 'Canary Verification & Gate Worker',
       type: 'Staging Validation & Decision Scoring',
       status: 'READY',
-      status_detail: 'Ephemeral container runtime. Port pool: localhost:8001-8010. Confidence threshold: 85%.',
+      status_detail: 'Isolated container runtime. Port pool: localhost:8001-8010. Threshold: 85%.',
       current_target: 'Ephemeral Canary Port Pool',
       last_action: 'Canary runner initialized and standing by',
       capabilities: ['Zero-Downtime Staging', 'Canary Probe Runner', 'Fix vs Rollback Scorer'],
@@ -131,7 +131,7 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
     },
     {
       id: 'oncall_dispatcher',
-      name: 'On-Call Dispatcher & Voice Escalation Agent',
+      name: 'On-Call Notification & Escalation Worker',
       type: 'Interactive Notifications & Phone Escalation',
       status: 'ONLINE',
       status_detail: 'Telegram bot @prodpilotbot 1-tap decision buttons + Twilio voice emergency escalation tree',
@@ -202,14 +202,14 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-sm font-bold text-[#f0f6fc] tracking-tight">
-                  Autonomous Remediation Fleet & Agent Runtime
+                  Remediation Workers & Diagnostics
                 </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-semibold">
-                  FLEET ONLINE
+                  WORKERS ACTIVE
                 </span>
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Live agent telemetry, real-time task execution, worktree sandboxes, and safety guardrails
+                Live worker telemetry, task execution states, worktree isolation, and safety policies
               </p>
             </div>
           </div>

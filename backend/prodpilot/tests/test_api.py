@@ -1,6 +1,7 @@
 """Tests for FastAPI REST & SSE endpoints matching contracts/api.md."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 from fastapi.testclient import TestClient
 from backend.prodpilot.api.server import app
@@ -120,4 +121,49 @@ def test_worktree_api_endpoints():
     assert prune_data["ok"] is True
     assert "cleaned" in prune_data
     assert "cleaned_count" in prune_data
+
+
+def test_takeover_and_audit_log_endpoints():
+    from backend.prodpilot.db import create_incident, init_db
+    init_db()
+    test_inc_id = f"inc-audit-test-{os.urandom(2).hex()}"
+    create_incident(
+        incident_id=test_inc_id,
+        service="chunkstream",
+        severity="SEV-1",
+        status="INVESTIGATING",
+        detected_at=datetime.utcnow().isoformat(),
+    )
+
+    # 1. Test POST /incidents/{id}/takeover
+    res = client.post(f"/incidents/{test_inc_id}/takeover")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["status"] == "MANUAL_TAKEOVER"
+
+    # 2. Test POST /platform/audit-log
+    res = client.post(
+        "/platform/audit-log",
+        json={
+            "service": "chunkstream",
+            "level": "WARN",
+            "button": "Manual Takeover",
+            "action": "takeover",
+            "incident_id": test_inc_id,
+            "status": "SUCCESS",
+            "message": "Operator initiated manual takeover from UI console",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    # 3. Test GET /platform/master-logs includes the takeover button event
+    res = client.get("/platform/master-logs?limit=50")
+    assert res.status_code == 200
+    master_data = res.json()
+    assert master_data["ok"] is True
+    raw_text = master_data["plain_text"]
+    assert "TAKEOVER" in raw_text or "Manual Takeover" in raw_text
+
 

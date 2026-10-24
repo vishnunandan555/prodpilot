@@ -811,15 +811,15 @@ export default function SettingsView({
               </div>
             </div>
 
-            {/* 4. OpenRouter / Jev Decision Engine */}
+            {/* 4. Decision Policy Engine */}
             <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] space-y-3">
               <div>
                 <label className="block text-xs font-bold text-[#f0f6fc] flex items-center gap-2">
                   <Cpu size={14} className="text-[#e3b341]" />
-                  <span>Jev Decision Engine (OpenRouter API Key)</span>
+                  <span>Decision Policy Engine (OpenRouter API Key)</span>
                 </label>
                 <p className="text-xs text-[#8b949e] mt-0.5">
-                  Powers TypeSafe Jev System 1 decision primitives (Choice, Noul, Score) via OpenRouter Decisions API.
+                  Powers automated decision primitives (remediation scoring, canary evaluation, and confidence rating) via OpenRouter.
                 </p>
               </div>
 

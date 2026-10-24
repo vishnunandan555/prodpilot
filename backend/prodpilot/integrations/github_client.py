@@ -278,3 +278,108 @@ class GitHubClient:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def create_issue(
+        self,
+        repo_slug: str,
+        title: str,
+        body: str,
+        labels: Optional[List[str]] = None,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Creates a new issue on GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues"
+        headers = self._headers(token)
+        payload: Dict[str, Any] = {
+            "title": title,
+            "body": body,
+        }
+        if labels:
+            payload["labels"] = labels
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(url, json=payload, headers=headers)
+                if res.status_code in (200, 201):
+                    data = res.json()
+                    return {
+                        "ok": True,
+                        "issue_number": data.get("number"),
+                        "issue_url": data.get("html_url"),
+                        "raw": data,
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def add_issue_comment(
+        self,
+        repo_slug: str,
+        issue_number: int,
+        comment_body: str,
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Adds a comment to an issue on GitHub."""
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues/{issue_number}/comments"
+        headers = self._headers(token)
+        payload = {"body": comment_body}
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(url, json=payload, headers=headers)
+                if res.status_code in (200, 201):
+                    data = res.json()
+                    return {
+                        "ok": True,
+                        "comment_id": data.get("id"),
+                        "comment_url": data.get("html_url"),
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def close_issue(
+        self,
+        repo_slug: str,
+        issue_number: int,
+        comment: Optional[str] = None,
+        state_reason: str = "completed",
+        token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Closes an issue on GitHub with optional closing comment."""
+        if comment:
+            self.add_issue_comment(repo_slug, issue_number, comment, token=token)
+
+        slug = self.normalize_slug(repo_slug)
+        url = f"{GITHUB_API_BASE}/repos/{slug}/issues/{issue_number}"
+        headers = self._headers(token)
+        payload = {"state": "closed", "state_reason": state_reason}
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.patch(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    return {
+                        "ok": True,
+                        "issue_number": data.get("number"),
+                        "state": data.get("state"),
+                        "message": f"Issue #{issue_number} closed successfully",
+                    }
+                return {
+                    "ok": False,
+                    "error": f"GitHub API close error {res.status_code}: {res.text[:200]}",
+                    "status_code": res.status_code,
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+

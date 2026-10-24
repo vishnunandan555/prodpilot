@@ -46,6 +46,10 @@ def _send_telegram(text: str, reply_markup: Optional[Dict[str, Any]] = None, par
     token = get_setting("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = get_setting("TELEGRAM_ALLOWED_CHAT_ID") or os.environ.get("TELEGRAM_ALLOWED_CHAT_ID")
 
+    if (get_setting("SERVICE_ENABLED_TELEGRAM") or "true").strip().lower() in ("false", "0", "off", "no"):
+        logger.info("Telegram notification skipped: SERVICE_ENABLED_TELEGRAM is set to false.")
+        return False
+
     if not token or not chat_id:
         logger.debug("Telegram credentials not configured; skipping dispatch.")
         return False

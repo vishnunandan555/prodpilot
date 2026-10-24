@@ -17,15 +17,15 @@ import {
 } from 'lucide-react';
 
 const STAGES = [
-  { key: 'UNDERSTAND', label: '1. Understand', desc: 'Traceback & Blame' },
-  { key: 'REPRODUCE', label: '2. Reproduce', desc: 'Failing Repro Test' },
-  { key: 'FIX', label: '3. Patch Fix', desc: 'Worktree Code Mod' },
-  { key: 'VERIFY', label: '4. Verify', desc: 'Repro & Suite Pass' },
-  { key: 'STAGE', label: '5. Side Canaries', desc: 'Ports 8001 & 8002' },
-  { key: 'DECIDE', label: '6. Decision', desc: 'Rules & Probabilities' },
-  { key: 'AWAITING_APPROVAL', label: '7. Approval', desc: 'Human in the Loop' },
-  { key: 'DEPLOY', label: '8. Deploy', desc: 'Port Swap & Canary' },
-  { key: 'RESOLVED', label: '9. Restored', desc: '200 OK & Post-Mortem' },
+  { key: 'UNDERSTAND', label: '1. Ingestion', desc: 'Traceback & Blame' },
+  { key: 'REPRODUCE', label: '2. Reproduction', desc: 'Repro Test Sandbox' },
+  { key: 'FIX', label: '3. Patch Fix', desc: 'Defensive Code Mod' },
+  { key: 'VERIFY', label: '4. Verification', desc: 'Regression Suite Pass' },
+  { key: 'STAGE', label: '5. Canary Staging', desc: 'Ports 8001 & 8002' },
+  { key: 'DECIDE', label: '6. Policy Decision', desc: 'Canary & Commit Scoring' },
+  { key: 'AWAITING_APPROVAL', label: '7. Approval Gate', desc: 'Operator Sign-off' },
+  { key: 'DEPLOY', label: '8. Restoration', desc: 'Deploy to Target' },
+  { key: 'RESOLVED', label: '9. Restored', desc: 'Verified 200 OK' },
 ];
 
 export default function Timeline({ events = [], currentStatus = 'OPEN' }) {

@@ -174,7 +174,7 @@ export default function ProjectsView({ apiUrl }) {
           `Cloned/Initialized at: ${data.project?.local_path}`,
           `Default branch: ${data.project?.default_branch || 'main'}`,
           `Test runner: ${data.project?.test_cmd || 'pytest'}`,
-          'Autonomous SRE watchdog and worktree sandbox ready.'
+          'Telemetry monitor and worktree environment ready.'
         ],
         status: isGhVerified ? 'success' : 'warning',
         project: data.project
@@ -313,8 +313,8 @@ export default function ProjectsView({ apiUrl }) {
           </div>
           <h2 className="text-base font-bold text-[#f0f6fc] mb-2">No Connected Projects</h2>
           <p className="text-xs text-[#8b949e] max-w-md mb-6 leading-relaxed">
-            ProdPilot monitors real GitHub repositories to ingest live issues, inspect pull requests,
-            track GitHub Actions deployment logs, and run local test suites for autonomous RCA.
+            ProdPilot monitors GitHub repositories to track live issues, inspect pull requests,
+            track GitHub Actions deployment logs, and run local test suites for automated root cause analysis.
           </p>
           <button
             onClick={() => setShowAddModal(true)}
@@ -1154,7 +1154,7 @@ export default function ProjectsView({ apiUrl }) {
                     GitHub Personal Access Token (PAT) <span className="text-[#8b949e] font-normal">(Optional)</span>
                   </label>
                   <a
-                    href="https://github.com/settings/tokens/new?description=ProdPilot+Autonomous+SRE&scopes=repo,workflow,read:user,user:email"
+                    href="https://github.com/settings/tokens/new?description=ProdPilot+Console&scopes=repo,workflow,read:user,user:email"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[#58a6ff] hover:text-[#79c0ff] hover:underline text-[11px] inline-flex items-center gap-1 font-medium"

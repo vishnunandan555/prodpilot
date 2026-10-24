@@ -9,11 +9,16 @@ import {
   Bot,
   Users,
   Settings,
-  ChevronRight,
-  Filter,
   Trash2,
-  Activity
+  Clock,
+  Radio
 } from 'lucide-react';
+import {
+  formatIncidentId,
+  formatStatusLabel,
+  getStatusBadgeStyle,
+  formatRelativeTime
+} from '../utils/formatters';
 
 export default function Sidebar({
   activeNav,
@@ -62,7 +67,7 @@ export default function Sidebar({
 
   return (
     <aside className="w-64 flex-shrink-0 bg-[#0d111a] border-r border-[#1b2234] flex flex-col h-full select-none text-[#c9d1d9] font-sans">
-      {/* 8 Primary Navigation Items */}
+      {/* Primary Navigation Items */}
       <div className="p-2 space-y-0.5 border-b border-[#1b2234]">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -94,9 +99,6 @@ export default function Sidebar({
               </div>
 
               <div className="flex items-center gap-1.5">
-                {item.statusDot && !isActive && (
-                  <span className={`w-1.5 h-1.5 rounded-full ${item.statusDot}`} />
-                )}
                 {item.badge && !isActive && (
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold border ${item.badgeColor}`}
@@ -126,7 +128,7 @@ export default function Sidebar({
                     onClearIncidents("RESOLVED");
                   }
                 }}
-                className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition"
+                className="p-1 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition ml-0.5"
                 title="Clear resolved incidents"
               >
                 <Trash2 size={11} />
@@ -165,10 +167,10 @@ export default function Sidebar({
           ) : (
             filteredIncidents.map((inc) => {
               const isSelected = activeIncident?.id === inc.id && activeNav === 'incidents';
-              const isPending =
-                inc.status !== 'RESOLVED' &&
-                inc.status !== 'DEPLOYED' &&
-                inc.status !== 'ROLLED_BACK';
+              const isResolved =
+                inc.status === 'RESOLVED' ||
+                inc.status === 'DEPLOYED' ||
+                inc.status === 'ROLLED_BACK';
 
               return (
                 <div
@@ -177,25 +179,30 @@ export default function Sidebar({
                     onSelectIncident(inc);
                     setActiveNav('incidents');
                   }}
-                  className={`group w-full text-left p-2.5 rounded-md transition border text-xs space-y-1 block cursor-pointer select-none ${
+                  className={`group w-full text-left p-2.5 rounded-lg transition border text-xs space-y-1.5 block cursor-pointer select-none ${
                     isSelected
-                      ? 'bg-[#151c2b] border-[#388bfd] text-[#f0f6fc]'
+                      ? 'bg-[#151c2b] border-[#388bfd] text-[#f0f6fc] shadow-sm'
                       : 'bg-[#090d16] border-[#1b2234] hover:bg-[#111724] text-[#8b949e]'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-semibold text-[#58a6ff]">
-                      {inc.id}
-                    </span>
-                    <div className="flex items-center gap-1.5">
+                  {/* Row 1: Short ID + Status Badge */}
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-mono font-bold text-[#58a6ff] shrink-0">
+                        {formatIncidentId(inc.id)}
+                      </span>
+                      <span className="text-[11px] font-mono text-[#8b949e] truncate">
+                        {inc.service || 'service'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
                       <span
-                        className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase border ${
-                          isPending
-                            ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                            : 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                        }`}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-medium border whitespace-nowrap ${getStatusBadgeStyle(
+                          inc.status
+                        )}`}
                       >
-                        {inc.status}
+                        {formatStatusLabel(inc.status)}
                       </span>
                       {onDeleteIncident && (
                         <button
@@ -206,7 +213,7 @@ export default function Sidebar({
                               onDeleteIncident(inc.id);
                             }
                           }}
-                          className="p-0.5 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition opacity-20 group-hover:opacity-100"
+                          className="p-0.5 rounded text-[#6e7681] hover:text-[#ff7b72] hover:bg-[#261317] transition opacity-0 group-hover:opacity-100"
                           title="Delete incident record"
                         >
                           <Trash2 size={11} />
@@ -214,12 +221,19 @@ export default function Sidebar({
                       )}
                     </div>
                   </div>
+
+                  {/* Row 2: Title */}
                   <div className="text-xs text-[#c9d1d9] line-clamp-1 leading-snug font-medium">
                     {inc.title || inc.suspected_area || 'Production Outage'}
                   </div>
-                  <div className="text-[10px] text-[#6e7681] flex items-center justify-between pt-0.5">
-                    <span>{inc.service || 'Service Endpoint'}</span>
+
+                  {/* Row 3: Severity & Relative Time */}
+                  <div className="text-[10px] text-[#6e7681] flex items-center justify-between pt-0.5 border-t border-[#161d2d]">
                     <span className="text-[#e3b341] font-semibold">{inc.severity || 'SEV-1'}</span>
+                    <span className="flex items-center gap-1 text-[#8b949e]">
+                      <Clock size={10} />
+                      {formatRelativeTime(inc.detected_at || inc.created_at)}
+                    </span>
                   </div>
                 </div>
               );
@@ -243,7 +257,7 @@ export default function Sidebar({
               size={14}
               className={activeNav === 'master_logs' ? 'text-[#58a6ff]' : 'text-[#6e7681]'}
             />
-            <span className="font-sans text-xs">Platform Master Log</span>
+            <span className="font-sans text-xs">System Audit Log</span>
           </div>
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse" />
@@ -254,9 +268,10 @@ export default function Sidebar({
 
       {/* Footer Info */}
       <div className="px-3 py-2 border-t border-[#1b2234] bg-[#07090f] text-xs text-[#6e7681] flex items-center justify-between">
-        <span>Production Workspace</span>
-        <span className={apiConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}>
-          {apiConnected ? '● Online' : '○ Offline'}
+        <span className="text-[11px]">Production Console</span>
+        <span className={`text-[11px] flex items-center gap-1 ${apiConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-[#3fb950]' : 'bg-[#ff7b72]'}`} />
+          {apiConnected ? 'Connected' : 'Offline'}
         </span>
       </div>
     </aside>

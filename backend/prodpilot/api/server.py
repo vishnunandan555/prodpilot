@@ -50,6 +50,7 @@ from backend.prodpilot.db import (
     claim_incident_for_processing,
     get_project,
     get_user_by_id,
+    insert_service_log,
 )
 from backend.prodpilot.decide.rules import decide
 from backend.prodpilot.pipeline.brief import analyze_issue_readiness
@@ -268,6 +269,17 @@ class IssueClarifyRequest(BaseModel):
     comment: Optional[str] = None
     questions: Optional[List[str]] = None
     source: str = "desktop_ui"
+
+
+class AuditLogEntryRequest(BaseModel):
+    service: Optional[str] = "OPERATOR"
+    level: Optional[str] = "INFO"  # INFO, WARN, ERROR, PASS, FAIL
+    tag: Optional[str] = "BUTTON"
+    button: Optional[str] = None
+    action: Optional[str] = None
+    incident_id: Optional[str] = None
+    status: Optional[str] = None
+    message: str
 
 
 # Cache for analyzed briefs
@@ -489,20 +501,92 @@ def toggle_hold_endpoint(incident_id: str, payload: Optional[Dict[str, Any]] = N
     """Toggles incident hold status between ON_HOLD and active."""
     inc = get_incident(incident_id)
     if not inc:
+        msg = f"[BUTTON: HOLD] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
     action = (payload or {}).get("action", "hold")
+    svc = inc.get("service") or "OPERATOR"
     if action == "hold":
         update_incident_status(incident_id, "ON_HOLD")
-        log_event(None, incident_id, "HOLD", "on_hold", {"message": "Incident put on hold by operator"})
+        msg = f"[BUTTON: HOLD] SUCCESS: Incident #{incident_id[:8]} ({svc}) placed ON_HOLD by operator"
+        log_event(None, incident_id, "HOLD", "on_hold", {"message": msg, "action": "hold"})
+        insert_service_log(service=svc, level="WARN", message=msg)
         return {"status": "ON_HOLD", "incident_id": incident_id, "message": "Incident put on hold"}
     else:
         artifacts = get_artifacts(incident_id)
         has_diff = any(a.get("kind") == "patch_diff" for a in artifacts)
         new_st = "AWAITING_APPROVAL" if has_diff else "INVESTIGATING"
         update_incident_status(incident_id, new_st)
-        log_event(None, incident_id, "RESUME", "resumed", {"message": f"Incident resumed to {new_st}"})
+        msg = f"[BUTTON: RESUME] SUCCESS: Incident #{incident_id[:8]} ({svc}) resumed to {new_st} by operator"
+        log_event(None, incident_id, "RESUME", "resumed", {"message": msg, "action": "resume"})
+        insert_service_log(service=svc, level="INFO", message=msg)
         return {"status": new_st, "incident_id": incident_id, "message": f"Incident resumed to {new_st}"}
+
+
+@app.post("/incidents/{incident_id}/takeover")
+def manual_takeover_endpoint(incident_id: str) -> Dict[str, Any]:
+    """Operator takes manual control of the incident, pausing autonomous pipeline."""
+    inc = get_incident(incident_id)
+    if not inc:
+        msg = f"[BUTTON: TAKEOVER] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    svc = inc.get("service") or "service"
+    prev_status = inc.get("status", "UNKNOWN")
+    update_incident_status(incident_id, "MANUAL_TAKEOVER")
+
+    msg = f"[BUTTON: TAKEOVER] SUCCESS: Operator initiated manual takeover for incident #{incident_id[:8]} ({svc}). Autonomous pipeline paused (previous state: {prev_status})."
+    log_event(
+        run_id=None,
+        incident_id=incident_id,
+        stage="TAKEOVER",
+        kind="manual_takeover",
+        payload={
+            "message": msg,
+            "status": "MANUAL_TAKEOVER",
+            "previous_status": prev_status,
+        },
+    )
+    insert_service_log(service=svc, level="WARN", message=msg)
+
+    return {
+        "ok": True,
+        "status": "MANUAL_TAKEOVER",
+        "incident_id": incident_id,
+        "message": f"Manual takeover successful for incident {incident_id}",
+    }
+
+
+@app.post("/platform/audit-log")
+def create_audit_log_entry(body: AuditLogEntryRequest) -> Dict[str, Any]:
+    """Records a user/operator UI button interaction or client-side action in the Master Audit Log."""
+    svc = (body.service or "OPERATOR").upper()
+    lvl = (body.level or "INFO").upper()
+    msg = body.message
+    if body.button and not msg.startswith("[BUTTON"):
+        status_tag = f" [{body.status}]" if body.status else ""
+        msg = f"[BUTTON: {body.button.upper()}]{status_tag} {msg}"
+
+    insert_service_log(service=svc, level=lvl, message=msg)
+
+    if body.incident_id:
+        log_event(
+            run_id=None,
+            incident_id=body.incident_id,
+            stage="OPERATOR",
+            kind="operator_action",
+            payload={
+                "button": body.button,
+                "action": body.action,
+                "status": body.status,
+                "message": msg,
+                "level": lvl,
+            },
+        )
+
+    return {"ok": True, "logged": True, "message": msg}
 
 
 @app.delete("/incidents/{incident_id}")
@@ -510,9 +594,14 @@ def delete_incident_endpoint(incident_id: str) -> Dict[str, Any]:
     """Permanently deletes an incident and all associated telemetry runs, events, artifacts, and decisions."""
     inc = get_incident(incident_id)
     if not inc:
+        msg = f"[BUTTON: DELETE] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
+    svc = inc.get("service") or "SYSTEM"
     ok = delete_incident(incident_id)
+    msg = f"[BUTTON: DELETE] SUCCESS: Incident #{incident_id[:8]} ({svc}) permanently deleted by operator"
+    insert_service_log(service="OPERATOR", level="INFO", message=msg)
     return {"ok": ok, "deleted_id": incident_id, "message": f"Incident {incident_id} deleted successfully"}
 
 
@@ -521,6 +610,8 @@ def delete_incident_endpoint(incident_id: str) -> Dict[str, Any]:
 def clear_incidents_endpoint(status: Optional[str] = Query(None, description="Optional status to filter by, or 'ALL'")) -> Dict[str, Any]:
     """Clears multiple incidents by status (e.g. 'RESOLVED', 'FAILED', or 'ALL')."""
     count = clear_incidents_by_status(status_filter=status)
+    msg = f"[BUTTON: CLEAR] SUCCESS: Cleared {count} incident(s) matching filter '{status or 'ALL'}'"
+    insert_service_log(service="OPERATOR", level="INFO", message=msg)
     return {"ok": True, "cleared_count": count, "filter": status or "ALL"}
 
 
@@ -583,20 +674,32 @@ async def stream_incident_events(request: Request, incident_id: str, after_id: i
 @app.post("/incidents/{incident_id}/approve")
 def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str, Any]:
     """Explicitly approve a local-process deployment when that adapter is enabled."""
+    action = body.action
+    btn_tag = "ROLLBACK" if action == "rollback" else "APPROVE"
     inc = get_incident(incident_id)
     if not inc:
+        msg = f"[BUTTON: {btn_tag}] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
-    action = body.action
+    svc = inc.get("service") or "DEPLOY"
+
     if action not in ("fix_forward", "rollback"):
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: Action must be 'fix_forward' or 'rollback'"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=400, detail="Action must be 'fix_forward' or 'rollback'")
 
     if inc.get("status") != "AWAITING_APPROVAL":
-        raise HTTPException(status_code=409, detail="Incident is not awaiting operator approval")
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: Incident is not in AWAITING_APPROVAL state (current: {inc.get('status')})"
+        insert_service_log(service=svc, level="ERROR", message=msg)
+        raise HTTPException(status_code=409, detail=f"Incident is not awaiting operator approval (current: {inc.get('status')})")
 
     approval_events = [e for e in get_events(incident_id=incident_id) if e.get("kind") == "awaiting_approval"]
     if not approval_events:
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: No persisted canary approval evidence is available"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail="No persisted canary approval evidence is available")
+
     approval_payload = approval_events[-1].get("payload") or {}
     if isinstance(approval_payload, str):
         try:
@@ -605,10 +708,14 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
             approval_payload = {}
     selected_option = ((approval_payload.get("options") or {}).get(action) or {}) if isinstance(approval_payload, dict) else {}
     if selected_option.get("health_ok") is not True:
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: The {action} canary has no passing health evidence"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail=f"The {action} canary has no passing health evidence")
 
     # This adapter mutates a local checkout and manages a local process. It is not a Render deployment.
     if os.environ.get("PRODPILOT_DEPLOY_TARGET", "disabled").strip().lower() != "local_process":
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: Local process deployment adapter is disabled (PRODPILOT_DEPLOY_TARGET != local_process)"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(
             status_code=501,
             detail="No production provider deployment adapter is configured. Local process deployment is disabled.",
@@ -623,12 +730,16 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         except Exception:
             repo_path = None
     if not repo_path or not (Path(repo_path) / ".git").exists():
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: A valid connected local Git repository is required"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail="A valid connected local Git repository is required")
 
     art_rows = get_artifacts(incident_id)
     artifacts = {a.get("kind"): a.get("content") for a in art_rows}
     patch_diff = artifacts.get("patch_diff") or ""
     if action == "fix_forward" and not patch_diff.strip():
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: No verified patch artifact is available"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail="No verified patch artifact is available for this incident")
     suspect = inc.get("suspect_commit")
     if isinstance(suspect, str):
@@ -638,6 +749,8 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
             suspect = {}
     suspect_commit_hash = (suspect or {}).get("hash") if isinstance(suspect, dict) else None
     if action == "rollback" and not suspect_commit_hash:
+        msg = f"[BUTTON: {btn_tag}] FAILED for #{incident_id[:8]}: No suspect commit is available for rollback"
+        insert_service_log(service=svc, level="ERROR", message=msg)
         raise HTTPException(status_code=409, detail="No suspect commit is available for rollback")
 
     # Record approval in DB
@@ -650,13 +763,16 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         source=body.source,
     )
 
+    init_msg = f"[BUTTON: {btn_tag}] INITIATED: Applying {action} to production port 8000 for #{incident_id[:8]}..."
+    insert_service_log(service=svc, level="INFO", message=init_msg)
+
     # Log stage started
     log_event(
         run_id=None,
         incident_id=incident_id,
         stage="DEPLOY",
         kind="stage_started",
-        payload={"action": action, "source": body.source, "message": f"Deploying {action} to production port 8000..."},
+        payload={"action": action, "source": body.source, "message": init_msg},
     )
 
     deploy_res = deploy_adapter.deploy(
@@ -689,17 +805,35 @@ def approve_incident_action(incident_id: str, body: ApproveRequest) -> Dict[str,
         except Exception as e:
             logger.warning(f"Could not generate post-mortem report for {incident_id}: {e}")
 
-    log_event(
-        run_id=None,
-        incident_id=incident_id,
-        stage="DEPLOY",
-        kind="deployed",
-        payload={
-            "choice": action,
-            "production_port": 8000,
-            "post_deploy_health_ok": deploy_res.get("health_check") == "ok",
-        },
-    )
+        success_msg = f"[BUTTON: {btn_tag}] SUCCESS: Deployed {action} to production port 8000 for #{incident_id[:8]}! Health probe: 200 OK"
+        insert_service_log(service=svc, level="PASS", message=success_msg)
+        log_event(
+            run_id=None,
+            incident_id=incident_id,
+            stage="DEPLOY",
+            kind="deployed",
+            payload={
+                "choice": action,
+                "production_port": 8000,
+                "message": success_msg,
+                "post_deploy_health_ok": deploy_res.get("health_check") == "ok",
+            },
+        )
+    else:
+        fail_msg = f"[BUTTON: {btn_tag}] FAILED: Deployment returned status '{new_status}' (health: {deploy_res.get('health_check')})"
+        insert_service_log(service=svc, level="FAIL", message=fail_msg)
+        log_event(
+            run_id=None,
+            incident_id=incident_id,
+            stage="DEPLOY",
+            kind="approval_failed",
+            payload={
+                "choice": action,
+                "error": fail_msg,
+                "message": fail_msg,
+                "post_deploy_health_ok": deploy_res.get("health_check") == "ok",
+            },
+        )
 
     return {
         "status": new_status,
@@ -719,8 +853,11 @@ def reject_incident(incident_id: str, body: RejectRequest) -> Dict[str, Any]:
     """6. Reject Incident conforming to contracts/api.md."""
     inc = get_incident(incident_id)
     if not inc:
+        msg = f"[BUTTON: REJECT] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
+    svc = inc.get("service") or "OPERATOR"
     update_incident_status(incident_id, "REJECTED")
 
     approval_id = f"rej-{incident_id[:8]}-{os.urandom(3).hex()}"
@@ -733,13 +870,15 @@ def reject_incident(incident_id: str, body: RejectRequest) -> Dict[str, Any]:
         reason=body.reason,
     )
 
+    msg = f"[BUTTON: REJECT] SUCCESS: Incident #{incident_id[:8]} ({svc}) rejected by operator: {body.reason}"
     log_event(
         run_id=None,
         incident_id=incident_id,
         stage="DECIDE",
         kind="status_change",
-        payload={"status": "REJECTED", "reason": body.reason, "source": body.source},
+        payload={"status": "REJECTED", "reason": body.reason, "source": body.source, "message": msg},
     )
+    insert_service_log(service=svc, level="WARN", message=msg)
 
     return {"status": "REJECTED", "incident_id": incident_id}
 
@@ -749,17 +888,22 @@ def followup_incident(incident_id: str, body: FollowupRequest) -> Dict[str, Any]
     """7. Agent Follow-Up / Reject with Instructions conforming to contracts/api.md."""
     inc = get_incident(incident_id)
     if not inc:
+        msg = f"[BUTTON: INSTRUCTION] FAILED: Incident {incident_id} not found"
+        insert_service_log(service="OPERATOR", level="ERROR", message=msg)
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
+    svc = inc.get("service") or "OPERATOR"
     update_incident_status(incident_id, "FIXING")
 
+    msg = f"[BUTTON: INSTRUCTION] SUCCESS: Follow-up instruction sent for #{incident_id[:8]} ({svc}): '{body.instruction}'"
     log_event(
         run_id=None,
         incident_id=incident_id,
         stage="FIX",
         kind="stage_started",
-        payload={"instruction": body.instruction, "source": body.source, "attempt": 2},
+        payload={"instruction": body.instruction, "source": body.source, "attempt": 2, "message": msg},
     )
+    insert_service_log(service=svc, level="INFO", message=msg)
 
     return {"status": "FIXING", "attempt": 2, "incident_id": incident_id}
 
@@ -890,25 +1034,34 @@ def clarify_issue_endpoint(issue_id: str, body: Optional[IssueClarifyRequest] = 
 
 
 @app.get("/platform/master-logs")
-def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
+def get_master_platform_logs(limit: int = 500) -> Dict[str, Any]:
     """Returns a unified master activity stream across all platform systems as pure console lines."""
     from backend.prodpilot.db import get_db
     with get_db() as conn:
+        # Fetch the latest LIMIT events and service logs ordered chronologically
         rows = conn.execute(
             """
-            SELECT e.id, e.ts, e.incident_id, e.stage, e.kind, e.payload, 
-                   i.service, i.status as incident_status, i.severity
-            FROM run_events e
-            LEFT JOIN incidents i ON e.incident_id = i.id
-            ORDER BY e.id ASC
-            LIMIT ?
+            SELECT * FROM (
+                SELECT e.id, e.ts, e.incident_id, e.stage, e.kind, e.payload, 
+                       i.service, i.status as incident_status, i.severity
+                FROM run_events e
+                LEFT JOIN incidents i ON e.incident_id = i.id
+                ORDER BY e.id DESC
+                LIMIT ?
+            ) sub ORDER BY sub.id ASC
             """,
             (limit,)
         ).fetchall()
 
-        # Also fetch any service_logs up to limit
         svc_rows = conn.execute(
-            "SELECT id, timestamp as ts, service, level, message FROM service_logs ORDER BY id ASC LIMIT ?",
+            """
+            SELECT * FROM (
+                SELECT id, timestamp as ts, service, level, message 
+                FROM service_logs 
+                ORDER BY id DESC 
+                LIMIT ?
+            ) sub ORDER BY sub.id ASC
+            """,
             (limit,)
         ).fetchall()
 
@@ -920,12 +1073,27 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
         lvl = (sr["level"] or "INFO").upper()
         svc = (sr["service"] or "CORE").upper()
         msg = sr["message"] or ""
-        raw = f"[{ts_clean}] [{lvl:<5}] [{svc:<12}] {msg}"
+
+        # Format tag based on message context
+        tag = svc
+        if "[BUTTON:" in msg:
+            if "TAKEOVER" in msg:
+                tag = "TAKEOVER"
+            elif "APPROVE" in msg or "ROLLBACK" in msg:
+                tag = "DEPLOY"
+            elif "HOLD" in msg or "RESUME" in msg:
+                tag = "HOLD"
+            else:
+                tag = "OPERATOR"
+        elif svc in ("OPERATOR", "BUTTON"):
+            tag = "OPERATOR"
+
+        raw = f"[{ts_clean}] [{lvl:<5}] [{tag:<12}] {msg}"
         console_lines.append({
             "id": f"svc-{sr['id']}",
             "timestamp": ts_clean,
             "level": lvl,
-            "tag": svc,
+            "tag": tag,
             "message": msg,
             "raw": raw,
         })
@@ -953,6 +1121,18 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
         if kind in ("ERROR", "EXCEPTION", "FAILED"):
             lvl = "ERROR"
             msg = payload.get("error") or msg or "Failure encountered"
+        elif kind == "APPROVAL_FAILED":
+            lvl = "FAIL"
+            tag = "APPROVAL"
+            msg = payload.get("error") or msg or "Approval deployment failed"
+        elif kind in ("MANUAL_TAKEOVER", "TAKEOVER") or stage == "TAKEOVER":
+            lvl = "WARN"
+            tag = "TAKEOVER"
+            msg = payload.get("message") or "Operator manual takeover initiated"
+        elif kind == "OPERATOR_ACTION":
+            lvl = (payload.get("level") or "INFO").upper()
+            tag = "OPERATOR"
+            msg = payload.get("message") or "Operator action completed"
         elif kind in ("LLM_CALL", "LLM", "MODEL_CALL"):
             lvl = "LLM"
             model_name = (payload.get("model") or "GEMINI").replace("typesafe/", "").replace("google-", "").replace("google.", "")
@@ -984,6 +1164,11 @@ def get_master_platform_logs(limit: int = 250) -> Dict[str, Any]:
             lvl = "WARN"
             tag = "WATCHDOG"
             msg = payload.get("message") or "Anomaly detected in log stream"
+        elif kind == "DEPLOYED":
+            passed = payload.get("post_deploy_health_ok", True)
+            lvl = "PASS" if passed else "FAIL"
+            tag = "DEPLOY"
+            msg = payload.get("message") or f"Hotfix deployed to port 8000 (status: {'OK' if passed else 'FAILED'})"
         elif not msg:
             msg = json.dumps(payload)
 

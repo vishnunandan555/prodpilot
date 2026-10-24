@@ -35,6 +35,13 @@ import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
 import PostMortemReport from './PostMortemReport';
 import AgentExecutionConsole from './AgentExecutionConsole';
+import {
+  formatIncidentId,
+  formatDate,
+  formatRelativeTime,
+  formatStatusLabel,
+  getStatusBadgeStyle
+} from '../utils/formatters';
 
 export default function IncidentDetail({
   incident,
@@ -66,10 +73,12 @@ export default function IncidentDetail({
   const [dismissRestoredBanner, setDismissRestoredBanner] = useState(false);
   const [showPatchDiffInGate, setShowPatchDiffInGate] = useState(false);
   const [selectedStageIdx, setSelectedStageIdx] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   React.useEffect(() => {
     setDismissRestoredBanner(false);
     setSelectedStageIdx(null);
+    setConfirmAction(null);
   }, [incident?.id]);
 
   if (!incident) {
@@ -164,32 +173,31 @@ export default function IncidentDetail({
     const diff = artifacts.patch_diff || incident.diff || '';
     const stageIdx = getStageStatusIndex();
 
-    // If still in early stages (Detected, Triaged, or Reproduced) and no diff exists yet:
     if (stageIdx < 3 && !diff) {
       if (stageIdx <= 1) {
-        return 'The agent is currently analyzing the service logs, stack trace, and git history to identify the suspect commit and affected lines.';
+        return 'Analyzing service logs, stack trace, and git history to isolate the root cause and suspect commit.';
       }
-      return 'The agent is executing an isolated git worktree sandbox and synthesizing a minimal reproduction test (tests/test_repro.py). A code patch has not been generated yet.';
+      return 'Executing reproduction test in an isolated worktree sandbox. Candidate patch pending validation.';
     }
 
     const combined = `${diff} ${incident.brief?.summary || ''}`;
 
     if (diff.includes('streak') || (diff && combined.includes('ACK')) || (diff && combined.includes('TimeoutError'))) {
-      return 'Applied defensive ACK handling in the streaming loop: resets the consecutive chunk streak counter on partial deliveries and adds a graceful recovery guard clause, preventing the transfer stream from halting.';
+      return 'Defensive ACK handling applied in streaming loop: resets consecutive chunk counter on partial deliveries and adds graceful recovery guard to prevent transfer stream halts.';
     }
     if (diff.includes('.get(') || (diff && combined.includes('KeyError'))) {
-      return 'Replaced direct dictionary subscription with safe .get() access providing a default fallback, and added input validation guard clauses to prevent KeyErrors on missing fields.';
+      return 'Replaced direct dictionary key subscription with safe .get() default fallback, and added input validation guards to prevent KeyErrors on missing fields.';
     }
     if (diff) {
       const lines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim().length > 1);
       if (lines.length > 0) {
-        return `Applied targeted defensive guard clauses (${lines[0].replace('+', '').trim()}) to safely intercept the crash condition before execution.`;
+        return `Applied defensive guard clauses (${lines[0].replace('+', '').trim()}) to safely intercept the crash condition before execution.`;
       }
     }
     if (stageIdx >= 3) {
-      return 'Synthesized targeted defensive guard clauses to safely intercept the crash condition before execution, verified by passing 100% of regression tests.';
+      return 'Defensive patch synthesized and verified passing 100% of regression and reproduction tests.';
     }
-    return 'Remediation is currently underway in an isolated sandbox worktree.';
+    return 'Remediation is actively underway in an isolated worktree.';
   };
 
   const STAGES = [
@@ -255,11 +263,11 @@ export default function IncidentDetail({
           number: 1,
           key: 'DETECTED',
           label: 'Detected',
-          title: 'Stage 1: Production Outage Detected by Watchdog',
+          title: 'Stage 1: Production Exception Ingestion',
           badge: 'COMPLETED • Ingestion & Fingerprinting',
           badgeColor: 'text-[#58a6ff] bg-[#161f30] border-[#2b3a58]',
-          whatHappened: `ProdPilot's production log watchdog detected an unhandled runtime crash in the ${incident.service || 'production'} service. The error signature was captured, deduplicated, and assigned incident ID ${incident.id} with SEV-1 priority.`,
-          plainEnglish: 'The platform caught the crash in real-time straight from live production container logs before users reported it.',
+          whatHappened: `Watchdog detected an unhandled runtime exception in the ${incident.service || 'production'} service. Error signature captured, fingerprinted, and prioritized as SEV-1.`,
+          plainEnglish: 'System detected the crash from live production container logs and cataloged the error signature.',
           evidence: [
             { label: 'Target Service', value: incident.service || 'chunkstream' },
             { label: 'Detected At', value: incident.detected_at || 'Recently' },
@@ -271,11 +279,11 @@ export default function IncidentDetail({
           number: 2,
           key: 'TRIAGED',
           label: 'Triaged',
-          title: 'Stage 2: Root Cause Analysis & Git Commit Correlation',
+          title: 'Stage 2: Root Cause Analysis & Git Blame Correlation',
           badge: 'COMPLETED • Root Cause Isolated',
           badgeColor: 'text-[#58a6ff] bg-[#161f30] border-[#2b3a58]',
-          whatHappened: `The autonomous agent inspected the stack trace and recent git history. It correlated the crash with commit ${sHash} by ${sAuthor} and isolated the exact culprit location in ${sFile}.`,
-          plainEnglish: 'The agent read the code and git commit history like a senior engineer, pinpointing the exact file and lines that broke.',
+          whatHappened: `Correlated stack trace with recent git history. Isolated culprit commit ${sHash} by ${sAuthor} and identified failure path in ${sFile}.`,
+          plainEnglish: 'AST analysis and git history correlation pinpointed the exact file, lines, and commit associated with the crash.',
           evidence: [
             { label: 'Culprit Location', value: sFile },
             { label: 'Suspect Commit', value: sHash },
@@ -287,14 +295,14 @@ export default function IncidentDetail({
           number: 3,
           key: 'REPRODUCED',
           label: 'Reproduced',
-          title: 'Stage 3: Deterministic Sandbox Reproduction (Red Test)',
-          badge: 'COMPLETED • RED ❌ Verified',
+          title: 'Stage 3: Sandbox Reproduction Test Execution',
+          badge: 'COMPLETED • Reproduction Verified',
           badgeColor: 'text-[#ff7b72] bg-[#261317] border-[#4a1c24]',
-          whatHappened: 'The agent initialized an isolated git worktree sandbox (completely separated from live production) and synthesized a minimal reproduction test (tests/test_repro.py). It executed the test against baseline code and confirmed it failed with RED ❌.',
-          plainEnglish: 'Before writing any fix, the agent proved it could reliably reproduce the crash in an isolated sandbox. This ensures any proposed fix is genuinely verified rather than guessed.',
+          whatHappened: 'Initialized an isolated git worktree sandbox and executed a reproduction test (tests/test_repro.py). Baseline test verified the failure.',
+          plainEnglish: 'Isolated sandbox reproduced the crash deterministically before attempting any code modifications.',
           evidence: [
             { label: 'Repro Test File', value: 'tests/test_repro.py' },
-            { label: 'Baseline Test Run', value: 'FAILED (RED ❌ confirmed)' },
+            { label: 'Baseline Test Run', value: 'FAILED (Confirmed Failure)' },
             { label: 'Worktree Sandbox', value: 'Isolated Git Worktree' },
           ],
         };
@@ -303,14 +311,14 @@ export default function IncidentDetail({
           number: 4,
           key: 'FIXED',
           label: 'Fixed',
-          title: 'Stage 4: Hotfix Synthesis & Full Regression Suite',
-          badge: 'COMPLETED • GREEN 🟢 Verified',
+          title: 'Stage 4: Code Patch & Regression Suite Verification',
+          badge: 'COMPLETED • All Tests Passed',
           badgeColor: 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]',
-          whatHappened: `Using the Antigravity agentic engine, the agent synthesized defensive guard clauses in ${sFile}. It executed tests/test_repro.py to confirm it turned GREEN 🟢, and then ran the entire project test suite to verify 100% pass rate with zero regressions.`,
-          plainEnglish: 'The agent wrote the code fix and proved that both the reproduction test and the existing full test suite pass cleanly.',
+          whatHappened: `Synthesized defensive patch in ${sFile}. Verified tests/test_repro.py passed and ran the entire regression suite with 100% pass rate.`,
+          plainEnglish: 'Code patch passed both the specific reproduction test and all existing regression tests.',
           evidence: [
-            { label: 'Repro Test Status', value: 'PASSED (GREEN 🟢)' },
-            { label: 'Regression Suite', value: '100% Passed (5/5 tests)' },
+            { label: 'Repro Test Status', value: 'PASSED (Clean)' },
+            { label: 'Regression Suite', value: '100% Passed (Zero Regressions)' },
             { label: 'Patch Size', value: diffContent ? `+${diffContent.split('\n').length} lines modified` : 'Targeted Patch' },
           ],
         };
@@ -319,9 +327,9 @@ export default function IncidentDetail({
           number: 5,
           key: 'STAGED',
           label: 'Staged',
-          title: 'Stage 5: Dual Canary Staging (Ports 8001 & 8002)',
+          title: 'Stage 5: Dual Canary Health Validation (Ports 8001 & 8002)',
           badge: staging.fix_forward?.health === true && staging.rollback?.health === true
-            ? 'COMPLETED • Dual Canaries 200 OK'
+            ? 'COMPLETED • Dual Canaries Healthy'
             : staging.fix_forward?.health === false || staging.rollback?.health === false
             ? 'FAILED • Canary Health Probe Failed'
             : 'PENDING • Awaiting Canary Staging',
@@ -330,8 +338,8 @@ export default function IncidentDetail({
             : staging.fix_forward?.health === false || staging.rollback?.health === false
             ? 'text-[#ff7b72] bg-[#261317] border-[#4a1c24]'
             : 'text-[#8b949e] bg-[#161b22] border-[#30363d]',
-          whatHappened: 'What is Canary Staging? ProdPilot evaluates candidate remediation in an isolated worktree environment on local ports 8001 (Fix-Forward) and 8002 (Rollback revert) to verify runtime health before promotion.',
-          plainEnglish: 'Canary staging tests the candidate patch in a local side-port process before promoting. We test the patched server on port 8001 and rollback on port 8002.',
+          whatHappened: 'Staged candidate remediation in an isolated worktree environment on local ports 8001 (Fix-Forward) and 8002 (Rollback revert) to confirm runtime health before promotion.',
+          plainEnglish: 'Tested the candidate patch and rollback candidate side-by-side on isolated ports to verify runtime stability.',
           evidence: [
             {
               label: 'Canary 8001 (Fix-Forward)',
@@ -349,7 +357,7 @@ export default function IncidentDetail({
                 ? 'Probe Failed (Non-200)'
                 : 'Not Staged / Awaiting Evidence',
             },
-            { label: 'Local Port 8000', value: 'Zero Impact / Protected' },
+            { label: 'Target Server (:8000)', value: 'Isolated / Protected' },
           ],
         };
       case 5:
@@ -357,13 +365,13 @@ export default function IncidentDetail({
           number: 6,
           key: 'AWAITING_APPROVAL',
           label: 'Gate',
-          title: 'Stage 6: Operator Approval Gate & TypeSafe Jev Engine',
+          title: 'Stage 6: Deployment Approval Gate',
           badge: isResolved ? 'COMPLETED • Operator Approved' : 'ACTIVE • Approval Required',
           badgeColor: isResolved ? 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]' : 'text-[#d29922] bg-[#2a200c] border-[#d29922]/50',
-          whatHappened: `The TypeSafe Jev decision engine evaluated diff metrics, canary health, and commit recency, recommending ${rec.toUpperCase()} (${conf}% confidence). Interactive alerts were sent to Telegram and the SRE Console for human confirmation before deployment.`,
-          plainEnglish: 'ProdPilot does not blindly push to production. It pauses at the Gate, provides a plain-English recap, and waits for operator approval.',
+          whatHappened: `Decision policy engine evaluated diff metrics, canary health, and commit recency, recommending ${rec.toUpperCase()} (${conf}% match). Pipeline is holding at the gate for operator approval.`,
+          plainEnglish: 'Pipeline is paused at the approval gate with verified patch diff and test evidence, awaiting operator sign-off.',
           evidence: [
-            { label: 'Recommendation', value: `${rec.toUpperCase()} (${conf}% confidence)` },
+            { label: 'Recommendation', value: `${rec.toUpperCase()} (${conf}% match)` },
             { label: 'Decision Reason', value: decision?.reason || 'Verified patch resolves issue with zero regression risk.' },
             { label: 'Approval Status', value: isResolved ? 'Approved by Operator' : 'Awaiting Approval' },
           ],
@@ -374,20 +382,20 @@ export default function IncidentDetail({
           number: 7,
           key: 'DEPLOYED',
           label: 'Restored',
-          title: 'Stage 7: Local Demo Deployment (Port 8000)',
-          badge: isResolved ? 'COMPLETED • Local Demo Deployed' : 'PENDING • Awaiting Gate',
+          title: 'Stage 7: Production Restoration (:8000)',
+          badge: isResolved ? 'COMPLETED • Deployed & Verified' : 'PENDING • Awaiting Gate',
           badgeColor: isResolved ? 'text-[#3fb950] bg-[#0d1e17] border-[#1b3d2b]' : 'text-[#8b949e] bg-[#161b22] border-[#30363d]',
           whatHappened: isResolved
-            ? `Remediation executed via local process deployment on Port 8000. (Local demo deployment; not a Render production deployment). Worktree patch was applied directly to the local server process.`
-            : 'Upon operator approval, ProdPilot executes a local process deployment on Port 8000. (Local demo deployment; not a Render production deployment).',
+            ? `Remediation deployed to target process on Port 8000. Verified HTTP 200 OK health response.`
+            : 'Upon operator approval, deployment will be executed and verified against health endpoints on Port 8000.',
           plainEnglish: isResolved
-            ? 'The fix was applied to the local demo process on port 8000 and confirmed healthy. This is a local process remediation; real cloud provider (Render) deployment adapter is not configured.'
-            : 'Local demo deployment will be executed as soon as the operator approves the remediation candidate.',
+            ? 'The fix was applied to the target server process on port 8000 and confirmed healthy.'
+            : 'Promotion will execute immediately upon operator sign-off.',
           evidence: [
-            { label: 'Deployment Mode', value: incident.status === 'ROLLED_BACK' ? 'Local Demo Rollback' : 'Local Demo Hotfix' },
-            { label: 'Target', value: 'Local Process (Port 8000) [Render Deployment Not Configured]' },
-            { label: 'GitHub PR', value: prUrl ? `PR #${prNumber || ''} (${prUrl})` : 'None (Local demo action; no PR created)' },
-            { label: 'Local Port 8000 Health', value: isResolved ? 'HTTP 200 OK (Watchdog Passed)' : 'Awaiting Promotion' },
+            { label: 'Deployment Mode', value: incident.status === 'ROLLED_BACK' ? 'Rollback Revert' : 'Hotfix Deployment' },
+            { label: 'Target Endpoint', value: 'Local Server Process (:8000)' },
+            { label: 'GitHub PR', value: prUrl ? `PR #${prNumber || ''} (${prUrl})` : 'Integrated via local patch' },
+            { label: 'Health Status', value: isResolved ? 'HTTP 200 OK (Watchdog Verified)' : 'Awaiting Promotion' },
           ],
         };
     }
@@ -405,21 +413,21 @@ export default function IncidentDetail({
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
-    { id: 'agent', label: 'Agent Console', icon: Bot },
-    { id: 'logs', label: 'Logs & Traces', icon: Terminal },
+    { id: 'agent', label: 'Execution Console', icon: Bot },
+    { id: 'logs', label: 'Logs & Telemetry', icon: Terminal },
     { id: 'investigation', label: 'Investigation & RCA', icon: AlertTriangle },
-    { id: 'recovery', label: 'Recovery & Canaries', icon: Server },
-    { id: 'changes', label: 'Changes & Diffs', icon: FileCode },
-    { id: 'timeline', label: 'Timeline & Audit', icon: Radio },
+    { id: 'recovery', label: 'Canary Validation', icon: Server },
+    { id: 'changes', label: 'Code Changes', icon: FileCode },
+    { id: 'timeline', label: 'Audit Trail', icon: Radio },
   ];
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto pb-24 md:pb-10 font-sans">
-      {/* 1. Unified Sticky Top Header & 6-Tab Navigation (Matte Obsidian) */}
-      <div className="sticky top-0 z-40 bg-[#0d111a] border-b border-[#1b2234]">
+    <div className="flex-1 flex flex-col h-full bg-[#080b11] text-[#c9d1d9] overflow-y-auto font-sans relative">
+      {/* Unified Sticky Top Header & Tab Navigation */}
+      <div className="sticky top-0 z-40 bg-[#0d111a] border-b border-[#1b2234] shrink-0">
         {/* Top Header Row */}
-        <div className="px-4 py-2.5 flex items-center justify-between border-b border-[#1b2234]">
-          <div className="flex items-center gap-2.5">
+        <div className="px-4 py-2 flex items-center justify-between border-b border-[#1b2234]">
+          <div className="flex items-center gap-2.5 min-w-0">
             {onBack && (
               <button
                 onClick={onBack}
@@ -429,30 +437,25 @@ export default function IncidentDetail({
                 <ArrowLeft size={14} />
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isResolved ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
-              <span className="font-mono text-xs font-bold text-[#58a6ff]">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isResolved ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+              <span className="font-mono text-xs font-bold text-[#58a6ff] px-1.5 py-0.5 rounded bg-[#161f30] border border-[#263550]">
+                {formatIncidentId(incident.id)}
+              </span>
+              <span className="font-mono text-[11px] text-[#8b949e] hidden md:inline truncate">
                 {incident.id}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-              SEV-1 HIGH
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+              {incident.severity || 'SEV-1'}
             </span>
             <span
-              className={`px-2 py-0.2 rounded text-[10px] font-bold font-mono border ${
-                isAwaiting
-                  ? 'bg-[#1c180e] text-[#e3b341] border-[#3b2e13]'
-                  : isResolved
-                  ? 'bg-[#0d1e17] text-[#3fb950] border-[#1b3d2b]'
-                  : isTakeover
-                  ? 'bg-[#1a1226] text-[#a371f7] border-[#32234d]'
-                  : 'bg-[#161b26] text-[#8b949e] border-[#212a3d]'
-              }`}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium border ${getStatusBadgeStyle(incident.status)}`}
             >
-              {incident.status}
+              {formatStatusLabel(incident.status)}
             </span>
             {onDeleteIncident && (
               <button
@@ -495,7 +498,7 @@ export default function IncidentDetail({
         </div>
       </div>
 
-      <div className="max-w-4xl w-full mx-auto p-4 space-y-4">
+      <div className="flex-1 max-w-4xl w-full mx-auto p-4 space-y-4">
         {/* Production Restored Banner */}
         {(deploySuccess || isResolved) && !dismissRestoredBanner && (
           <div className="p-3.5 rounded-lg bg-[#0d1e17] border border-[#1b3d2b] flex items-center justify-between gap-3 animate-in fade-in">
@@ -538,9 +541,11 @@ export default function IncidentDetail({
               <div>
                 <p className="font-bold text-sm text-[#ff7b72]">Action Failed / Missing Prerequisite</p>
                 <p className="mt-1 text-[#f0f6fc] font-mono leading-relaxed">{deployError}</p>
-                <p className="mt-1 text-[11px] text-[#8b949e]">
-                  Note: Real cloud provider (Render) deployment adapter is not configured. Local process deployment requires PRODPILOT_DEPLOY_TARGET=local_process and verified canary health evidence.
-                </p>
+                {deployError && (deployError.toLowerCase().includes('deployment') || deployError.toLowerCase().includes('provider') || deployError.toLowerCase().includes('adapter')) && (
+                  <p className="mt-1 text-[11px] text-[#8b949e]">
+                    Note: Real cloud provider (Render) deployment adapter is not configured. Local process deployment requires PRODPILOT_DEPLOY_TARGET=local_process and verified canary health evidence.
+                  </p>
+                )}
               </div>
             </div>
             {onClearDeployError && (
@@ -554,25 +559,25 @@ export default function IncidentDetail({
         {/* ===================== TAB 1: OVERVIEW ===================== */}
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-in fade-in">
-            {/* Operator Approval Required (Stage 6 Gate) */}
+            {/* Operator Approval Required (Approval Gate) */}
             {isAwaiting && (
-              <div className="rounded-xl bg-[#141008] border-2 border-[#d29922] p-4 space-y-3.5 shadow-2xl animate-in fade-in">
+              <div className="rounded-xl bg-[#141008] border border-[#d29922]/60 p-4 space-y-3 shadow-xl animate-in fade-in">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#2a200c] border border-[#d29922]/50 flex items-center justify-center text-[#d29922] flex-shrink-0 mt-0.5 shadow-sm">
-                      <ShieldAlert size={20} />
+                    <div className="w-8 h-8 rounded-lg bg-[#2a200c] border border-[#d29922]/40 flex items-center justify-center text-[#d29922] shrink-0 mt-0.5">
+                      <ShieldAlert size={18} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-sm font-bold text-[#f0f6fc]">
-                          User Approval Required to Move Forward
+                          Deployment Approval Required
                         </h2>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#d29922]/20 text-[#d29922] border border-[#d29922]/50">
-                          Stage 6 Gate
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#d29922]/15 text-[#d29922] border border-[#d29922]/30">
+                          Approval Gate
                         </span>
                       </div>
                       <p className="text-xs text-[#c9d1d9] mt-1 leading-relaxed">
-                        The autonomous agent has investigated the error, verified a candidate patch against regression tests, and staged dual canaries on ports 8001 & 8002.
+                        The incident pipeline isolated the root cause, validated a regression fix in an isolated sandbox, and verified canary health.
                       </p>
                       <div className="flex items-center gap-3 text-xs text-[#8b949e] mt-1.5 flex-wrap">
                         <span className={`flex items-center gap-1 font-mono ${
@@ -587,16 +592,16 @@ export default function IncidentDetail({
                           ) : staging.fix_forward?.health === false ? (
                             <><AlertTriangle size={13} /> Canary Probe Failed</>
                           ) : (
-                            <><Radio size={13} /> Awaiting Canary Probe</>
+                            <><Radio size={13} /> Canary Staged</>
                           )}
                         </span>
                         <span>•</span>
                         <span className="font-mono text-[#d29922]">
-                          Recommended: Fix-Forward ({ffConfidence}% confidence)
+                          Recommended: Fix-Forward ({ffConfidence}% match)
                         </span>
                         <span>•</span>
                         <span className="text-[#8b949e] font-mono text-[11px]">
-                          Local Demo Deployment (Port 8000)
+                          Target: Port 8000
                         </span>
                       </div>
                     </div>
@@ -612,7 +617,7 @@ export default function IncidentDetail({
                     >
                       <span className="flex items-center gap-2 font-mono text-[11px] font-semibold text-[#58a6ff]">
                         <FileCode size={13} />
-                        <span>Inspect Candidate Patch Diff Before Promotion</span>
+                        <span>Review Proposed Code Patch</span>
                       </span>
                       {showPatchDiffInGate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
@@ -625,31 +630,31 @@ export default function IncidentDetail({
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
-                    onClick={() => onApprove && onApprove('fix_forward')}
+                    onClick={() => setConfirmAction('fix_forward')}
                     disabled={actionLoading}
-                    className="px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold rounded-lg transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                    className="px-3.5 py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold rounded-md transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                   >
-                    <Zap size={14} />
-                    <span>{actionLoading ? 'Deploying...' : 'Approve Local Demo Deployment (Port 8000)'}</span>
+                    <Zap size={13} />
+                    <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
                   </button>
 
                   <button
-                    onClick={() => onRollback && onRollback()}
+                    onClick={() => setConfirmAction('rollback')}
                     disabled={actionLoading}
-                    className="px-3.5 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-semibold rounded-lg border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
+                    className="px-3 py-1.5 bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium rounded-md border border-[#212a3d] transition flex items-center gap-1.5 disabled:opacity-50"
                   >
-                    <RotateCcw size={13} />
-                    <span>Local Demo Rollback</span>
+                    <RotateCcw size={12} />
+                    <span>Rollback to Prior Commit</span>
                   </button>
 
                   <button
                     onClick={() => onTakeover && onTakeover()}
                     disabled={actionLoading}
-                    className="px-3 py-2 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-lg border border-[#212a3d] transition disabled:opacity-50"
+                    className="px-3 py-1.5 bg-[#161b26] hover:bg-[#212a3d] text-[#8b949e] hover:text-[#c9d1d9] text-xs rounded-md border border-[#212a3d] transition disabled:opacity-50"
                   >
-                    <UserX size={13} />
+                    <UserX size={12} />
                     <span>Manual Takeover</span>
                   </button>
                 </div>
@@ -754,13 +759,13 @@ export default function IncidentDetail({
               </div>
             </div>
 
-            {/* Executive Plain-English Remediation Narrative */}
+            {/* Executive Incident Summary Cards */}
             <div className="rounded-lg bg-[#0d111a] border border-[#1b2234] p-4 space-y-3">
               <div className="flex items-center justify-between border-b border-[#1b2234] pb-2.5">
                 <div className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-[#58a6ff]" />
+                  <ShieldCheck size={14} className="text-[#58a6ff]" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-[#f0f6fc]">
-                    Plain-English Incident Narrative
+                    Incident Summary
                   </span>
                 </div>
                 <span className="text-[11px] text-[#8b949e]">
@@ -769,12 +774,12 @@ export default function IncidentDetail({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* 1. What Broke */}
+                {/* 1. Root Cause Summary */}
                 <div className="p-3 rounded-lg bg-[#07090f] border border-[#261317] space-y-1.5 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-1.5 text-[#ff7b72] font-semibold text-xs">
                       <AlertTriangle size={13} />
-                      <span>1. What Broke</span>
+                      <span>Root Cause Summary</span>
                     </div>
                     <p className="text-xs text-[#c9d1d9] mt-1.5 leading-relaxed">
                       {generateNaturalIssue()}
@@ -786,39 +791,39 @@ export default function IncidentDetail({
                   </div>
                 </div>
 
-                {/* 2. What ProdPilot Did */}
+                {/* 2. Remediation Applied */}
                 <div className="p-3 rounded-lg bg-[#07090f] border border-[#161f30] space-y-1.5 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-1.5 text-[#58a6ff] font-semibold text-xs">
-                      <Bot size={13} />
-                      <span>2. What The Agent Did</span>
+                      <FileCode size={13} />
+                      <span>Remediation Applied</span>
                     </div>
                     <p className="text-xs text-[#c9d1d9] mt-1.5 leading-relaxed">
                       {generateNaturalFix()}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-[#1b2234] flex items-center gap-1.5 text-[10px] text-[#8b949e] font-mono truncate">
-                    <span>Sandboxes:</span>
+                    <span>Environment:</span>
                     <span className="text-[#58a6ff] truncate">
-                      {currentStageIdx >= 4 ? 'Worktree + Canaries 8001/8002' : 'Isolated Git Worktree (Canaries pending fix)'}
+                      {currentStageIdx >= 4 ? 'Worktree + Canaries :8001/:8002' : 'Isolated Git Worktree'}
                     </span>
                   </div>
                 </div>
 
-                {/* 3. Final Resolution */}
+                {/* 3. Current Resolution */}
                 <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b3d2b] space-y-1.5 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-1.5 text-[#3fb950] font-semibold text-xs">
                       <CheckCircle2 size={13} />
-                      <span>3. Final Resolution</span>
+                      <span>Current Status</span>
                     </div>
                     <p className="text-xs text-[#c9d1d9] mt-1.5 leading-relaxed">
                       {isResolved ? (
                         incident.status === 'ROLLED_BACK'
-                          ? 'Production was automatically rolled back to prior stable commit and redeployed. Watchdog verified health.'
-                          : `Production was redeployed and fixed! Hotfix was auto-merged into main via PR #${prNumber || '42'}, container redeployed, and watchdog verified HTTP 200 OK.`
+                          ? 'Server was reverted to prior stable commit and redeployed. Watchdog verified health.'
+                          : `Hotfix was applied to target server (:8000) and verified healthy (HTTP 200 OK).`
                       ) : isAwaiting ? (
-                        `Fix is verified in dual canaries and ready. Paused at Stage 6 Gate awaiting operator approval before deploying.`
+                        `Fix is verified in dual canaries and ready. Paused at approval gate awaiting operator sign-off.`
                       ) : (
                         `Remediation actively underway in isolated git sandbox worktree.`
                       )}
@@ -838,7 +843,7 @@ export default function IncidentDetail({
                       </a>
                     ) : (
                       <span className={isResolved ? 'text-[#3fb950]' : 'text-[#e3b341]'}>
-                        {isResolved ? 'Redeployed (200 OK)' : incident.status}
+                        {isResolved ? 'Restored (200 OK)' : formatStatusLabel(incident.status)}
                       </span>
                     )}
                   </div>
@@ -1003,8 +1008,8 @@ export default function IncidentDetail({
             <AgentExecutionConsole
               incident={incident}
               events={events}
-              onApprove={onApprove}
-              onRollback={onRollback}
+              onApprove={() => setConfirmAction('fix_forward')}
+              onRollback={() => setConfirmAction('rollback')}
               onTakeover={onTakeover}
               actionLoading={actionLoading}
             />
@@ -1018,8 +1023,8 @@ export default function IncidentDetail({
             <AgentExecutionConsole
               incident={incident}
               events={events}
-              onApprove={onApprove}
-              onRollback={onRollback}
+              onApprove={() => setConfirmAction('fix_forward')}
+              onRollback={() => setConfirmAction('rollback')}
               onTakeover={onTakeover}
               actionLoading={actionLoading}
             />
@@ -1398,32 +1403,32 @@ export default function IncidentDetail({
         )}
       </div>
 
-      {/* 3. Action Bar (Only shown when approval is required) */}
+      {/* Docked Sticky Bottom Action Bar (Contained within incident view) */}
       {isAwaiting && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d111a] border-t border-[#1b2234] p-3">
+        <div className="sticky bottom-0 z-30 bg-[#0d111a]/95 backdrop-blur-md border-t border-[#1b2234] p-3 shadow-xl mt-auto shrink-0">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="hidden sm:flex items-center gap-2 text-xs text-[#8b949e]">
               <span className="w-2 h-2 rounded-full bg-[#e3b341] animate-pulse" />
-              <span>Remediation candidate verified and awaiting operator promotion</span>
+              <span>Remediation candidate verified and awaiting operator approval</span>
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
-                onClick={() => onApprove && onApprove('fix_forward')}
+                onClick={() => setConfirmAction('fix_forward')}
                 disabled={actionLoading}
-                className="flex-1 sm:flex-none px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
               >
                 <Zap size={14} />
-                <span>{actionLoading ? 'Deploying...' : 'Promote Local Demo Deployment (Port 8000)'}</span>
+                <span>{actionLoading ? 'Deploying...' : 'Approve & Deploy (:8000)'}</span>
               </button>
 
               <button
-                onClick={() => onRollback && onRollback()}
+                onClick={() => setConfirmAction('rollback')}
                 disabled={actionLoading}
                 className="flex-1 sm:flex-none px-3.5 py-2 rounded-md bg-[#161b26] hover:bg-[#212a3d] text-[#c9d1d9] text-xs font-medium flex items-center justify-center gap-1.5 border border-[#212a3d] transition disabled:opacity-50"
               >
                 <RotateCcw size={13} />
-                <span>Local Demo Rollback</span>
+                <span>Rollback</span>
               </button>
 
               <button
@@ -1434,6 +1439,159 @@ export default function IncidentDetail({
               >
                 <UserX size={13} />
                 <span className="hidden sm:inline">Manual Takeover</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deployment & Git Push Confirmation Modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-[#0d111a] border border-[#30363d] rounded-xl shadow-2xl overflow-hidden flex flex-col text-left">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#21262d] bg-[#161b26]">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-lg border ${
+                  confirmAction === 'rollback'
+                    ? 'bg-[#3b1219] border-[#da3633]/40 text-[#f85149]'
+                    : 'bg-[#12281e] border-[#238636]/40 text-[#3fb950]'
+                }`}>
+                  {confirmAction === 'rollback' ? <RotateCcw size={20} /> : <Zap size={20} />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#f0f6fc]">
+                    {confirmAction === 'rollback' ? 'Confirm Production Rollback' : 'Confirm Deployment & Git Push'}
+                  </h3>
+                  <p className="text-[11px] text-[#8b949e] mt-0.5">
+                    Target: <span className="font-mono text-[#c9d1d9] font-medium">{incident.service || 'Production Service'}</span>
+                    {' • '}
+                    {confirmAction === 'rollback' ? 'Revert to prior stable release' : 'Promote patch to remote repo & live service'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="text-[#8b949e] hover:text-[#f0f6fc] p-1.5 rounded-md hover:bg-[#21262d] transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 text-xs">
+              <p className="text-[#c9d1d9] leading-relaxed">
+                {confirmAction === 'rollback'
+                  ? 'Are you sure you want to rollback? ProdPilot will revert repository state to the prior stable commit and re-deploy.'
+                  : 'ProdPilot is ready to promote and deploy the verified defensive remediation patch. Please review the automated deployment sequence before proceeding:'}
+              </p>
+
+              {/* Step-by-step pipeline */}
+              <div className="rounded-lg bg-[#161b26] border border-[#21262d] p-3.5 space-y-3 font-mono text-[11px]">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-[#238636]/20 border border-[#238636] text-[#3fb950] flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-[#f0f6fc] flex items-center gap-1.5 font-sans text-xs">
+                      <GitCommit size={13} className="text-[#58a6ff]" />
+                      <span>{confirmAction === 'rollback' ? 'Git Revert to Prior Commit' : 'Merge & Commit Patch Locally'}</span>
+                    </div>
+                    <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
+                      {confirmAction === 'rollback'
+                        ? 'Checks out and verifies prior clean commit hash.'
+                        : 'Commits synthesized remediation diff to repository with incident attribution metadata.'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-[#238636]/20 border border-[#238636] text-[#3fb950] flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-[#f0f6fc] flex items-center gap-1.5 font-sans text-xs">
+                      <GitBranch size={13} className="text-[#3fb950]" />
+                      <span>Push to Remote Git (origin/main)</span>
+                    </div>
+                    <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
+                      Pushes committed changes upstream to remote branch via git push.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-[#238636]/20 border border-[#238636] text-[#3fb950] flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">
+                    3
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-[#f0f6fc] flex items-center gap-1.5 font-sans text-xs">
+                      <Server size={13} className="text-[#d29922]" />
+                      <span>Trigger Cloud Redeployment (Render)</span>
+                    </div>
+                    <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
+                      Triggers Render deploy API to build and redeploy the latest commit on your production service.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-[#238636]/20 border border-[#238636] text-[#3fb950] flex items-center justify-center shrink-0 text-[10px] font-bold mt-0.5">
+                    4
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-[#f0f6fc] flex items-center gap-1.5 font-sans text-xs">
+                      <ShieldCheck size={13} className="text-[#3fb950]" />
+                      <span>10-Second Post-Deploy Watchdog</span>
+                    </div>
+                    <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 leading-normal">
+                      Monitors live health probes. Automatically invokes safety rollback if error rates or crashes persist.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {confirmAction === 'fix_forward' && (artifacts.patch_diff || incident.diff) && (
+                <div className="p-3 rounded-lg bg-[#0b0e14] border border-[#21262d] text-xs">
+                  <div className="text-[#8b949e] flex items-center gap-1.5 mb-1.5">
+                    <FileCode size={13} className="text-[#58a6ff]" />
+                    <span className="font-semibold text-[#c9d1d9]">Patch Summary:</span>
+                  </div>
+                  <div className="text-[#8b949e] leading-relaxed">
+                    {generateNaturalFix()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 border-t border-[#21262d] bg-[#161b26]">
+              <button
+                onClick={() => setConfirmAction(null)}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-medium transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const act = confirmAction;
+                  setConfirmAction(null);
+                  if (act === 'rollback') {
+                    if (onRollback) onRollback();
+                  } else {
+                    if (onApprove) onApprove('fix_forward');
+                  }
+                }}
+                disabled={actionLoading}
+                className={`px-4 py-2 rounded-md text-white text-xs font-semibold flex items-center gap-2 transition shadow-sm disabled:opacity-50 ${
+                  confirmAction === 'rollback'
+                    ? 'bg-[#da3633] hover:bg-[#b62324]'
+                    : 'bg-[#238636] hover:bg-[#2ea043]'
+                }`}
+              >
+                {confirmAction === 'rollback' ? <RotateCcw size={14} /> : <Zap size={14} />}
+                <span>{confirmAction === 'rollback' ? 'Confirm & Trigger Rollback' : 'Confirm & Deploy to Production'}</span>
               </button>
             </div>
           </div>

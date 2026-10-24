@@ -1130,12 +1130,14 @@ def insert_service_log(
     service: str,
     level: str,
     message: str,
+    timestamp: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> None:
+    ts = timestamp or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     with get_db(db_path) as conn:
         conn.execute(
-            "INSERT INTO service_logs (service, level, message) VALUES (?, ?, ?)",
-            (service, level.upper(), message)
+            "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+            (service, level.upper(), message, ts)
         )
 
 

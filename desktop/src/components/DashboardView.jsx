@@ -22,6 +22,7 @@ import {
   Radio
 } from 'lucide-react';
 import { StatCardsSkeleton, ListItemSkeleton } from './LoadingSkeleton';
+import { formatIncidentId, formatStatusLabel, getStatusBadgeStyle } from '../utils/formatters';
 
 export default function DashboardView({
   incidents = [],
@@ -298,7 +299,7 @@ export default function DashboardView({
                 </button>
               </div>
 
-              {/* Step 3: Platform Engines */}
+              {/* Step 3: Platform Diagnostics */}
               <div className="p-5 rounded-xl bg-[#0d111a] border border-[#1b2234] flex flex-col justify-between space-y-4">
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -307,9 +308,9 @@ export default function DashboardView({
                     </span>
                     <Cpu size={16} className="text-[#3fb950]" />
                   </div>
-                  <h3 className="text-sm font-bold text-[#f0f6fc]">Autonomous Platform Core</h3>
+                  <h3 className="text-sm font-bold text-[#f0f6fc]">Platform Automation & Diagnostics</h3>
                   <p className="text-xs text-[#8b949e] leading-relaxed">
-                    Jev System-1 Triage, Google Gemini AST code analyzer, and Telegram On-Call Dispatcher are online and standing by to monitor your projects.
+                    Triage policy engine, AST code analysis, and Telegram on-call dispatching are active and monitoring registered projects.
                   </p>
                 </div>
 
@@ -362,31 +363,31 @@ export default function DashboardView({
                   <>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                        <span className="font-medium text-[#f0f6fc]">Jev Engine</span>
+                        <span className="font-medium text-[#f0f6fc]">Triage Engine</span>
                         <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">TypeSafe Decision Model</p>
+                      <p className="text-[11px] text-[#6e7681]">Decision Policy Model</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                        <span className="font-medium text-[#f0f6fc]">Antigravity SDK</span>
+                        <span className="font-medium text-[#f0f6fc]">Code Sandbox</span>
                         <span className="text-[10px] text-[#79c0ff] font-mono font-bold">STANDBY</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">Gemini AST Code Synthesis</p>
+                      <p className="text-[11px] text-[#6e7681]">AST Analysis & Worktree</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                        <span className="font-medium text-[#f0f6fc]">Telegram Bot</span>
+                        <span className="font-medium text-[#f0f6fc]">Telegram On-Call</span>
                         <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">On-Call 1-Tap Approvals</p>
+                      <p className="text-[11px] text-[#6e7681]">1-Tap Approvals & Alerts</p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#07090f] border border-[#1b2234]">
                       <div className="flex items-center justify-between text-[#8b949e] mb-1">
-                        <span className="font-medium text-[#f0f6fc]">Twilio Voice</span>
+                        <span className="font-medium text-[#f0f6fc]">Voice Escalation</span>
                         <span className="text-[10px] text-[#8b949e] font-mono font-bold">UNCONFIGURED</span>
                       </div>
-                      <p className="text-[11px] text-[#6e7681]">Sev-1 Phone Escalation Tree</p>
+                      <p className="text-[11px] text-[#6e7681]">Emergency Phone Alert Tree</p>
                     </div>
                   </>
                 )}
@@ -405,10 +406,13 @@ export default function DashboardView({
                       <span className="px-2 py-0.5 rounded bg-[#da3633] text-white font-bold text-[10px] uppercase">
                         SEV-1
                       </span>
-                      <span className="font-mono font-bold text-[#f0f6fc]">{primaryActive.id}</span>
+                      <span className="font-mono font-bold text-[#58a6ff] px-1.5 py-0.5 rounded bg-[#161f30] border border-[#263550]">
+                        {formatIncidentId(primaryActive.id)}
+                      </span>
+                      <span className="font-mono text-xs text-[#8b949e] hidden sm:inline">{primaryActive.id}</span>
                       <span className="text-[#6e7681]">•</span>
-                      <span className="text-[#e3b341] bg-[#1c180e] px-2 py-0.5 rounded border border-[#3b2e13] text-[10px] font-medium">
-                        {primaryActive.status}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${getStatusBadgeStyle(primaryActive.status)}`}>
+                        {formatStatusLabel(primaryActive.status)}
                       </span>
                       <span className="text-[#6e7681]">•</span>
                       <span className="text-[#8b949e]">
@@ -431,9 +435,9 @@ export default function DashboardView({
                         onSelectIncident(primaryActive);
                         onNavigate('incidents');
                       }}
-                      className="px-4 py-2 rounded bg-[#da3633] hover:bg-[#f85149] text-white text-xs font-semibold flex items-center gap-1.5 transition"
+                      className="px-4 py-2 rounded bg-[#da3633] hover:bg-[#f85149] text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
                     >
-                      <span>Open Triage</span>
+                      <span>Review Incident</span>
                       <ArrowUpRight size={14} />
                     </button>
                   </div>

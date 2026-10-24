@@ -141,6 +141,32 @@ class RenderClient:
         except Exception as e:
             return {"ok": False, "error": str(e), "deploys": []}
 
+    def trigger_deploy(self, service_id: str, api_key: Optional[str] = None, clear_cache: bool = False) -> Dict[str, Any]:
+        """Triggers an automated redeployment for a Render service."""
+        sid = service_id.strip()
+        url = f"{RENDER_API_BASE}/services/{sid}/deploys"
+        headers = self._headers(api_key)
+
+        if not headers.get("Authorization"):
+            return {"ok": False, "error": "Render API key not provided"}
+
+        body = {"clearCache": "clear" if clear_cache else "do_not_clear"}
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(url, headers=headers, json=body)
+                if res.status_code in (200, 201):
+                    data = res.json()
+                    deploy_obj = data.get("deploy") if "deploy" in data else data
+                    return {
+                        "ok": True,
+                        "deploy_id": deploy_obj.get("id"),
+                        "status": deploy_obj.get("status", "created"),
+                        "raw": deploy_obj,
+                    }
+                return {"ok": False, "error": f"Render API error {res.status_code}: {res.text}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def get_logs(self, service_id: str, api_key: Optional[str] = None, limit: int = 100, force: bool = False) -> Dict[str, Any]:
         """Fetches live application stdout/stderr logs from Render API v1 with intelligent rate limit quota conservation."""
         sid = service_id.strip()

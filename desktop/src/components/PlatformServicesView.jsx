@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   Zap,
   Radio,
-  Settings
+  Settings,
+  Power,
+  Check
 } from 'lucide-react';
 import { ListItemSkeleton } from './LoadingSkeleton';
 import TwilioCallModal from './TwilioCallModal';
@@ -26,6 +28,7 @@ const SERVICE_ICONS = {
   telegram: Send,
   twilio: PhoneCall,
   render_watchdog: Activity,
+  auto_revert: ShieldCheck,
   tunnel: Globe,
 };
 
@@ -35,6 +38,65 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
   const [pingingId, setPingingId] = useState(null);
   const [pingResults, setPingResults] = useState({});
   const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [confirmToggleTarget, setConfirmToggleTarget] = useState(null);
+  const [togglingServiceId, setTogglingServiceId] = useState(null);
+
+  const handleExecuteToggle = async () => {
+    if (!confirmToggleTarget) return;
+    const { service, nextState } = confirmToggleTarget;
+    setTogglingServiceId(service.id);
+    try {
+      const res = await fetch(`${apiUrl}/platform-services/${service.id}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextState }),
+      });
+      if (res.ok) {
+        setServices((prev) =>
+          prev.map((s) =>
+            s.id === service.id
+              ? {
+                  ...s,
+                  enabled: nextState,
+                  status: nextState ? (s.configured ? 'ONLINE' : 'STANDBY') : 'MUTED',
+                }
+              : s
+          )
+        );
+        fetchServices(true);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Failed to update service: ${errData.detail || 'Server error'}`);
+      }
+    } catch (err) {
+      alert(`Error toggling service: ${err.message}`);
+    } finally {
+      setTogglingServiceId(null);
+      setConfirmToggleTarget(null);
+    }
+  };
+
+  const getServiceWarning = (service, nextState) => {
+    if (nextState) {
+      return `Re-enabling ${service.name} will restore active automated workloads and notification dispatch immediately.`;
+    }
+    switch (service.id) {
+      case 'telegram':
+        return 'Instant SEV-1 mobile push notifications and 1-tap mobile triage cards to your Telegram chat will be suppressed. Real-time updates will only appear on this desktop application.';
+      case 'twilio':
+        return 'Emergency automated phone calls to on-call phone numbers will be completely disabled. The team will NOT receive voice phone alerts or interactive DTMF keypad remediation during critical outages.';
+      case 'render_watchdog':
+        return 'Continuous 15-second background health checks will pause for this production server. Automated incident detection will stop until re-enabled or manually probed.';
+      case 'antigravity':
+        return 'Switches the remediation pipeline to Alert-Only mode. Automatic Git worktree cloning, AST blame analysis, and candidate canary staging on ports 8001/8002 will not run.';
+      case 'auto_revert':
+        return 'Disables the 10-second post-deployment safety watchdog. Faulty patches deployed to production port 8000 will NOT be automatically rolled back.';
+      case 'tunnel':
+        return 'Closes the public Cloudflare tunnel. External mobile webhook callbacks and triage links accessed from outside localhost will stop resolving.';
+      default:
+        return `This will temporarily mute all automated workloads for ${service.name}.`;
+    }
+  };
 
   const handleToggleTunnel = async (isCurrentlyOnline) => {
     setTunnelLoading(true);
@@ -155,7 +217,7 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
               </span>
             </div>
             <p className="text-[11px] text-[#8b949e]">
-              Health, live availability, and active background workloads of ProdPilot's core engines
+              Operational status, health probes, and connectivity for platform services
             </p>
           </div>
         </div>
@@ -219,18 +281,38 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border uppercase flex items-center gap-1.5 flex-shrink-0 ${
-                        isOnline
-                          ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
-                          : isStandby
-                          ? 'bg-[#161f30] text-[#79c0ff] border-[#263550]'
-                          : 'bg-[#241a12] text-[#d29922] border-[#442c16]'
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                      {svc.status}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border uppercase flex items-center gap-1.5 flex-shrink-0 ${
+                          !svc.enabled || svc.status === 'MUTED'
+                            ? 'bg-[#241a12] text-[#d29922] border-[#442c16]'
+                            : isOnline
+                            ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
+                            : isStandby
+                            ? 'bg-[#161f30] text-[#79c0ff] border-[#263550]'
+                            : 'bg-[#241a12] text-[#d29922] border-[#442c16]'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        {!svc.enabled || svc.status === 'MUTED' ? 'MUTED' : svc.status}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={togglingServiceId === svc.id}
+                        onClick={() => setConfirmToggleTarget({ service: svc, nextState: !svc.enabled })}
+                        title={svc.enabled ? `Click to mute ${svc.name}` : `Click to enable ${svc.name}`}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                          svc.enabled ? 'bg-[#238636]' : 'bg-[#21262d]'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            svc.enabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Current Activity Box */}
@@ -349,6 +431,67 @@ export default function PlatformServicesView({ apiUrl = 'http://127.0.0.1:8765',
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal for Toggling Platform Services */}
+      {confirmToggleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-[#0e1420] border border-[#2a3854] rounded-xl shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                  confirmToggleTarget.nextState
+                    ? 'bg-[#122419] border-[#1f4a2b] text-[#3fb950]'
+                    : 'bg-[#2d1217] border-[#541f27] text-[#ff7b72]'
+                }`}
+              >
+                {confirmToggleTarget.nextState ? <Power size={20} /> : <AlertTriangle size={20} />}
+              </div>
+              <div className="space-y-1 min-w-0 flex-1">
+                <h3 className="text-sm font-bold text-[#f0f6fc]">
+                  {confirmToggleTarget.nextState ? 'Enable' : 'Confirm Muting'}{' '}
+                  <span className="text-[#58a6ff]">{confirmToggleTarget.service.name}</span>?
+                </h3>
+                <p className="text-xs text-[#8b949e]">{confirmToggleTarget.service.role}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-lg bg-[#080b11] border border-[#1b2438] text-xs text-[#c9d1d9] leading-relaxed">
+              {getServiceWarning(confirmToggleTarget.service, confirmToggleTarget.nextState)}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmToggleTarget(null)}
+                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-[#161f30] hover:bg-[#222f47] text-[#c9d1d9] border border-[#222f47] transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={togglingServiceId !== null}
+                onClick={handleExecuteToggle}
+                className={`px-4 py-2 text-xs font-bold rounded-lg text-white transition flex items-center gap-1.5 shadow-sm ${
+                  confirmToggleTarget.nextState
+                    ? 'bg-[#238636] hover:bg-[#2ea043]'
+                    : 'bg-[#da3633] hover:bg-[#b62324]'
+                }`}
+              >
+                {togglingServiceId ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : confirmToggleTarget.nextState ? (
+                  <Check size={13} />
+                ) : (
+                  <Power size={13} />
+                )}
+                <span>
+                  {confirmToggleTarget.nextState ? 'Yes, Enable Service' : 'Yes, Mute Service'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Twilio Interactive Voice Testing Window Modal */}
       <TwilioCallModal

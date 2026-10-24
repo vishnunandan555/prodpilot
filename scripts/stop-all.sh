@@ -34,8 +34,8 @@ if [ -d "$PID_DIR" ]; then
     done
 fi
 
-# 2. Kill any processes bound to port 8765 (api-server)
-for port in 8765; do
+# 2. Kill any processes bound to port 8765 (api-server) and 5173 (desktop UI)
+for port in 8765 5173; do
     if command -v fuser >/dev/null 2>&1; then
         fuser -k "${port}/tcp" 2>/dev/null || true
     elif command -v lsof >/dev/null 2>&1; then
@@ -46,9 +46,11 @@ for port in 8765; do
     fi
 done
 
-# 3. Clean up any remaining python daemon processes by pattern
+# 3. Clean up any remaining python daemon and desktop processes by pattern
 pkill -f "backend.prodpilot.watcher.watcher" 2>/dev/null || true
 pkill -f "backend.prodpilot.pipeline.orchestrator" 2>/dev/null || true
 pkill -f "backend.prodpilot.api.server" 2>/dev/null || true
+pkill -f "electron" 2>/dev/null || true
+pkill -f "node.*vite" 2>/dev/null || true
 
 echo "✓ All ProdPilot services stopped cleanly."

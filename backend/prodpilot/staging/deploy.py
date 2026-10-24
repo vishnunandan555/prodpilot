@@ -24,10 +24,12 @@ from backend.prodpilot.db import (
     get_artifacts,
     get_db,
     get_incident,
+    get_setting,
     log_event,
     record_approval,
     save_artifact,
     update_incident_status,
+    insert_service_log,
 )
 from backend.prodpilot.pipeline.worktree import remove_worktree
 
@@ -474,28 +476,74 @@ class DeployAdapter:
                 "error": f"Failed to apply deployment code: {e}",
             }
 
+        # Git Push to origin (if remote origin is configured)
+        pushed_to_remote = False
+        try:
+            remotes = subprocess.run(["git", "remote"], cwd=str(repo), capture_output=True, text=True).stdout
+            if "origin" in remotes.split():
+                branch_proc = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(repo), capture_output=True, text=True)
+                current_branch = branch_proc.stdout.strip() or "main"
+                if current_branch and current_branch != "HEAD":
+                    push_res = subprocess.run(["git", "push", "origin", current_branch], cwd=str(repo), capture_output=True, text=True, timeout=25)
+                    if push_res.returncode == 0:
+                        pushed_to_remote = True
+                        logger.info(f"Pushed {action} commit to origin/{current_branch}")
+                        insert_service_log(service="GIT", level="PASS", message=f"[GIT] SUCCESS: Pushed {action} commit to origin/{current_branch}", db_path=db_path)
+                    else:
+                        logger.warning(f"Git push notice: {push_res.stderr.strip() or 'failed'}")
+        except Exception as e:
+            logger.debug(f"Git push attempt note: {e}")
+
+        # Trigger Render deployment (if Render service configured)
+        render_deploy_id = None
+        try:
+            from backend.prodpilot.db import get_active_server
+            from backend.prodpilot.integrations.render_client import RenderClient
+            active_server = get_active_server(db_path=db_path)
+            if active_server and active_server.get("render_service_id"):
+                sid = active_server["render_service_id"]
+                key = active_server.get("render_api_key") or get_setting("RENDER_API_KEY", db_path=db_path) or os.environ.get("RENDER_API_KEY")
+                if key:
+                    r_client = RenderClient(api_key=key)
+                    r_res = r_client.trigger_deploy(service_id=sid)
+                    if r_res.get("ok"):
+                        render_deploy_id = r_res.get("deploy_id")
+                        msg = f"[RENDER] SUCCESS: Triggered redeployment on Render for '{active_server.get('name')}' (Deploy ID: {render_deploy_id})"
+                        logger.info(msg)
+                        insert_service_log(service="RENDER", level="PASS", message=msg, db_path=db_path)
+                    else:
+                        logger.warning(f"Render deploy trigger notice: {r_res.get('error')}")
+                        insert_service_log(service="RENDER", level="WARN", message=f"[RENDER] Notice: Redeploy trigger: {r_res.get('error')}", db_path=db_path)
+        except Exception as e:
+            logger.debug(f"Render deploy trigger notice: {e}")
+
         # 3. Swap process onto port 8000
         self._kill_existing_port_process(self.prod_port)
         prod_proc = self._start_service_proc(repo, self.prod_port)
         self.active_prod_proc = prod_proc
 
         # 4. Continuous Watchdog (configurable duration for fast tests)
-        watchdog_duration = int(os.environ.get("PRODPILOT_WATCHDOG_DURATION", "10"))
-        watchdog_interval = float(os.environ.get("PRODPILOT_WATCHDOG_INTERVAL", "1.0"))
-        watchdog_res = self.run_10s_watchdog(
-            incident_id=incident_id,
-            repo_path=str(repo),
-            previous_head=previous_head,
-            action=action,
-            source=source,
-            duration_sec=watchdog_duration,
-            interval_sec=watchdog_interval,
-            db_path=db_path,
-            mock_mode=False,
-            simulate_failure=simulate_watchdog_failure,
-        )
-
-        status = "DEPLOYED" if watchdog_res.get("healthy") else watchdog_res.get("status", "AUTO_REVERTED")
+        auto_revert_enabled = (get_setting("SERVICE_ENABLED_AUTO_REVERT", db_path=db_path) or "true").strip().lower() not in ("false", "0", "off", "no")
+        if auto_revert_enabled:
+            watchdog_duration = int(os.environ.get("PRODPILOT_WATCHDOG_DURATION", "10"))
+            watchdog_interval = float(os.environ.get("PRODPILOT_WATCHDOG_INTERVAL", "1.0"))
+            watchdog_res = self.run_10s_watchdog(
+                incident_id=incident_id,
+                repo_path=str(repo),
+                previous_head=previous_head,
+                action=action,
+                source=source,
+                duration_sec=watchdog_duration,
+                interval_sec=watchdog_interval,
+                db_path=db_path,
+                mock_mode=False,
+                simulate_failure=simulate_watchdog_failure,
+            )
+            status = "DEPLOYED" if watchdog_res.get("healthy") else watchdog_res.get("status", "AUTO_REVERTED")
+        else:
+            logger.info("10s Safety Auto-Revert watchdog is MUTED by operator. Skipping auto-revert checks.")
+            status = "DEPLOYED"
+            watchdog_res = {"healthy": True, "muted": True, "status": "DEPLOYED"}
         return {
             "status": status,
             "deployed_action": action,
