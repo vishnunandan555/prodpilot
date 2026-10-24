@@ -78,6 +78,16 @@ RE_LOW_SEVERITY = re.compile(
     re.IGNORECASE,
 )
 
+RE_CLIENT_DISCONNECT = re.compile(
+    r"\b(ClientAbruptDisconnectError|WebSocketDisconnect|ClientDisconnect|"
+    r"ConnectionResetError.*(?:code=100[0-6]|mid-transfer|disconnected)|"
+    r"code=1005|code=1000|code=1001|code=1006|"
+    r"abruptly disconnected|unexpectedly disconnected / refreshed|"
+    r"connection reset by peer|connection aborted|"
+    r"asyncio\.exceptions\.CancelledError|starlette\.websockets\.WebSocketDisconnect)\b",
+    re.IGNORECASE,
+)
+
 RE_SUSPECT_AREA = re.compile(r'File "([^"]+)", line \d+, in (\w+)')
 
 
@@ -145,6 +155,22 @@ def classify_logs(
             extracted_trace = exc_match.group(1).strip()
 
     suspected_area = extract_suspected_area(extracted_trace) or service
+
+    # 0. CLIENT DISCONNECTION FILTER: normal client refreshes or disconnects are LOW severity
+    client_disconnect_match = RE_CLIENT_DISCONNECT.search(combined_text)
+    real_app_crash = bool(re.search(r"\b(ZeroDivisionError|KeyError|ValueError|TypeError|AttributeError|IndexError|NameError|ImportError|SyntaxError)\b", combined_text))
+    if client_disconnect_match and not real_app_crash:
+        fp = compute_fingerprint(extracted_trace or combined_text)
+        return TriageResult(
+            severity=Severity.LOW.value,
+            reason="Client network disconnect or browser refresh (non-critical)",
+            trace=extracted_trace or full_tail,
+            log_tail=full_tail,
+            suspected_area=suspected_area,
+            fingerprint=fp,
+            is_crash=False,
+            metadata={"rule": "client_disconnect_filter", "matched": client_disconnect_match.group(0)},
+        )
 
     # 1. CRASH OVERRIDE: any fatal exit is forced to HIGH
     if RE_CRASH_OVERRIDE.search(combined_text):
