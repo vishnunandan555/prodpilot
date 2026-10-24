@@ -1,5 +1,6 @@
 import React from 'react';
 import { User, LogOut, RefreshCw } from 'lucide-react';
+import VoiceHotlineButton from './VoiceHotlineButton';
 
 export default function WindowHeader({
   apiConnected,
@@ -7,7 +8,9 @@ export default function WindowHeader({
   onLogout,
   onOpenAuth,
   onOpenProfile,
-  isRefreshing = false
+  isRefreshing = false,
+  apiUrl = 'http://127.0.0.1:8765',
+  onOpenVoiceModal,
 }) {
   return (
     <header className="h-9 px-3 bg-[#07090f] border-b border-[#1b2234] flex items-center justify-between select-none text-[12px] flex-shrink-0 z-20 font-sans">
@@ -21,7 +24,7 @@ export default function WindowHeader({
         <span className="font-semibold text-[#f0f6fc] tracking-tight">ProdPilot</span>
       </div>
 
-      {/* Right: API Status & Operator Profile */}
+      {/* Right: API Status, Voice Hotline & Operator Profile */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 text-xs text-[#8b949e]">
           {isRefreshing && (
@@ -42,6 +45,12 @@ export default function WindowHeader({
             </span>
           )}
         </div>
+
+        {/* Global Emergency Hotline Indicator */}
+        <VoiceHotlineButton
+          apiUrl={apiUrl}
+          onClick={onOpenVoiceModal}
+        />
 
         {/* Operator Profile / Auth */}
         {currentUser ? (

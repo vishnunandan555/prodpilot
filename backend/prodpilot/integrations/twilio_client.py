@@ -86,11 +86,19 @@ def initiate_voice_call(to_phone: str, webhook_url: str) -> Dict[str, Any]:
         }
 
     try:
-        call = client.calls.create(
-            to=to_phone,
-            from_=creds["from_number"],
-            url=webhook_url,
-        )
+        from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
+        tunnel_url = get_effective_tunnel_url()
+        call_kwargs = {
+            "to": to_phone,
+            "from_": creds["from_number"],
+            "url": webhook_url,
+        }
+        if tunnel_url:
+            call_kwargs["status_callback"] = f"{tunnel_url}/voice/status-callback"
+            call_kwargs["status_callback_event"] = ["initiated", "ringing", "answered", "completed"]
+            call_kwargs["status_callback_method"] = "POST"
+
+        call = client.calls.create(**call_kwargs)
         logger.info("Twilio voice call triggered: Call SID=%s to %s", call.sid, to_phone)
         return {
             "ok": True,
@@ -260,16 +268,21 @@ def update_active_voice_call(**kwargs) -> Dict[str, Any]:
     return dict(ACTIVE_VOICE_CALL)
 
 
+_LAST_CALL_STATUS_PROBE = 0.0
+
+
 def get_active_voice_call(incident_id: Optional[str] = None) -> Dict[str, Any]:
     """Returns the current active call state and elapsed duration.
-    Automatically resets to IDLE after call completion cooldown.
+    Automatically verifies live carrier status and resets to IDLE after call completion.
     """
+    global _LAST_CALL_STATUS_PROBE
     now = time.time()
     step = ACTIVE_VOICE_CALL.get("step", "IDLE")
     updated_at = ACTIVE_VOICE_CALL.get("updated_at") or now
+    call_sid = ACTIVE_VOICE_CALL.get("call_sid")
 
-    # Cooldown transition: If call ended more than 4 seconds ago, revert to IDLE
-    if step == "ENDED" and (now - updated_at > 4.0):
+    # Cooldown transition: If call ended more than 3 seconds ago, revert to IDLE
+    if step == "ENDED" and (now - updated_at > 3.0):
         ACTIVE_VOICE_CALL.update({
             "status": "idle",
             "step": "IDLE",
@@ -284,14 +297,46 @@ def get_active_voice_call(incident_id: Optional[str] = None) -> Dict[str, Any]:
         })
         step = "IDLE"
 
+    active_steps = ("ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE")
+
+    # Live Carrier Verification Guard:
+    # If call is marked active, probe Twilio REST API every 3.5s to see if the engineer hung up their phone
+    if step in active_steps and call_sid and (now - _LAST_CALL_STATUS_PROBE > 3.5):
+        _LAST_CALL_STATUS_PROBE = now
+        try:
+            stat_res = get_call_status(call_sid)
+            if stat_res.get("ok"):
+                telemetry_status = (stat_res.get("status") or "").lower()
+                if telemetry_status in ("completed", "canceled", "failed", "busy", "no-answer"):
+                    logger.info("Twilio live probe confirms call %s is %s; ending active call session.", call_sid, telemetry_status)
+                    ACTIVE_VOICE_CALL.update({
+                        "status": "completed",
+                        "step": "ENDED",
+                        "step_label": "Call Ended",
+                        "updated_at": now,
+                    })
+                    step = "ENDED"
+        except Exception as e:
+            logger.debug("Carrier status live probe note: %s", e)
+
+    # Inactivity safety net: If call has received zero voice events for > 40 seconds, auto-expire
+    if step in active_steps and (now - updated_at > 40.0):
+        logger.info("Active call %s received no voice events for %.1fs; auto-expiring to ENDED.", call_sid, now - updated_at)
+        ACTIVE_VOICE_CALL.update({
+            "status": "completed",
+            "step": "ENDED",
+            "step_label": "Call Ended",
+            "updated_at": now,
+        })
+        step = "ENDED"
+
     # Compute duration if call was answered / in-progress
     start_time = ACTIVE_VOICE_CALL.get("start_time")
     duration_sec = 0
-    if start_time and step not in ("IDLE", "LAUNCHING", "RINGING"):
+    if start_time and step not in ("IDLE", "LAUNCHING", "RINGING", "ENDED"):
         duration_sec = max(0, int(now - start_time))
 
     # Auto-fallback to CALL_ACTIVE if AI_SPEAKING or USER_SPEAKING hasn't received new events in 4s
-    active_steps = ("ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE")
     current_label = ACTIVE_VOICE_CALL.get("step_label", "Voice Hotline")
     if step in active_steps:
         if now - updated_at > 4.5 and step != "CALL_ACTIVE":
@@ -594,13 +639,15 @@ def build_incident_companion_intro_twiml(
     action_url: str,
     service_name: str = "Production Server",
     summary: Optional[str] = None,
+    brief: Optional[Dict[str, Any]] = None,
+    status: Optional[str] = None,
 ) -> str:
     """Builds the introductory greeting TwiML when an engineer answers a live Sev-1 call.
     
     Optimized for low latency:
     - barge_in=True allows immediate interruption.
     - speech_timeout='1' triggers within 1 second of speech pause.
-    - Concise prompt cuts spoken audio from 16s down to 3s.
+    - Concise prompt cuts spoken audio down while delivering exact diagnostic state.
     """
     response = VoiceResponse()
 
@@ -614,9 +661,15 @@ def build_incident_companion_intro_twiml(
         language="en-US",
     )
 
+    err_type = (brief.get("error_type") if brief else None) or "unhandled crash"
+    suspect_area = (brief.get("suspected_area") if brief else None) or "codebase"
+    clean_area = suspect_area.split("/")[-1] if "/" in suspect_area else suspect_area
+
     alert_text = (
-        f"ProdPilot Critical Alert: Sev-One detected on {service_name}. "
-        f"Auto remediation is running. Ask a question or say 'approve'."
+        f"ProdPilot Critical Alert: Investigation is complete for {service_name}. "
+        f"Analysis is ready: {err_type} in {clean_area}. "
+        f"The agent is now synthesizing a reproduction test in an isolated worktree. "
+        f"Say 'status', ask a question, or say 'approve'."
     )
     gather.say(alert_text, voice="Polly.Matthew-Neural")
     response.append(gather)
@@ -741,11 +794,11 @@ def build_incident_companion_loop_twiml(
             f"Would you like to hear the root cause, or review the fix?"
         )
     elif intent == "ROOT_CAUSE":
-        err_type = brief.get("error_type") or "TimeoutError"
-        summary_clean = brief.get("summary") or "10 consecutive chunks sent without ACK from receiver"
+        err_type = brief.get("error_type") or "Unhandled Exception"
+        summary_clean = brief.get("summary") or "Unhandled crash in application pipeline"
         speech = (
-            f"Root cause summary: {err_type}. {summary_clean}. "
-            f"Suspect code introduced direct field access without null fallback. "
+            f"Investigation is complete. Root cause: {err_type} in {suspect_loc}. {summary_clean}. "
+            f"The agent is currently executing the reproduction test. "
             f"Say 'status' for progress, or 'approve' to deploy the hotfix."
         )
     elif intent == "TEST_EVIDENCE":
@@ -768,7 +821,19 @@ def build_incident_companion_loop_twiml(
                 f"Say 'approve' to merge and deploy, 'rollback' to revert, or 'takeover' to handle it manually."
             )
         elif status == "FIXING":
-            speech = "Remediation agent is currently synthesizing a candidate hotfix in an isolated git worktree."
+            test_ev = artifacts.get("test_evidence") or {}
+            if artifacts.get("repro_test") and test_ev.get("repro_before_fix_passed") is False:
+                speech = (
+                    "Investigation is complete and analysis is ready. "
+                    "Reproduction test verified the failure. "
+                    "The agent is now synthesizing the hotfix patch and running verification tests."
+                )
+            else:
+                speech = (
+                    "Investigation is complete and analysis is ready. "
+                    "The agent is now synthesizing and running a reproduction test in an isolated worktree "
+                    "to confirm the failure before generating the patch."
+                )
         elif status in ("DEPLOYED", "RESOLVED"):
             speech = "Incident is resolved! Hotfix deployed and port 8000 is healthy."
         elif status == "ROLLED_BACK":
@@ -776,7 +841,10 @@ def build_incident_companion_loop_twiml(
         elif status == "MANUAL_TAKEOVER":
             speech = "Incident is in manual takeover mode."
         else:
-            speech = f"Current incident status is {status.replace('_', ' ')}. Diagnosing failure mechanism."
+            speech = (
+                f"Investigation is complete. Analysis identified {brief.get('error_type', 'error')} "
+                f"in {suspect_loc}. The agent is actively synthesizing reproduction tests."
+            )
     elif intent == "HELP":
         speech = (
             "You can ask: 'What happened?', 'Who broke it?', 'What did Jev recommend?', "
@@ -800,8 +868,8 @@ def build_incident_companion_loop_twiml(
             sess["silence_counter"] = 0
             if status == "FIXING":
                 speech = (
-                    f"Update: Root cause isolated to commit {suspect_hash} by {suspect_author}! "
-                    f"Remediation agent is now synthesizing a hotfix in an isolated worktree."
+                    f"Update: Investigation is complete. Root cause isolated to commit {suspect_hash} by {suspect_author}! "
+                    f"Remediation agent is now synthesizing a reproduction test in an isolated worktree."
                 )
             elif status == "AWAITING_APPROVAL":
                 if sess.get("pre_approved"):

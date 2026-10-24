@@ -18,6 +18,8 @@ import {
   formatIncidentId,
   formatStatusLabel,
   getStatusBadgeStyle,
+  formatSeverityLabel,
+  cleanIncidentTitle,
   formatRelativeTime,
   isIncidentActive,
   isIncidentInactive
@@ -39,7 +41,9 @@ export default function Sidebar({
   isRefreshing = false,
   onDeleteIncident,
   onClearIncidents,
-  isMobileScreen = false
+  isMobileScreen = false,
+  apiUrl,
+  onOpenVoiceModal
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -350,12 +354,20 @@ export default function Sidebar({
 
                   {/* Row 2: Title */}
                   <div className="text-xs text-[#c9d1d9] line-clamp-1 leading-snug font-medium">
-                    {inc.title || inc.suspected_area || 'Production Outage'}
+                    {cleanIncidentTitle(inc)}
                   </div>
 
                   {/* Row 3: Severity & Relative Time */}
                   <div className="text-[10px] text-[#6e7681] flex items-center justify-between pt-0.5 border-t border-[#161d2d]">
-                    <span className="text-[#e3b341] font-semibold">{inc.severity || 'SEV-1'}</span>
+                    <span className={`font-semibold ${
+                      (inc.severity || '').toUpperCase().includes('LOW')
+                        ? 'text-[#f0883e]'
+                        : (inc.severity || '').toUpperCase().includes('MEDIUM')
+                        ? 'text-[#e3b341]'
+                        : 'text-[#ff7b72]'
+                    }`}>
+                      {formatSeverityLabel(inc.severity)}
+                    </span>
                     <span className="flex items-center gap-1 text-[#8b949e]">
                       <Clock size={10} />
                       {formatRelativeTime(inc.detected_at || inc.created_at)}

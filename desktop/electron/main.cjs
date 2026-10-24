@@ -1,3 +1,6 @@
+// Silence internal Electron development warnings in dev mode (e.g. webSecurity: false for local SSE/APIs)
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 
@@ -39,6 +42,25 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.focus();
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // Ignore internal Electron security notices and devtools ads
+    if (
+      message.includes('Electron Security Warning') ||
+      message.includes('React DevTools') ||
+      sourceId.includes('sandbox_bundle') ||
+      sourceId.startsWith('node:electron')
+    ) {
+      return;
+    }
+    const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
+    const lvl = levels[level] || 'LOG';
+    if (lvl === 'ERROR') {
+      console.error(`[Renderer ERROR] ${message} (${sourceId}:${line})`);
+    } else if (lvl === 'WARN') {
+      console.warn(`[Renderer WARN] ${message} (${sourceId}:${line})`);
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

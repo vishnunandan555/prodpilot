@@ -190,3 +190,33 @@ def test_active_voice_call_and_step_transitions():
     assert status_ended["step_label"] == "Call Ended"
 
 
+def test_voice_status_callback_and_reset():
+    # 1. Simulate an active call
+    client.post("/voice/simulate-step", json={"step": "CALL_ACTIVE", "call_sid": "CA_test_sid"})
+    status = client.get("/voice/active-call").json()
+    assert status["is_active"] is True
+
+    # 2. Twilio sends carrier status callback on user disconnect
+    cb_res = client.post(
+        "/voice/status-callback",
+        data={"CallSid": "CA_test_sid", "CallStatus": "completed", "CallDuration": "42"}
+    )
+    assert cb_res.status_code == 200
+    assert "<Response>" in cb_res.text
+
+    # Active call should now be ENDED
+    status_after_cb = client.get("/voice/active-call").json()
+    assert status_after_cb["step"] == "ENDED"
+    assert status_after_cb["status"] == "completed"
+
+    # 3. Force-reset call endpoint
+    reset_res = client.post("/voice/reset-call")
+    assert reset_res.status_code == 200
+    assert reset_res.json()["ok"] is True
+    status_after_reset = client.get("/voice/active-call").json()
+    assert status_after_reset["step"] == "IDLE"
+    assert status_after_reset["status"] == "idle"
+    assert status_after_reset["duration"] == 0
+
+
+

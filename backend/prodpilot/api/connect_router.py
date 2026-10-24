@@ -1248,12 +1248,8 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"Telegram stage 1 notification note: {e}")
 
-    # Dispatch Twilio Voice alert
-    try:
-        from backend.prodpilot.integrations.twilio_client import dispatch_incident_voice_drill
-        dispatch_incident_voice_drill(created)
-    except Exception as e:
-        logger.warning(f"Twilio voice dispatch note: {e}")
+    # Note: Twilio voice escalation is dispatched after Stage 2 Root Cause Analysis
+    # completes in orchestrator.py, ensuring the voice agent has full context.
 
     return {
         "ok": True,
@@ -2243,6 +2239,8 @@ def voice_incident_companion_entry_endpoint(
         action_url=action_url,
         service_name=svc,
         summary=summary,
+        brief=brief,
+        status=inc.get("status"),
     )
     return Response(content=xml_content, media_type="application/xml")
 
@@ -2427,6 +2425,77 @@ def voice_call_status_endpoint(call_sid: str) -> Dict[str, Any]:
 def voice_hangup_endpoint(call_sid: str) -> Dict[str, Any]:
     from backend.prodpilot.integrations.twilio_client import hangup_call
     return hangup_call(call_sid)
+
+
+@router.api_route("/voice/status-callback", methods=["GET", "POST"])
+async def voice_status_callback_endpoint(
+    request: Request,
+    CallSid: Optional[str] = Form(None),
+    CallStatus: Optional[str] = Form(None),
+    CallDuration: Optional[str] = Form(None),
+) -> Response:
+    """Webhook invoked by Twilio carrier to report live call lifecycle transitions."""
+    from backend.prodpilot.integrations.twilio_client import update_active_voice_call, record_voice_log
+    
+    sid = CallSid or request.query_params.get("CallSid")
+    status = (CallStatus or request.query_params.get("CallStatus") or "").lower()
+    duration = CallDuration or request.query_params.get("CallDuration") or "0"
+
+    logger.info("Twilio status callback received: CallSid=%s, CallStatus=%s, Duration=%ss", sid, status, duration)
+
+    if status in ("completed", "canceled", "failed", "busy", "no-answer"):
+        record_voice_log(
+            "CALL_COMPLETED",
+            f"Call terminated on carrier ({status}). Duration: {duration}s",
+            {"call_sid": sid, "status": status, "duration": duration}
+        )
+        update_active_voice_call(
+            step="ENDED",
+            step_label="Call Ended",
+            status=status,
+            call_sid=sid,
+        )
+    elif status == "in-progress":
+        record_voice_log(
+            "CALL_IN_PROGRESS",
+            "Twilio status callback: Call is active and connected.",
+            {"call_sid": sid, "status": status}
+        )
+        update_active_voice_call(
+            status="in-progress",
+            step="CALL_ACTIVE",
+            step_label="Call Active",
+        )
+    elif status in ("ringing", "queued"):
+        update_active_voice_call(
+            status="ringing",
+            step="RINGING",
+            step_label="Ringing Phone...",
+        )
+
+    return Response(content="<Response></Response>", media_type="application/xml")
+
+
+@router.api_route("/voice/reset-call", methods=["GET", "POST"])
+def voice_reset_call_endpoint() -> Dict[str, Any]:
+    """Force-resets the active voice call state back to IDLE immediately."""
+    from backend.prodpilot.integrations.twilio_client import update_active_voice_call, record_voice_log
+    import time
+    res = update_active_voice_call(
+        status="idle",
+        step="IDLE",
+        step_label="Voice Hotline",
+        call_sid=None,
+        incident_id=None,
+        start_time=None,
+        last_speech=None,
+        last_tts=None,
+        action_executed=None,
+        updated_at=time.time(),
+    )
+    record_voice_log("CALL_RESET", "Voice call session manually reset to IDLE", {})
+    return {"ok": True, "active_call": res}
+
 
 
 @router.get("/voice/logs")

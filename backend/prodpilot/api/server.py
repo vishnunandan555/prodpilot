@@ -331,50 +331,82 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
             except Exception:
                 brief = {}
 
+        rc_report = inc.get("root_cause_report") or ""
+        clean_rc = re.sub(r"^Autonomous Watchdog detected:\s*", "", rc_report).strip()
+        if clean_rc.startswith("{"):
+            try:
+                rc_parsed = json.loads(clean_rc)
+                if not brief:
+                    brief = rc_parsed
+                clean_rc = rc_parsed.get("title") or rc_parsed.get("summary") or rc_parsed.get("reason") or ""
+            except Exception:
+                clean_rc = ""
+
         summary = (
             (brief.get("summary") if isinstance(brief, dict) else None)
-            or inc.get("root_cause_report")
+            or (clean_rc if clean_rc and not clean_rc.startswith("{") else None)
+            or (inc.get("root_cause_report") if not str(inc.get("root_cause_report", "")).strip().startswith("{") else None)
             or "Autonomous failure detection and diagnostics in progress."
         )
         suspected_area = (
             (brief.get("suspected_area") if isinstance(brief, dict) else None)
             or inc.get("suspected_area")
         )
-        rc_report = inc.get("root_cause_report") or ""
-        clean_rc = re.sub(r"^Autonomous Watchdog detected:\s*", "", rc_report).strip()
 
-        if clean_rc and not clean_rc.startswith("Arguments:"):
+        if clean_rc and not clean_rc.startswith("Arguments:") and not clean_rc.startswith("{"):
             title = clean_rc
+        elif brief.get("title"):
+            title = brief["title"]
         elif brief.get("error_type") and brief["error_type"] not in ("Unknown", "Arguments"):
             err_msg_snippet = f": {brief.get('error_message')}" if brief.get("error_message") else ""
             title = f"Unhandled {brief['error_type']}{err_msg_snippet}"
-        elif inc.get("title") and not str(inc.get("title")).startswith("Arguments:"):
+        elif inc.get("title") and not str(inc.get("title")).startswith("Arguments:") and not str(inc.get("title")).startswith("{"):
             title = inc.get("title")
         else:
             title = f"Outage in {inc.get('service') or 'Production Service'}"
-        severity = (inc.get("severity") or "SEV-1").upper()
-        if not severity.startswith("SEV-") and severity in ("CRITICAL", "HIGH", "1"):
-            severity = "SEV-1 CRITICAL"
-        elif not severity.startswith("SEV-"):
-            severity = f"SEV-1 {severity}"
 
-        # Check for linked GitHub artifacts
+        raw_sev = (inc.get("severity") or ("LOW" if str(inc["id"]).startswith("inc-low-") else "HIGH")).upper()
+        if raw_sev == "LOW" or "LOW" in raw_sev:
+            severity = "LOW"
+        elif raw_sev in ("MEDIUM", "SEV-2"):
+            severity = "MEDIUM"
+        elif not raw_sev.startswith("SEV-") and raw_sev in ("CRITICAL", "HIGH", "1"):
+            severity = "SEV-1 CRITICAL"
+        elif not raw_sev.startswith("SEV-"):
+            severity = f"SEV-1 {raw_sev}"
+        else:
+            severity = raw_sev
+
+        # Check for linked GitHub artifacts and pipeline artifacts
         art_rows = get_artifacts(inc["id"])
         issue_num = None
         pr_num = None
+        has_diff = False
+        has_repro = False
         for a in art_rows:
-            if a.get("kind") == "github_issue":
+            kind = a.get("kind")
+            if kind == "github_issue":
                 try:
                     c = json.loads(a.get("content", "{}")) if isinstance(a.get("content"), str) else a.get("content")
                     issue_num = c.get("issue_number")
                 except Exception:
                     pass
-            elif a.get("kind") == "github_pr":
+            elif kind == "github_pr":
                 try:
                     c = json.loads(a.get("content", "{}")) if isinstance(a.get("content"), str) else a.get("content")
                     pr_num = c.get("pr_number")
                 except Exception:
                     pass
+            elif kind == "patch_diff" and (a.get("content") or a.get("path")):
+                has_diff = True
+            elif kind == "repro_test":
+                has_repro = True
+
+        events_list = get_events(incident_id=inc["id"])
+        has_staging = any(
+            e.get("kind") == "awaiting_approval" or e.get("stage") in ("STAGE", "DECIDE", "AWAIT_APPROVAL", "AWAITING_APPROVAL")
+            for e in events_list
+        )
 
         results.append({
             "id": inc["id"],
@@ -391,6 +423,10 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
             "root_cause_report": inc.get("root_cause_report"),
             "github_issue_number": issue_num,
             "github_pr_number": pr_num,
+            "has_diff": has_diff or bool(pr_num),
+            "has_repro": has_repro,
+            "has_pr": bool(pr_num),
+            "has_staging": has_staging,
         })
     return results
 
@@ -424,9 +460,18 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
             brief = json.loads(brief)
         except Exception:
             brief = {}
-    if not brief or brief.get("error_type") in ("Arguments", "Unknown") or (isinstance(brief.get("summary"), str) and "Arguments:" in brief["summary"]):
-        from backend.prodpilot.pipeline.brief import create_brief
-        brief = create_brief(inc)
+    if not brief:
+        rc_raw = inc.get("root_cause_report") or ""
+        if rc_raw.strip().startswith("{"):
+            try:
+                brief = json.loads(rc_raw)
+            except Exception:
+                pass
+
+    if not brief or (brief.get("error_type") in ("Arguments", "Unknown") and inc.get("severity") != "LOW") or (isinstance(brief.get("summary"), str) and "Arguments:" in brief["summary"]):
+        if inc.get("severity") != "LOW" and not str(inc["id"]).startswith("inc-low-"):
+            from backend.prodpilot.pipeline.brief import create_brief
+            brief = create_brief(inc)
 
     # Fetch artifacts
     art_rows = get_artifacts(incident_id)
@@ -502,13 +547,36 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
 
     rc_report = inc.get("root_cause_report") or ""
     clean_rc = re.sub(r"^Autonomous Watchdog detected:\s*", "", rc_report).strip()
+    if clean_rc.startswith("{"):
+        try:
+            rc_parsed = json.loads(clean_rc)
+            clean_rc = rc_parsed.get("title") or rc_parsed.get("summary") or ""
+            if not brief:
+                brief = rc_parsed
+        except Exception:
+            clean_rc = ""
+
     if clean_rc and not clean_rc.startswith("Arguments:"):
         detail_title = clean_rc
+    elif brief.get("title"):
+        detail_title = brief["title"]
     elif brief.get("error_type") and brief["error_type"] not in ("Unknown", "Arguments"):
         err_msg_snippet = f": {brief.get('error_message')}" if brief.get("error_message") else ""
         detail_title = f"Unhandled {brief['error_type']}{err_msg_snippet}"
     else:
-        detail_title = inc.get("title") or f"Outage in {inc.get('service') or 'Production Service'}"
+        raw_t = inc.get("title")
+        if raw_t and not str(raw_t).startswith("{"):
+            detail_title = raw_t
+        else:
+            detail_title = f"Outage in {inc.get('service') or 'Production Service'}"
+
+    raw_sev = (inc.get("severity") or ("LOW" if str(inc["id"]).startswith("inc-low-") else "HIGH")).upper()
+    if raw_sev == "LOW" or "LOW" in raw_sev:
+        incident_sev = "LOW"
+    elif raw_sev in ("MEDIUM", "SEV-2"):
+        incident_sev = "MEDIUM"
+    else:
+        incident_sev = "HIGH"
 
     res_data = {
         "id": inc["id"],
@@ -516,7 +584,8 @@ def get_incident_detail(incident_id: str, request: Request) -> Any:
         "service": inc["service"],
         "detected_at": inc["detected_at"],
         "status": inc["status"],
-        "summary": brief.get("summary") or rc_report or "Autonomous failure detection and diagnostics in progress.",
+        "severity": incident_sev,
+        "summary": (brief.get("summary") if isinstance(brief, dict) else None) or clean_rc or "Autonomous failure detection and diagnostics in progress.",
         "trace": inc.get("trace", ""),
         "log_tail": inc.get("log_tail", ""),
         "recent_commits": recent_commits,

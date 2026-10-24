@@ -49,7 +49,13 @@ import {
   formatRelativeTime,
   formatStatusLabel,
   getStatusBadgeStyle,
-  isIncidentInactive
+  getSeverityBadgeStyle,
+  formatSeverityLabel,
+  cleanIncidentTitle,
+  cleanIncidentSummary,
+  isIncidentInactive,
+  getIncidentLifecycleProgress,
+  INCIDENT_LIFECYCLE_STAGES
 } from '../utils/formatters';
 
 export default function IncidentDetail({
@@ -67,6 +73,8 @@ export default function IncidentDetail({
   onNavigate,
   onDeleteIncident,
   apiUrl = 'http://localhost:8765',
+  onLogAudit,
+  onRefresh,
 }) {
   const getInitialTab = () => {
     try {
@@ -91,7 +99,8 @@ export default function IncidentDetail({
       });
       if (res.ok) {
         if (onClearDeployError) onClearDeployError();
-        window.location.reload();
+        if (onRefresh) onRefresh();
+        else window.location.reload();
       }
     } catch (err) {
       console.error('Failed to resume autonomous remediation:', err);
@@ -107,9 +116,10 @@ export default function IncidentDetail({
       const res = await fetch(`${apiUrl}/incidents/${incident.id}/trigger-fix`, {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        window.location.reload();
+        if (onRefresh) onRefresh();
+        else window.location.reload();
       } else {
         setFixTriggerError(data.error || 'Failed to trigger remediation');
       }
@@ -219,7 +229,18 @@ export default function IncidentDetail({
   const suspectLocation = incident.suspected_area || (suspect.suspect_file ? `${suspect.suspect_file}:${suspect.suspect_line || ''}` : null);
 
   const brief = incident.brief || {};
-  const rootCauseSummary = brief.summary || incident.title || (suspectLocation ? `Investigating issue in ${suspectLocation}` : 'Investigating root cause...');
+  const displayTitle = cleanIncidentTitle(incident);
+  const displaySummary = cleanIncidentSummary(incident);
+
+  let rootCauseSummary = brief.summary || displaySummary || displayTitle || (suspectLocation ? `Investigating issue in ${suspectLocation}` : 'Investigating root cause...');
+  if (typeof rootCauseSummary === 'string' && rootCauseSummary.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rootCauseSummary);
+      rootCauseSummary = parsed.summary || parsed.title || 'Non-critical event detected';
+    } catch {
+      // ignore
+    }
+  }
 
   const artifacts = incident.artifacts || {};
   const diffContent = artifacts.patch_diff || incident.diff || null;
@@ -247,58 +268,16 @@ export default function IncidentDetail({
   const prUrl = githubPr?.pr_url || null;
   const prBranch = githubPr?.branch || null;
 
-  const STAGES_LIST = [
-    { key: 'INVESTIGATE', label: 'Investigation', shortDesc: 'Trace & Blame', tab: 'investigation', duration: '4s' },
-    { key: 'ANALYSIS', label: 'Analysis', shortDesc: 'Root Cause', tab: 'overview', duration: '8s' },
-    { key: 'REPRODUCE', label: 'Reproduction', shortDesc: 'Sandbox Proof', tab: 'investigation', duration: '26s' },
-    { key: 'FIX', label: 'Fix & Patch', shortDesc: 'Synthesize Patch', tab: 'changes', duration: '18s' },
-    { key: 'VERIFY', label: 'Canary Test', shortDesc: 'Canary Health', tab: 'recovery', duration: '35s' },
-    { key: 'AWAITING_APPROVAL', label: 'Approval Gate', shortDesc: 'Standby for Sign-off', tab: 'overview', duration: '14s' },
-    { key: 'RESOLVED', label: 'Restored', shortDesc: 'Live 200 OK', tab: 'overview', duration: '6s' },
-  ];
-
-  const getStageStatusIndex = () => {
-    if (isResolved) return 6;
-    if (isTakeover) return 5;
-    if (isAwaiting) return 5;
-    if (isFailed) return 3;
-    if (staging?.fix_forward?.health !== undefined) return 4;
-    if (diffContent || artifacts?.patch_diff) return 4;
-    switch (incident.status) {
-      case 'OPEN':
-      case 'DETECTED':
-        return 0;
-      case 'WAITING_FOR_DEVELOPER':
-      case 'INVESTIGATING':
-      case 'UNDERSTAND':
-      case 'TRIAGED':
-        return suspectHash || suspectAuthor ? 1 : 0;
-      case 'REPRODUCE':
-      case 'REPRODUCED':
-        return 2;
-      case 'FIXING':
-      case 'FIXED':
-      case 'VERIFY':
-      case 'VERIFIED':
-        return 3;
-      case 'STAGE':
-      case 'STAGED':
-        return 4;
-      case 'AWAITING_APPROVAL':
-      case 'DECIDE':
-      case 'GATE':
-      case 'MANUAL_TAKEOVER':
-        return 5;
-      case 'DEPLOYED':
-      case 'RESOLVED':
-      case 'ROLLED_BACK':
-        return 6;
-      default:
-        return 1;
-    }
-  };
-
-  const currentStageIdx = getStageStatusIndex();
+  const lifecycleProgress = getIncidentLifecycleProgress({
+    ...incident,
+    staging,
+    diffContent,
+    artifacts,
+    suspect_commit: suspectHash,
+    suspect_author: suspectAuthor,
+  });
+  const STAGES_LIST = lifecycleProgress.stages;
+  const currentStageIdx = lifecycleProgress.currentIdx;
 
   const generateNaturalIssue = () => {
     const b = incident.brief || {};
@@ -325,7 +304,7 @@ export default function IncidentDetail({
 
   const generateNaturalFix = () => {
     const diff = artifacts.patch_diff || incident.diff || '';
-    const stageIdx = getStageStatusIndex();
+    const stageIdx = currentStageIdx ?? 0;
 
     if (stageIdx < 3 && !diff) {
       if (stageIdx <= 1) {
@@ -400,7 +379,20 @@ export default function IncidentDetail({
               </button>
             )}
             <div className="flex items-center gap-2 min-w-0">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${isResolved ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+              <span
+                className={`rounded-full shrink-0 ${
+                  !isResolved && !isAwaiting && !isTakeover && !isWaitingForDev
+                    ? 'w-2 h-2 bg-[#f85149] animate-agent-pulse'
+                    : isAwaiting
+                    ? 'w-2 h-2 bg-[#e3b341] animate-pulse'
+                    : isWaitingForDev
+                    ? 'w-2 h-2 bg-[#f0883e]'
+                    : isResolved
+                    ? 'w-2 h-2 bg-[#3fb950]'
+                    : 'w-2 h-2 bg-[#f85149]'
+                }`}
+                title={!isResolved && !isAwaiting && !isTakeover && !isWaitingForDev ? 'Autonomous SRE Agent actively executing remediation' : undefined}
+              />
               <span className="font-mono text-xs font-bold text-[#58a6ff] px-1.5 py-0.5 rounded bg-[#161f30] border border-[#263550]">
                 {formatIncidentId(incident.id)}
               </span>
@@ -437,14 +429,42 @@ export default function IncidentDetail({
                 <ExternalLink size={10} className="text-[#8b949e]" />
               </a>
             )}
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-              {incident.severity || 'SEV-1'}
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase border ${getSeverityBadgeStyle(
+                incident.severity
+              )}`}
+            >
+              {formatSeverityLabel(incident.severity)}
             </span>
             <span
               className={`px-2 py-0.5 rounded text-[10px] font-medium border ${getStatusBadgeStyle(incident.status)}`}
             >
               {formatStatusLabel(incident.status)}
             </span>
+            {!isResolved && !isAwaiting && !isTakeover && (
+              <button
+                type="button"
+                onClick={handleTriggerFix}
+                disabled={triggeringFix}
+                className="px-2.5 py-1 rounded bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-xs"
+                title="Initiate or resume autonomous remediation"
+              >
+                {triggeringFix ? (
+                  <Loader2 size={11} className="animate-spin text-white" />
+                ) : (
+                  <Zap size={11} className="text-amber-300 fill-amber-300" />
+                )}
+                <span>
+                  {triggeringFix
+                    ? 'Starting...'
+                    : incident.status === 'FIXING'
+                    ? 'Continue Fix'
+                    : incident.status === 'FAILED'
+                    ? 'Retry Fix'
+                    : 'Generate Fix'}
+                </span>
+              </button>
+            )}
             <VoiceHotlineButton
               onClick={() => setShowVoiceModal(true)}
               apiUrl={apiUrl}
@@ -488,27 +508,39 @@ export default function IncidentDetail({
       </div>
 
       <div className="flex-1 w-full max-w-[1680px] mx-auto px-6 py-5 space-y-4">
-        {/* Low Severity / Needs Review Banner */}
-        {isWaitingForDev && !isResolved && (
+        {/* Action / Remediation Banner */}
+        {!isResolved && !isAwaiting && !isTakeover && (
           <div className="p-3.5 rounded-lg bg-[#0e1726] border border-[#1d2d4a] flex items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-[#14233e] border border-[#233a66] flex items-center justify-center text-[#58a6ff] shrink-0">
-                <Info className="w-4 h-4 text-[#58a6ff]" />
+                <Zap className="w-4 h-4 text-[#58a6ff]" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xs font-semibold text-[#f0f6fc]">
-                    Low Severity Issue Triaged
+                    {incident.status === 'FIXING'
+                      ? 'Autonomous Fix Stopped / Interrupted'
+                      : incident.status === 'FAILED'
+                      ? 'Remediation Stalled / Failed'
+                      : isWaitingForDev
+                      ? 'Low Severity Issue Triaged'
+                      : 'Autonomous Fix Ready to Dispatch'}
                   </h3>
-                  <span className="text-[11px] text-[#79c0ff] font-mono px-1.5 py-0.2 rounded bg-[#16233b] border border-[#223961]">
-                    Status: Needs Review
+                  <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded border ${getStatusBadgeStyle(incident.status)}`}>
+                    Status: {formatStatusLabel(incident.status)}
                   </span>
-                  <span className="text-[11px] text-[#8b949e] font-mono px-1.5 py-0.2 rounded bg-[#161b26] border border-[#21262d]">
-                    Autonomous Fix Deferred
+                  <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded border ${getSeverityBadgeStyle(incident.severity)}`}>
+                    {formatSeverityLabel(incident.severity)}
                   </span>
                 </div>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
-                  Classified as non-critical ({incident.brief?.category || incident.title || 'Client disconnect or benign network drop'}). Automated PR creation, sandbox verification, and voice paging were deferred.
+                  {incident.status === 'FIXING'
+                    ? 'The code synthesis run was paused or interrupted. Click Continue Fix to resume synthesis with protected worktree.'
+                    : incident.status === 'FAILED'
+                    ? 'Automated tests or patching encountered an issue. Click Retry Fix to re-run remediation.'
+                    : isWaitingForDev
+                    ? `Classified as non-critical (${brief.reason || brief.summary || displayTitle.replace(/^\[LOW\]\s*/, '') || 'Client network disconnect'}). Automated PR creation and voice paging deferred.`
+                    : `Active incident in ${incident.service || 'service'}. Click Generate Fix to synthesize a repro test, patch, and canary.`}
                 </p>
                 {fixTriggerError && (
                   <p className="text-xs text-[#f85149] mt-1 font-mono">
@@ -522,7 +554,7 @@ export default function IncidentDetail({
                 type="button"
                 onClick={handleTriggerFix}
                 disabled={triggeringFix}
-                className="px-3 py-1.5 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-sm hover:shadow-md"
+                className="px-3.5 py-1.5 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-sm hover:shadow-md"
                 title="Manually trigger autonomous agent to synthesize repro test, sandbox fix, and canary verification"
               >
                 {triggeringFix ? (
@@ -530,7 +562,15 @@ export default function IncidentDetail({
                 ) : (
                   <Zap size={12} className="text-amber-300 fill-amber-300" />
                 )}
-                <span>{triggeringFix ? 'Initiating Remediation...' : 'Generate Fix'}</span>
+                <span>
+                  {triggeringFix
+                    ? 'Initiating...'
+                    : incident.status === 'FIXING'
+                    ? 'Continue Fix'
+                    : incident.status === 'FAILED'
+                    ? 'Retry Fix'
+                    : 'Generate Fix'}
+                </span>
               </button>
             </div>
           </div>
@@ -758,20 +798,18 @@ export default function IncidentDetail({
                     </span>
                   </div>
                   <h1 className="text-base font-semibold text-[#f0f6fc] mt-1.5">
-                    {incident.title || `Outage in ${incident.suspected_area || 'Production Service'}`}
+                    {displayTitle}
                   </h1>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-xs text-[#8b949e]">Severity:</span>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
-                    incident.severity === 'LOW'
-                      ? 'bg-[#101e38] text-[#79c0ff] border-[#1d3b6a]'
-                      : incident.severity === 'MEDIUM'
-                      ? 'bg-[#2b1f0c] text-[#e3b341] border-[#4d3814]'
-                      : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                  }`}>
-                    {incident.severity || 'HIGH'}
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded border ${getSeverityBadgeStyle(
+                      incident.severity
+                    )}`}
+                  >
+                    {formatSeverityLabel(incident.severity)}
                   </span>
                 </div>
               </div>
@@ -800,7 +838,7 @@ export default function IncidentDetail({
                         <span className="text-[#3fb950]">Fix-Forward (Merged PR)</span>
                       )
                     ) : isWaitingForDev ? (
-                      <span className="text-[#79c0ff]">Manual Review (Deferred)</span>
+                      <span className="text-[#f0883e]">Manual Review (Deferred)</span>
                     ) : isAwaiting ? (
                       <span className="text-[#d29922]">Awaiting Gate Approval</span>
                     ) : currentStageIdx >= 4 ? (
@@ -820,6 +858,10 @@ export default function IncidentDetail({
                     ) : isResolved ? (
                       <span className="text-[#3fb950] flex items-center gap-1">
                         <CheckCircle2 size={12} /> Restored (200 OK)
+                      </span>
+                    ) : isWaitingForDev ? (
+                      <span className="text-[#f0883e] flex items-center gap-1">
+                        <Clock size={12} /> Needs Review
                       </span>
                     ) : isAwaiting ? (
                       <span className="text-[#d29922]">Approval Required</span>
@@ -871,6 +913,7 @@ export default function IncidentDetail({
                     isResolved ? "bg-[#122419] text-[#3fb950] border-[#1f4a2b]" :
                     isTakeover ? "bg-[#211833] text-[#bc8cff] border-[#492f70]" :
                     isFailed ? "bg-[#261317] text-[#ff7b72] border-[#ff7b72]/30" :
+                    isWaitingForDev ? "bg-[#2a1708] text-[#f0883e] border-[#542c0f]" :
                     isAwaiting ? "bg-[#241a0c] text-[#d29922] border-[#442c16]" :
                     "bg-[#161f30] text-[#79c0ff] border-[#273855]"
                   }`}>
@@ -880,9 +923,11 @@ export default function IncidentDetail({
                       ? `5 of 7 Completed • Operator Override`
                       : isFailed
                       ? `${Math.max(0, currentStageIdx)} of 7 Completed • Remediation Blocked`
+                      : isWaitingForDev
+                      ? `${lifecycleProgress.completedCount} of 7 Completed • Needs Developer Review`
                       : isAwaiting
                       ? `5 of 7 Completed • Standby for Sign-off`
-                      : `${currentStageIdx} of 7 Completed • In Progress`}
+                      : `${lifecycleProgress.completedCount} of 7 Completed • In Progress`}
                   </span>
                 </div>
 
@@ -895,6 +940,8 @@ export default function IncidentDetail({
                       ? 'bg-[#211833] text-[#bc8cff] border-[#492f70]'
                       : isFailed
                       ? 'bg-[#261317] text-[#ff7b72] border-[#ff7b72]/40'
+                      : isWaitingForDev
+                      ? 'bg-[#2a1708] text-[#f0883e] border-[#542c0f]'
                       : isAwaiting
                       ? 'bg-[#241a0c] text-[#d29922] border-[#442c16]'
                       : 'bg-[#161f30] text-[#58a6ff] border-[#273855]'
@@ -905,23 +952,15 @@ export default function IncidentDetail({
                       <span className="w-1.5 h-1.5 rounded-full bg-[#bc8cff] animate-ping" />
                     ) : isFailed ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#f85149] animate-ping" />
+                    ) : isWaitingForDev ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#f0883e]" />
                     ) : isAwaiting ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#d29922] animate-ping" />
                     ) : (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#58a6ff] animate-ping" />
                     )}
                     <span>
-                      {isResolved
-                        ? 'Production Restored (200 OK)'
-                        : isTakeover
-                        ? 'Operator Control Active (Autonomous Loop Bypassed)'
-                        : isFailed
-                        ? 'Remediation Blocked — Manual Operator Intervention Required'
-                        : isWaitingForDev
-                        ? 'Needs Review — Autonomous Fix Deferred (Click "Generate Fix" to Dispatch)'
-                        : isAwaiting
-                        ? 'Approval Gate: Standby for Operator Sign-off'
-                        : `${STAGES_LIST[currentStageIdx]?.label}: ${STAGES_LIST[currentStageIdx]?.shortDesc}`}
+                      {lifecycleProgress.statusText}
                     </span>
                   </span>
                 </div>
@@ -961,8 +1000,10 @@ export default function IncidentDetail({
                       pillText = 'GATE';
                       pillStyle = 'bg-[#241a0c] text-[#d29922] border-[#442c16] font-semibold animate-pulse';
                     } else if (isActive) {
-                      pillText = 'LIVE';
-                      pillStyle = 'bg-[#161f30] text-[#58a6ff] border-[#273855] font-semibold animate-pulse';
+                      pillText = isWaitingForDev ? 'REVIEW' : 'LIVE';
+                      pillStyle = isWaitingForDev
+                        ? 'bg-[#2a1708] text-[#f0883e] border-[#542c0f] font-semibold'
+                        : 'bg-[#161f30] text-[#58a6ff] border-[#273855] font-semibold animate-pulse';
                     }
 
                     const circleStyle = isCompleted
@@ -974,7 +1015,9 @@ export default function IncidentDetail({
                       : isStandbyActive
                       ? 'bg-[#241a0c] text-[#d29922] border-[#d29922] ring-2 ring-[#d29922]/40 shadow-md'
                       : isActive
-                      ? 'bg-[#161f30] text-[#58a6ff] border-[#388bfd] ring-2 ring-[#58a6ff]/40 shadow-md'
+                      ? isWaitingForDev
+                        ? 'bg-[#2a1708] text-[#f0883e] border-[#f0883e] ring-2 ring-[#f0883e]/30 shadow-md'
+                        : 'bg-[#161f30] text-[#58a6ff] border-[#388bfd] ring-2 ring-[#58a6ff]/40 shadow-md'
                       : 'bg-[#090d14] text-[#6e7681] border-[#1b2234] group-hover:border-[#2b3a58]';
 
                     const labelStyle = isCompleted
@@ -986,7 +1029,9 @@ export default function IncidentDetail({
                       : isStandbyActive
                       ? 'text-[#d29922] font-bold'
                       : isActive
-                      ? 'text-[#58a6ff] font-bold'
+                      ? isWaitingForDev
+                        ? 'text-[#f0883e] font-bold'
+                        : 'text-[#58a6ff] font-bold'
                       : 'text-[#6e7681] group-hover:text-[#8b949e]';
 
                     const descStyle = isCompleted
@@ -998,7 +1043,9 @@ export default function IncidentDetail({
                       : isStandbyActive
                       ? 'text-[#d29922]/90'
                       : isActive
-                      ? 'text-[#79c0ff]'
+                      ? isWaitingForDev
+                        ? 'text-[#f0883e]'
+                        : 'text-[#79c0ff]'
                       : 'text-[#485263]';
 
                     const getConnectorClass = () => {
@@ -1011,6 +1058,10 @@ export default function IncidentDetail({
                       if (isFailed) {
                         if (idx + 1 < currentStageIdx) return 'bg-[#238636]';
                         if (idx + 1 === currentStageIdx) return 'pipeline-crimson-line';
+                        return 'bg-transparent';
+                      }
+                      if (isWaitingForDev) {
+                        if (idx < currentStageIdx) return 'bg-[#238636]';
                         return 'bg-transparent';
                       }
                       if (idx + 1 < currentStageIdx) return 'bg-[#238636]';

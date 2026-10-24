@@ -47,5 +47,10 @@ echo "  ProdPilot Unified Test Suite"
 echo "  Adapter: ${PRODPILOT_AGENT_ADAPTER} (use --live for LLM calls)"
 echo "=========================================================="
 
+if [ -f "$REPO_ROOT/desktop/package.json" ]; then
+    echo "▶ Validating desktop UI static scope & AST integrity..."
+    (cd "$REPO_ROOT/desktop" && node scripts/validate-scope.cjs)
+fi
+
 cd "$REPO_ROOT"
 exec "$VENV_PYTEST" -q ${LIVE_FLAG} "${ARGS[@]}"

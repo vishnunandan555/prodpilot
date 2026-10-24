@@ -481,12 +481,30 @@ def cleanup_stale_worktrees(
         should_remove = False
         reason = ""
 
+        # Protect worktrees belonging to active incidents
+        inc_id = wt.get("incident_id")
+        if inc_id and not force_all_temporary:
+            try:
+                from backend.prodpilot.db import get_incident
+                inc = get_incident(inc_id)
+                if inc and inc.get("status") in (
+                    "OPEN", "INVESTIGATING", "UNDERSTAND", "TRIAGED",
+                    "REPRODUCE", "FIXING", "VERIFY", "STAGE", "STAGED", "AWAITING_APPROVAL"
+                ):
+                    logger.debug(f"Preserving worktree {wt_path} belonging to active incident {inc_id} ({inc.get('status')})")
+                    continue
+            except Exception:
+                pass
+
         if force_all_temporary:
             should_remove = True
             reason = "force_all_temporary requested"
         elif wt.get("owner_alive") is False:
-            should_remove = True
-            reason = f"owner process (PID {wt.get('owner_pid')}) is dead"
+            # Only prune dead-owner worktrees if they are at least 5 minutes old
+            age = wt.get("age_seconds")
+            if age is None or age > 300.0:
+                should_remove = True
+                reason = f"owner process (PID {wt.get('owner_pid')}) is dead and age is {age}s"
         elif max_age_seconds is not None and wt.get("age_seconds") is not None:
             if wt["age_seconds"] > max_age_seconds:
                 should_remove = True
@@ -500,10 +518,18 @@ def cleanup_stale_worktrees(
     # 3. Check for any leftover untracked folders inside .worktree/
     base_dir = repo / ".worktree"
     if base_dir.is_dir():
+        now_ts = time.time()
         for child in list(base_dir.iterdir()):
             if child.is_dir() and not child.name.startswith("."):
                 child_str = str(child.resolve())
                 if child_str not in cleaned:
+                    # Do not remove directories modified within the last 10 minutes unless forced
+                    try:
+                        mtime = child.stat().st_mtime
+                        if not force_all_temporary and (now_ts - mtime) < 600.0:
+                            continue
+                    except Exception:
+                        pass
                     logger.info(f"Removing unindexed worktree directory in .worktree: {child_str}")
                     try:
                         shutil.rmtree(child_str, ignore_errors=True)

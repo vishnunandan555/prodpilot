@@ -22,7 +22,17 @@ import {
   Radio
 } from 'lucide-react';
 import { StatCardsSkeleton, ListItemSkeleton } from './LoadingSkeleton';
-import { formatIncidentId, formatStatusLabel, getStatusBadgeStyle, isIncidentActive, isIncidentInactive } from '../utils/formatters';
+import {
+  formatIncidentId,
+  formatStatusLabel,
+  getStatusBadgeStyle,
+  getSeverityBadgeStyle,
+  formatSeverityLabel,
+  isIncidentActive,
+  isIncidentInactive,
+  isLowSeverityIncident,
+  formatTime
+} from '../utils/formatters';
 
 export default function DashboardView({
   incidents = [],
@@ -90,7 +100,9 @@ export default function DashboardView({
     return () => clearInterval(interval);
   }, [apiUrl]);
 
-  const activeIncidents = incidents.filter((i) => isIncidentActive(i.status));
+  const activeIncidents = incidents.filter(
+    (i) => isIncidentActive(i.status) && !isLowSeverityIncident(i)
+  );
   const resolvedIncidents = incidents.filter((i) => isIncidentInactive(i.status));
 
   const isDegraded = activeIncidents.length > 0;
@@ -404,8 +416,8 @@ export default function DashboardView({
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <span className="px-2 py-0.5 rounded bg-[#da3633] text-white font-bold text-[10px] uppercase">
-                        SEV-1
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase border ${getSeverityBadgeStyle(primaryActive.severity)}`}>
+                        {formatSeverityLabel(primaryActive.severity)}
                       </span>
                       <span className="font-mono font-bold text-[#58a6ff] px-1.5 py-0.5 rounded bg-[#161f30] border border-[#263550]">
                         {formatIncidentId(primaryActive.id)}
@@ -685,7 +697,7 @@ export default function DashboardView({
                   primaryActive.events.map((ev, idx) => (
                     <div key={idx} className="flex items-start gap-3 p-2 rounded bg-[#07090f] border border-[#1b2234]">
                       <span className="text-[#485263] text-xs font-mono flex-shrink-0">
-                        {ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : 'NOW'}
+                        {formatTime(ev.created_at, 'NOW')}
                       </span>
                       <span className="px-1.5 py-0.2 rounded bg-[#121929] text-[#58a6ff] border border-[#1d2d47] text-[10px] font-semibold">
                         {ev.stage || 'EVENT'}

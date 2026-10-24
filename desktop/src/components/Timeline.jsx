@@ -15,6 +15,7 @@ import {
   Sparkles,
   Zap
 } from 'lucide-react';
+import { formatTime } from '../utils/formatters';
 
 const STAGES = [
   { key: 'UNDERSTAND', label: '1. Ingestion', desc: 'Traceback & Blame' },
@@ -181,7 +182,7 @@ export default function Timeline({ events = [], currentStatus = 'OPEN' }) {
                         <span className="font-semibold text-slate-200">{evt.kind}</span>
                       </div>
                       <span className="text-[11px] font-mono text-slate-500">
-                        {evt.ts ? new Date(evt.ts).toLocaleTimeString() : ''}
+                        {formatTime(evt.ts)}
                       </span>
                     </div>
 

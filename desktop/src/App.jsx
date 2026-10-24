@@ -15,6 +15,8 @@ import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
 import IncidentsListView from './components/IncidentsListView';
 import DemoSlidesView from './components/DemoSlidesView';
+import TwilioCallModal from './components/TwilioCallModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import { GlobalProgressBar } from './components/LoadingSkeleton';
 import { isIncidentActive } from './utils/formatters';
 
@@ -75,6 +77,7 @@ export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('prodpilot_token') || '');
   const [showAuthModal, setShowAuthModal] = useState(() => !localStorage.getItem('prodpilot_user'));
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showGlobalVoiceModal, setShowGlobalVoiceModal] = useState(false);
 
   const handleLoginSuccess = (user, tokenStr) => {
     setCurrentUser(user);
@@ -220,6 +223,9 @@ export default function App() {
           (data.artifacts?.patch_diff && data.artifacts.patch_diff !== curr.artifacts?.patch_diff)
         ) {
           setSelectedIncident(data);
+          setIncidents((prev) =>
+            prev.map((inc) => (inc.id === data.id ? { ...inc, ...data } : inc))
+          );
         }
         if (data.events && Array.isArray(data.events)) {
           setEvents(data.events);
@@ -263,6 +269,11 @@ export default function App() {
               if (!curr) return curr;
               return { ...curr, status: parsed.stage };
             });
+            setIncidents((prev) =>
+              prev.map((inc) =>
+                inc.id === selectedIncident.id ? { ...inc, status: parsed.stage } : inc
+              )
+            );
           }
 
           if (parsed.stage === 'DEPLOYED' || parsed.stage === 'RESOLVED') {
@@ -609,6 +620,8 @@ export default function App() {
           onOpenAuth={() => setShowAuthModal(true)}
           onOpenProfile={() => setShowProfileModal(true)}
           isRefreshing={isRefreshing}
+          apiUrl={apiUrl}
+          onOpenVoiceModal={() => setShowGlobalVoiceModal(true)}
         />
       </div>
 
@@ -642,111 +655,123 @@ export default function App() {
 
         {/* Center Dynamic Views */}
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#080b11] min-w-0">
-          {activeNav === 'dashboard' && (
-            <DashboardView
-              incidents={incidents}
-              onSelectIncident={handleSelectIncident}
-              onNavigate={handleNavigate}
-              apiConnected={apiConnected}
-              apiUrl={apiUrl}
-              currentUser={currentUser}
-            />
-          )}
-
-          {activeNav === 'incidents' && (
-            selectedIncident ? (
-              <IncidentDetail
-                incident={selectedIncident}
-                events={events}
-                onApprove={handleApprove}
-                onRollback={handleRollback}
-                onTakeover={handleTakeover}
-                actionLoading={actionLoading}
-                deploySuccess={deploySuccess}
-                deployError={deployError}
-                onClearDeployError={() => setDeployError(null)}
-                isStandaloneMobile={isMobileScreen}
-                onBack={handleBackToIncidentsList}
-                onNavigate={handleNavigate}
-                onDeleteIncident={handleDeleteIncident}
-                onLogAudit={logAuditAction}
-              />
-            ) : (
-              <IncidentsListView
+          <ErrorBoundary
+            title="View Render Intercepted"
+            onGoHome={() => {
+              setSelectedIncident(null);
+              setActiveNav('dashboard');
+              if (window.history.pushState) window.history.pushState({}, '', '/');
+            }}
+            onReset={() => fetchIncidents(true)}
+          >
+            {activeNav === 'dashboard' && (
+              <DashboardView
                 incidents={incidents}
                 onSelectIncident={handleSelectIncident}
-                onRefresh={() => fetchIncidents(true)}
-                isRefreshing={isRefreshing}
                 onNavigate={handleNavigate}
+                apiConnected={apiConnected}
+                apiUrl={apiUrl}
+                currentUser={currentUser}
               />
-            )
-          )}
+            )}
 
-          {activeNav === 'master_logs' && (
-            <MasterLogsView
-              apiUrl={apiUrl}
-              onNavigate={handleNavigate}
-              onSelectIncident={(inc) => {
-                handleSelectIncident(inc);
-                setActiveNav('incidents');
-              }}
-            />
-          )}
+            {activeNav === 'incidents' && (
+              selectedIncident ? (
+                <IncidentDetail
+                  incident={selectedIncident}
+                  events={events}
+                  onApprove={handleApprove}
+                  onRollback={handleRollback}
+                  onTakeover={handleTakeover}
+                  actionLoading={actionLoading}
+                  deploySuccess={deploySuccess}
+                  deployError={deployError}
+                  onClearDeployError={() => setDeployError(null)}
+                  isStandaloneMobile={isMobileScreen}
+                  onBack={handleBackToIncidentsList}
+                  onNavigate={handleNavigate}
+                  onDeleteIncident={handleDeleteIncident}
+                  onLogAudit={logAuditAction}
+                  apiUrl={apiUrl}
+                  onRefresh={() => fetchIncidents(true)}
+                />
+              ) : (
+                <IncidentsListView
+                  incidents={incidents}
+                  onSelectIncident={handleSelectIncident}
+                  onRefresh={() => fetchIncidents(true)}
+                  isRefreshing={isRefreshing}
+                  onNavigate={handleNavigate}
+                />
+              )
+            )}
 
-          {(activeNav === 'logs' || activeNav === 'telemetry') && (
-            <LogsView
-              apiUrl={apiUrl}
-              incidents={incidents}
-              initialSearch={logsNavParams?.searchTerm || ''}
-              onNavigate={handleNavigate}
-              onSelectIncident={(inc) => {
-                handleSelectIncident(inc);
-                setActiveNav('incidents');
-              }}
-            />
-          )}
+            {activeNav === 'master_logs' && (
+              <MasterLogsView
+                apiUrl={apiUrl}
+                onNavigate={handleNavigate}
+                onSelectIncident={(inc) => {
+                  handleSelectIncident(inc);
+                  setActiveNav('incidents');
+                }}
+              />
+            )}
 
-          {activeNav === 'servers' && (
-            <ServersView apiUrl={apiUrl} onNavigateToLogs={() => setActiveNav('logs')} />
-          )}
+            {(activeNav === 'logs' || activeNav === 'telemetry') && (
+              <LogsView
+                apiUrl={apiUrl}
+                incidents={incidents}
+                initialSearch={logsNavParams?.searchTerm || ''}
+                onNavigate={handleNavigate}
+                onSelectIncident={(inc) => {
+                  handleSelectIncident(inc);
+                  setActiveNav('incidents');
+                }}
+              />
+            )}
 
-          {(activeNav === 'projects' || activeNav === 'repositories') && (
-            <ProjectsView apiUrl={apiUrl} />
-          )}
+            {activeNav === 'servers' && (
+              <ServersView apiUrl={apiUrl} onNavigateToLogs={() => setActiveNav('logs')} />
+            )}
 
-          {activeNav === 'services' && (
-            <PlatformServicesView apiUrl={apiUrl} onNavigate={(nav) => setActiveNav(nav)} />
-          )}
+            {(activeNav === 'projects' || activeNav === 'repositories') && (
+              <ProjectsView apiUrl={apiUrl} />
+            )}
 
-          {activeNav === 'agents' && (
-            <AgentsView
-              apiUrl={apiUrl}
-              incidents={incidents}
-              onNavigate={(nav) => setActiveNav(nav)}
-            />
-          )}
+            {activeNav === 'services' && (
+              <PlatformServicesView apiUrl={apiUrl} onNavigate={(nav) => setActiveNav(nav)} />
+            )}
 
-          {activeNav === 'team' && (
-            <TeamView
-              apiUrl={apiUrl}
-              currentUser={currentUser}
-              onOpenProfile={() => setShowProfileModal(true)}
-            />
-          )}
+            {activeNav === 'agents' && (
+              <AgentsView
+                apiUrl={apiUrl}
+                incidents={incidents}
+                onNavigate={(nav) => setActiveNav(nav)}
+              />
+            )}
 
-          {activeNav === 'settings' && (
-            <SettingsView
-              apiBaseUrl={apiUrl}
-              onSaveApiUrl={handleSaveApiUrl}
-              apiConnected={apiConnected}
-              currentUser={currentUser}
-              onUpdateUser={handleUpdateUser}
-            />
-          )}
+            {activeNav === 'team' && (
+              <TeamView
+                apiUrl={apiUrl}
+                currentUser={currentUser}
+                onOpenProfile={() => setShowProfileModal(true)}
+              />
+            )}
 
-          {activeNav === 'demo' && (
-            <DemoSlidesView />
-          )}
+            {activeNav === 'settings' && (
+              <SettingsView
+                apiBaseUrl={apiUrl}
+                onSaveApiUrl={handleSaveApiUrl}
+                apiConnected={apiConnected}
+                currentUser={currentUser}
+                onUpdateUser={handleUpdateUser}
+              />
+            )}
+
+            {activeNav === 'demo' && (
+              <DemoSlidesView />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 
@@ -765,6 +790,14 @@ export default function App() {
         currentUser={currentUser}
         apiUrl={apiUrl}
         onUpdateUser={handleUpdateUser}
+      />
+
+      {/* Global SRE Voice Companion Hotline Modal */}
+      <TwilioCallModal
+        isOpen={showGlobalVoiceModal}
+        onClose={() => setShowGlobalVoiceModal(false)}
+        apiUrl={apiUrl}
+        incidentId={selectedIncident?.id || null}
       />
     </div>
   );

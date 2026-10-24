@@ -40,7 +40,7 @@ export default function TwilioCallModal({
 
   const logsEndRef = useRef(null);
 
-  // Sync initialCallData
+  // Sync initialCallData or discover active call on open
   useEffect(() => {
     if (initialCallData?.call_sid) {
       setCallSid(initialCallData.call_sid);
@@ -49,8 +49,20 @@ export default function TwilioCallModal({
     } else if (initialCallData?.status === 'failed' || initialCallData?.error) {
       setCallStatus('failed');
       setCallError(initialCallData.error || 'Failed to place call via Twilio');
+    } else if (isOpen) {
+      const q = incidentId ? `?incident_id=${encodeURIComponent(incidentId)}` : '';
+      fetch(`${apiUrl}/voice/active-call${q}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.call_sid) {
+            setCallSid(d.call_sid);
+            setCallStatus(d.status || 'in-progress');
+            if (d.duration) setDuration(d.duration);
+          }
+        })
+        .catch(() => {});
     }
-  }, [initialCallData]);
+  }, [initialCallData, isOpen, apiUrl, incidentId]);
 
   // Duration timer only when call is actively answered/in-progress
   useEffect(() => {
@@ -135,10 +147,12 @@ export default function TwilioCallModal({
 
   // Hangup call
   const handleHangup = async () => {
-    if (!callSid) return;
     setHangingUp(true);
     try {
-      await fetch(`${apiUrl}/voice/hangup/${callSid}`, { method: 'POST' });
+      if (callSid) {
+        await fetch(`${apiUrl}/voice/hangup/${callSid}`, { method: 'POST' }).catch(() => {});
+      }
+      await fetch(`${apiUrl}/voice/reset-call`, { method: 'POST' }).catch(() => {});
       setCallStatus('completed');
     } catch (err) {
       console.error('Hangup error:', err);
@@ -288,12 +302,12 @@ export default function TwilioCallModal({
                 {callSid || 'Dialing...'}
               </p>
             </div>
-            {callSid && callStatus !== 'completed' && (
+            {(callSid || callStatus === 'in-progress' || callStatus === 'ringing') && callStatus !== 'completed' && (
               <button
                 onClick={handleHangup}
                 disabled={hangingUp}
                 title="End Active Call"
-                className="px-2.5 py-1 rounded bg-[#261317] hover:bg-[#3d1820] text-[#ff7b72] border border-[#4a1c24] text-[10px] font-bold flex items-center gap-1 transition flex-shrink-0"
+                className="px-2.5 py-1 rounded bg-[#261317] hover:bg-[#3d1820] text-[#ff7b72] border border-[#4a1c24] text-[10px] font-bold flex items-center gap-1 transition flex-shrink-0 cursor-pointer"
               >
                 <PhoneOff size={12} />
                 <span>End</span>

@@ -29,6 +29,7 @@ import {
   ExternalLink,
   ArrowDown
 } from 'lucide-react';
+import { formatTime } from '../utils/formatters';
 
 export default function AgentExecutionConsole({
   incident,
@@ -65,7 +66,7 @@ export default function AgentExecutionConsole({
     const stage = ev.stage || 'EXECUTE';
     const kind = ev.kind || 'tool_call';
     const payload = ev.payload || {};
-    const ts = ev.ts ? new Date(ev.ts).toLocaleTimeString() : `Step ${idx + 1}`;
+    const ts = formatTime(ev.ts, `Step ${idx + 1}`);
 
     const isThought = kind === 'thought' || kind === 'stage_started' || kind === 'agent_step' || stage === 'UNDERSTAND' || stage === 'DECIDE';
     const isTest = kind === 'test_result' || stage === 'VERIFY';

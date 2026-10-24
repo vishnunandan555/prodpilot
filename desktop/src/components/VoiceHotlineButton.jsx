@@ -27,7 +27,7 @@ export default function VoiceHotlineButton({
 
   // Local duration counter to tick smoothly every second during an active call
   useEffect(() => {
-    if (!callData.is_active || callData.step === 'IDLE' || callData.step === 'LAUNCHING' || callData.step === 'RINGING') {
+    if (!callData.is_active || callData.step === 'IDLE' || callData.step === 'LAUNCHING' || callData.step === 'RINGING' || callData.step === 'ENDED') {
       return;
     }
     const timer = setInterval(() => {
@@ -49,11 +49,13 @@ export default function VoiceHotlineButton({
         const res = await fetch(`${apiUrl}/voice/active-call${query}`);
         if (res.ok && isMounted) {
           const data = await res.json();
+          const isActive = Boolean(data.is_active && data.step !== 'IDLE' && data.step !== 'ENDED');
           setCallData((prev) => ({
             ...prev,
             ...data,
-            // Keep local timer if remote duration is within 1s
-            duration: Math.max(data.duration || 0, prev.duration || 0),
+            is_active: isActive,
+            // Reset to 0 when call is inactive/ended/idle; only track duration when genuinely in-progress
+            duration: isActive ? Math.max(data.duration || 0, prev.duration || 0) : 0,
           }));
         }
       } catch (err) {

@@ -30,32 +30,16 @@ import {
   formatIncidentId,
   formatStatusLabel,
   getStatusBadgeStyle,
+  getSeverityBadgeStyle,
+  formatSeverityLabel,
+  cleanIncidentTitle,
+  cleanIncidentSummary,
   formatRelativeTime,
   isIncidentActive,
-  isIncidentInactive
+  isIncidentInactive,
+  getIncidentLifecycleProgress,
+  INCIDENT_LIFECYCLE_STAGES
 } from '../utils/formatters';
-
-// 7-Stage Incident Resolution Lifecycle stages
-const LIFECYCLE_STAGES = [
-  { key: 'DETECT', label: 'Detect', minStatus: ['OPEN', 'DETECTED', 'INVESTIGATING'] },
-  { key: 'DIAGNOSE', label: 'Diagnose', minStatus: ['INVESTIGATING', 'ANALYZING', 'FIXING'] },
-  { key: 'REPRO', label: 'Repro', minStatus: ['FIXING', 'REPRODUCING'] },
-  { key: 'FIX', label: 'Fix', minStatus: ['FIXING', 'CANARY_TESTING', 'AWAITING_APPROVAL'] },
-  { key: 'CANARY', label: 'Canary', minStatus: ['CANARY_TESTING', 'AWAITING_APPROVAL'] },
-  { key: 'APPROVE', label: 'Approve', minStatus: ['AWAITING_APPROVAL', 'APPROVED', 'DEPLOYING'] },
-  { key: 'DEPLOY', label: 'Deploy', minStatus: ['DEPLOYED', 'RESOLVED', 'CLOSED'] }
-];
-
-function getLifecycleProgress(status) {
-  const s = (status || '').toUpperCase();
-  if (s === 'MANUAL_TAKEOVER') return { currentIdx: 7, label: 'Manual Takeover (Operator Control)', percent: 100 };
-  if (s === 'DEPLOYED' || s === 'RESOLVED' || s === 'CLOSED') return { currentIdx: 7, label: 'Stage 7/7: Production Restored', percent: 100 };
-  if (s === 'AWAITING_APPROVAL') return { currentIdx: 5, label: 'Stage 6/7: Approval Gate (Standby)', percent: 85 };
-  if (s === 'CANARY_TESTING') return { currentIdx: 4, label: 'Stage 5/7: Canary Verification (:8001/:8002)', percent: 70 };
-  if (s === 'FIXING') return { currentIdx: 3, label: 'Stage 4/7: Patch Synthesis & Repro Proof', percent: 55 };
-  if (s === 'INVESTIGATING' || s === 'ANALYZING') return { currentIdx: 1, label: 'Stage 2/7: Root Cause Analysis', percent: 30 };
-  return { currentIdx: 0, label: 'Stage 1/7: Autonomous Triage', percent: 15 };
-}
 
 export default function IncidentsListView({
   incidents = [],
@@ -370,7 +354,10 @@ export default function IncidentsListView({
                   const isActive = isIncidentActive(inc.status);
                   const isAwaiting = inc.status === 'AWAITING_APPROVAL' || inc.status === 'awaiting_approval';
                   const isResolved = isIncidentInactive(inc.status);
-                  const progress = getLifecycleProgress(inc.status);
+                  const isTakeover = inc.status === 'MANUAL_TAKEOVER';
+                  const isWaitingForDev = inc.status === 'WAITING_FOR_DEVELOPER' || (inc.severity || '').toUpperCase().includes('LOW');
+                  const isAgentWorking = isActive && !isAwaiting && !isTakeover && !isWaitingForDev;
+                  const progress = getIncidentLifecycleProgress(inc);
                   const suspectCommit = typeof inc.suspect_commit === 'string'
                     ? inc.suspect_commit
                     : inc.suspect_commit?.hash;
@@ -384,13 +371,18 @@ export default function IncidentsListView({
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <span
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              isAwaiting
-                                ? 'bg-[#e3b341] animate-pulse'
+                            className={`rounded-full shrink-0 ${
+                              isAgentWorking
+                                ? 'w-2 h-2 bg-[#f85149] animate-agent-pulse'
+                                : isAwaiting
+                                ? 'w-2 h-2 bg-[#e3b341] animate-pulse'
+                                : isWaitingForDev
+                                ? 'w-2 h-2 bg-[#f0883e]'
                                 : isActive
-                                ? 'bg-[#f85149] animate-pulse'
-                                : 'bg-[#3fb950]'
+                                ? 'w-2 h-2 bg-[#f85149]'
+                                : 'w-2 h-2 bg-[#3fb950]'
                             }`}
+                            title={isAgentWorking ? 'Autonomous SRE Agent actively executing remediation' : undefined}
                           />
                           <span className="font-mono text-xs font-bold text-[#58a6ff] px-2 py-0.5 rounded bg-[#161f30] border border-[#263550]">
                             {formatIncidentId(inc.id)}
@@ -399,8 +391,8 @@ export default function IncidentsListView({
                       </td>
 
                       <td className="px-3 py-3.5 whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-                          {inc.severity || 'SEV-1'}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase border ${getSeverityBadgeStyle(inc.severity)}`}>
+                          {formatSeverityLabel(inc.severity)}
                         </span>
                       </td>
 
@@ -414,10 +406,10 @@ export default function IncidentsListView({
                       <td className="px-4 py-3.5 max-w-md">
                         <div className="space-y-0.5">
                           <div className="text-xs font-semibold text-[#f0f6fc] group-hover:text-[#58a6ff] transition truncate">
-                            {inc.title || 'Outage in Production Service'}
+                            {cleanIncidentTitle(inc)}
                           </div>
                           <div className="text-[11px] font-mono text-[#8b949e] truncate">
-                            {inc.summary || inc.root_cause_report || 'Analysis in progress...'}
+                            {cleanIncidentSummary(inc)}
                           </div>
                         </div>
                       </td>
@@ -469,7 +461,9 @@ export default function IncidentsListView({
               const isAwaiting = inc.status === 'AWAITING_APPROVAL' || inc.status === 'awaiting_approval';
               const isResolved = isIncidentInactive(inc.status);
               const isTakeover = inc.status === 'MANUAL_TAKEOVER';
-              const progress = getLifecycleProgress(inc.status);
+              const isWaitingForDev = inc.status === 'WAITING_FOR_DEVELOPER' || (inc.severity || '').toUpperCase().includes('LOW');
+              const isAgentWorking = isActive && !isAwaiting && !isTakeover && !isWaitingForDev;
+              const progress = getIncidentLifecycleProgress(inc);
 
               const suspectCommit = typeof inc.suspect_commit === 'string'
                 ? inc.suspect_commit
@@ -484,6 +478,8 @@ export default function IncidentsListView({
                 ? 'border-l-[#a371f7]'
                 : isAwaiting
                 ? 'border-l-[#e3b341]'
+                : isWaitingForDev
+                ? 'border-l-[#f0883e]'
                 : isActive
                 ? 'border-l-[#f85149]'
                 : 'border-l-[#3fb950]';
@@ -499,13 +495,18 @@ export default function IncidentsListView({
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            isAwaiting
-                              ? 'bg-[#e3b341] animate-pulse'
+                          className={`rounded-full shrink-0 ${
+                            isAgentWorking
+                              ? 'w-2 h-2 bg-[#f85149] animate-agent-pulse'
+                              : isAwaiting
+                              ? 'w-2 h-2 bg-[#e3b341] animate-pulse'
+                              : isWaitingForDev
+                              ? 'w-2 h-2 bg-[#f0883e]'
                               : isActive
-                              ? 'bg-[#f85149] animate-pulse'
-                              : 'bg-[#3fb950]'
+                              ? 'w-2 h-2 bg-[#f85149]'
+                              : 'w-2 h-2 bg-[#3fb950]'
                           }`}
+                          title={isAgentWorking ? 'Autonomous SRE Agent actively executing remediation' : undefined}
                         />
                         <span className="font-mono text-xs font-bold text-[#58a6ff] px-2 py-0.5 rounded bg-[#161f30] border border-[#263550]">
                           {formatIncidentId(inc.id)}
@@ -518,8 +519,8 @@ export default function IncidentsListView({
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
-                          {inc.severity || 'SEV-1'}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase border ${getSeverityBadgeStyle(inc.severity)}`}>
+                          {formatSeverityLabel(inc.severity)}
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-medium border font-mono ${getStatusBadgeStyle(
@@ -534,7 +535,7 @@ export default function IncidentsListView({
                     {/* Incident Title */}
                     <div>
                       <h2 className="text-sm md:text-base font-bold text-[#f0f6fc] group-hover:text-[#58a6ff] transition leading-snug line-clamp-1">
-                        {inc.title || 'Outage in Production Service'}
+                        {cleanIncidentTitle(inc)}
                       </h2>
                     </div>
 
@@ -552,7 +553,7 @@ export default function IncidentsListView({
                         )}
                       </div>
                       <p className="text-xs text-[#c9d1d9] leading-relaxed line-clamp-2">
-                        {inc.summary || inc.root_cause_report || 'Autonomous diagnostic analysis in progress.'}
+                        {cleanIncidentSummary(inc)}
                       </p>
                     </div>
 
@@ -568,9 +569,9 @@ export default function IncidentsListView({
 
                       {/* Mini 7-stage bar segments */}
                       <div className="grid grid-cols-7 gap-1 h-1.5">
-                        {LIFECYCLE_STAGES.map((stg, sIdx) => {
-                          const isDone = sIdx < progress.currentIdx;
-                          const isCurrent = sIdx === progress.currentIdx;
+                        {progress.stages.map((stg, sIdx) => {
+                          const isDone = progress.completedCount >= 7 || sIdx < progress.currentIdx;
+                          const isCurrent = !isDone && sIdx === progress.currentIdx;
                           return (
                             <div
                               key={stg.key}
@@ -580,10 +581,12 @@ export default function IncidentsListView({
                                   : isCurrent
                                   ? isAwaiting
                                     ? 'bg-[#e3b341] animate-pulse'
+                                    : isTakeover
+                                    ? 'bg-[#bc8cff] animate-pulse'
                                     : 'bg-[#58a6ff] animate-pulse'
                                   : 'bg-[#1b2234]'
                               }`}
-                              title={stg.label}
+                              title={`Stage ${sIdx + 1}/7: ${stg.label} (${stg.shortDesc})`}
                             />
                           );
                         })}
@@ -626,6 +629,8 @@ export default function IncidentsListView({
                         ? 'Standby for Operator Review'
                         : isTakeover
                         ? 'Operator Manual Override'
+                        : isWaitingForDev
+                        ? 'Deferred: Needs Developer Review'
                         : 'Autonomous Remediation Active'}
                     </span>
 
@@ -638,10 +643,12 @@ export default function IncidentsListView({
                       className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer ${
                         isAwaiting
                           ? 'bg-[#e3b341] hover:bg-[#d29922] text-[#07090f]'
+                          : isWaitingForDev
+                          ? 'bg-[#2a1708] hover:bg-[#3d210b] text-[#f0883e] hover:text-[#fff] border border-[#542c0f]'
                           : 'bg-[#161f30] hover:bg-[#1f2c45] text-[#58a6ff] hover:text-[#fff] border border-[#263550]'
                       }`}
                     >
-                      <span>{isAwaiting ? 'Review & Approve' : 'Open Workbench'}</span>
+                      <span>{isAwaiting ? 'Review & Approve' : isWaitingForDev ? 'Inspect Warning' : 'Open Workbench'}</span>
                       <ArrowRight size={13} />
                     </button>
                   </div>
