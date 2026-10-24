@@ -308,7 +308,7 @@ def health() -> Dict[str, str]:
 
 @app.get("/incidents")
 def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
-    """2. List Incidents conforming to contracts/api.md."""
+    """2. List Incidents conforming to contracts/api.md with enriched telemetry."""
     rows = list_incidents(status=status)
     results = []
     for inc in rows:
@@ -317,16 +317,56 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
             try:
                 suspect = json.loads(suspect)
             except Exception:
-                suspect = {}
+                suspect = {"hash": suspect}
+        elif not suspect and inc.get("suspect_commit"):
+            suspect = {"hash": str(inc.get("suspect_commit"))}
 
-        # Determine recommendation if available
+        # Determine recommendation and brief details if available
         rec = "fix_forward"
-        brief = inc.get("brief_json")
+        brief = inc.get("brief_json") or {}
         if isinstance(brief, str):
             try:
                 brief = json.loads(brief)
             except Exception:
-                pass
+                brief = {}
+
+        summary = (
+            (brief.get("summary") if isinstance(brief, dict) else None)
+            or inc.get("root_cause_report")
+            or "Autonomous failure detection and diagnostics in progress."
+        )
+        suspected_area = (
+            (brief.get("suspected_area") if isinstance(brief, dict) else None)
+            or inc.get("suspected_area")
+        )
+        title = inc.get("title") or (
+            f"Outage in {inc.get('service') or 'Production Service'}"
+            if not summary or "Autonomous failure" in summary
+            else summary[:80]
+        )
+        severity = (inc.get("severity") or "SEV-1").upper()
+        if not severity.startswith("SEV-") and severity in ("CRITICAL", "HIGH", "1"):
+            severity = "SEV-1 CRITICAL"
+        elif not severity.startswith("SEV-"):
+            severity = f"SEV-1 {severity}"
+
+        # Check for linked GitHub artifacts
+        art_rows = get_artifacts(inc["id"])
+        issue_num = None
+        pr_num = None
+        for a in art_rows:
+            if a.get("kind") == "github_issue":
+                try:
+                    c = json.loads(a.get("content", "{}")) if isinstance(a.get("content"), str) else a.get("content")
+                    issue_num = c.get("issue_number")
+                except Exception:
+                    pass
+            elif a.get("kind") == "github_pr":
+                try:
+                    c = json.loads(a.get("content", "{}")) if isinstance(a.get("content"), str) else a.get("content")
+                    pr_num = c.get("pr_number")
+                except Exception:
+                    pass
 
         results.append({
             "id": inc["id"],
@@ -335,6 +375,14 @@ def get_incidents_list(status: Optional[str] = Query(None)) -> List[Dict[str, An
             "status": inc["status"],
             "suspect_commit": suspect,
             "recommendation": rec,
+            "title": title,
+            "severity": severity,
+            "summary": summary,
+            "suspected_area": suspected_area,
+            "brief": brief,
+            "root_cause_report": inc.get("root_cause_report"),
+            "github_issue_number": issue_num,
+            "github_pr_number": pr_num,
         })
     return results
 

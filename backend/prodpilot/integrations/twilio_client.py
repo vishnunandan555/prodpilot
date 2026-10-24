@@ -238,6 +238,86 @@ def build_test_echo_twiml(transcribed_text: str) -> str:
 # In-memory Voice Testing Event Logs
 VOICE_TEST_LOGS = []
 
+# Live Twilio Voice Call State Machine
+ACTIVE_VOICE_CALL: Dict[str, Any] = {
+    "call_sid": None,
+    "incident_id": None,
+    "status": "idle",       # "idle", "queued", "ringing", "in-progress", "completed", "failed"
+    "step": "IDLE",         # "IDLE", "LAUNCHING", "RINGING", "ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "ACTION_EXECUTED", "CALL_ACTIVE", "ENDED"
+    "step_label": "Voice Hotline",
+    "start_time": None,     # float timestamp
+    "updated_at": time.time(),
+    "last_speech": None,
+    "last_tts": None,
+    "action_executed": None,
+}
+
+
+def update_active_voice_call(**kwargs) -> Dict[str, Any]:
+    """Updates the global active voice call state."""
+    ACTIVE_VOICE_CALL.update(kwargs)
+    ACTIVE_VOICE_CALL["updated_at"] = time.time()
+    return dict(ACTIVE_VOICE_CALL)
+
+
+def get_active_voice_call(incident_id: Optional[str] = None) -> Dict[str, Any]:
+    """Returns the current active call state and elapsed duration.
+    Automatically resets to IDLE after call completion cooldown.
+    """
+    now = time.time()
+    step = ACTIVE_VOICE_CALL.get("step", "IDLE")
+    updated_at = ACTIVE_VOICE_CALL.get("updated_at") or now
+
+    # Cooldown transition: If call ended more than 4 seconds ago, revert to IDLE
+    if step == "ENDED" and (now - updated_at > 4.0):
+        ACTIVE_VOICE_CALL.update({
+            "status": "idle",
+            "step": "IDLE",
+            "step_label": "Voice Hotline",
+            "call_sid": None,
+            "incident_id": None,
+            "start_time": None,
+            "last_speech": None,
+            "last_tts": None,
+            "action_executed": None,
+            "updated_at": now,
+        })
+        step = "IDLE"
+
+    # Compute duration if call was answered / in-progress
+    start_time = ACTIVE_VOICE_CALL.get("start_time")
+    duration_sec = 0
+    if start_time and step not in ("IDLE", "LAUNCHING", "RINGING"):
+        duration_sec = max(0, int(now - start_time))
+
+    # Auto-fallback to CALL_ACTIVE if AI_SPEAKING or USER_SPEAKING hasn't received new events in 4s
+    active_steps = ("ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE")
+    current_label = ACTIVE_VOICE_CALL.get("step_label", "Voice Hotline")
+    if step in active_steps:
+        if now - updated_at > 4.5 and step != "CALL_ACTIVE":
+            step = "CALL_ACTIVE"
+            m = duration_sec // 60
+            s = duration_sec % 60
+            current_label = f"Call Active ({m:02d}:{s:02d})"
+        elif step == "CALL_ACTIVE":
+            m = duration_sec // 60
+            s = duration_sec % 60
+            current_label = f"Call Active ({m:02d}:{s:02d})"
+
+    return {
+        "call_sid": ACTIVE_VOICE_CALL.get("call_sid"),
+        "incident_id": ACTIVE_VOICE_CALL.get("incident_id"),
+        "status": ACTIVE_VOICE_CALL.get("status", "idle"),
+        "step": step,
+        "step_label": current_label,
+        "duration": duration_sec,
+        "last_speech": ACTIVE_VOICE_CALL.get("last_speech"),
+        "last_tts": ACTIVE_VOICE_CALL.get("last_tts"),
+        "action_executed": ACTIVE_VOICE_CALL.get("action_executed"),
+        "is_active": step in ("LAUNCHING", "RINGING", "ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE", "ACTION_EXECUTED"),
+        "updated_at": updated_at,
+    }
+
 
 def record_voice_log(event_type: str, message: str, meta: Optional[Dict[str, Any]] = None):
     import datetime
@@ -250,6 +330,88 @@ def record_voice_log(event_type: str, message: str, meta: Optional[Dict[str, Any
     VOICE_TEST_LOGS.append(entry)
     if len(VOICE_TEST_LOGS) > 100:
         VOICE_TEST_LOGS.pop(0)
+
+    # Reflect in ACTIVE_VOICE_CALL state machine
+    meta = meta or {}
+    now = time.time()
+    inc_id = meta.get("incident_id") or ACTIVE_VOICE_CALL.get("incident_id")
+    sid = meta.get("call_sid") or ACTIVE_VOICE_CALL.get("call_sid")
+
+    if event_type == "DISPATCH_INITIATED":
+        update_active_voice_call(
+            status="initiating",
+            step="LAUNCHING",
+            step_label="Launching Call...",
+            incident_id=inc_id,
+            start_time=None,
+        )
+    elif event_type in ("CALL_QUEUED", "AUTONOMOUS_CALL_TRIGGERED"):
+        update_active_voice_call(
+            status="ringing",
+            step="RINGING",
+            step_label="Ringing Phone...",
+            call_sid=sid,
+            incident_id=inc_id,
+        )
+    elif event_type == "PHONE_ANSWERED":
+        st = ACTIVE_VOICE_CALL.get("start_time") or now
+        update_active_voice_call(
+            status="in-progress",
+            step="ANSWERED",
+            step_label="Call Answered",
+            call_sid=sid,
+            incident_id=inc_id,
+            start_time=st,
+        )
+    elif event_type in ("COMPANION_SPOKE", "TTS_ECHO_PLAYING"):
+        st = ACTIVE_VOICE_CALL.get("start_time") or now
+        tts_text = meta.get("echo_text") or message
+        update_active_voice_call(
+            status="in-progress",
+            step="AI_SPEAKING",
+            step_label="AI Speaking...",
+            last_tts=tts_text,
+            start_time=st,
+        )
+    elif event_type in ("ENGINEER_SPEECH", "SPEECH_TRANSCRIBED"):
+        st = ACTIVE_VOICE_CALL.get("start_time") or now
+        sp_text = meta.get("speech") or message
+        short_sp = sp_text[:24] + "..." if len(sp_text) > 24 else sp_text
+        update_active_voice_call(
+            status="in-progress",
+            step="USER_SPEAKING",
+            step_label=f'You: "{short_sp}"',
+            last_speech=sp_text,
+            start_time=st,
+        )
+    elif event_type in ("ENGINEER_DTMF", "DTMF_INPUT_RECEIVED"):
+        st = ACTIVE_VOICE_CALL.get("start_time") or now
+        digit = meta.get("digit", "Key")
+        update_active_voice_call(
+            status="in-progress",
+            step="USER_SPEAKING",
+            step_label=f"Key [{digit}] Pressed",
+            last_speech=f"Dialpad Key {digit}",
+            start_time=st,
+        )
+    elif event_type == "ACTION_EXECUTED":
+        update_active_voice_call(
+            step="ACTION_EXECUTED",
+            step_label="Action Executed!",
+            action_executed=message,
+        )
+    elif event_type in ("CALL_HANGUP", "CALL_COMPLETED"):
+        update_active_voice_call(
+            status="completed",
+            step="ENDED",
+            step_label="Call Ended",
+        )
+    elif event_type == "CALL_FAILED":
+        update_active_voice_call(
+            status="failed",
+            step="ENDED",
+            step_label="Call Failed",
+        )
 
 
 def get_voice_logs():

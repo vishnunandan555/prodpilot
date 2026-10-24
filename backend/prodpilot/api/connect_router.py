@@ -2188,10 +2188,53 @@ def voice_logs_endpoint() -> Dict[str, Any]:
     return {"logs": get_voice_logs()}
 
 
-@router.post("/voice/logs/clear")
-def voice_clear_logs_endpoint() -> Dict[str, Any]:
-    from backend.prodpilot.integrations.twilio_client import clear_voice_logs
-    clear_voice_logs()
-    return {"status": "cleared"}
+@router.get("/voice/active-call")
+def voice_active_call_endpoint(incident_id: Optional[str] = None) -> Dict[str, Any]:
+    """Returns the current active Twilio voice call state, step, and duration."""
+    from backend.prodpilot.integrations.twilio_client import get_active_voice_call
+    return get_active_voice_call(incident_id=incident_id)
+
+
+class SimulateVoiceStepRequest(BaseModel):
+    step: str = "AI_SPEAKING"
+    step_label: Optional[str] = None
+    speech: Optional[str] = None
+    incident_id: Optional[str] = None
+    call_sid: Optional[str] = "CA_simulated_drill_sid"
+
+
+@router.post("/voice/simulate-step")
+def voice_simulate_step_endpoint(body: SimulateVoiceStepRequest) -> Dict[str, Any]:
+    """Simulates a call step transition for UI diagnostics and test verification."""
+    from backend.prodpilot.integrations.twilio_client import update_active_voice_call, record_voice_log
+    import time
+    step = (body.step or "CALL_ACTIVE").upper()
+
+    default_labels = {
+        "IDLE": "Voice Hotline",
+        "LAUNCHING": "Launching Call...",
+        "RINGING": "Ringing Phone...",
+        "ANSWERED": "Call Answered",
+        "AI_SPEAKING": "AI Speaking...",
+        "LISTENING": "Listening...",
+        "USER_SPEAKING": f'You: "{body.speech or "approve hotfix"}"',
+        "CALL_ACTIVE": "Call Active (0:15)",
+        "ACTION_EXECUTED": "Hotfix Approved!",
+        "ENDED": "Call Ended",
+    }
+    label = body.step_label or default_labels.get(step, "Voice Hotline")
+
+    st = time.time() - 15 if step in ("ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE") else None
+    res = update_active_voice_call(
+        step=step,
+        step_label=label,
+        status="in-progress" if step in ("ANSWERED", "AI_SPEAKING", "LISTENING", "USER_SPEAKING", "CALL_ACTIVE") else ("completed" if step == "ENDED" else "idle"),
+        incident_id=body.incident_id,
+        call_sid=body.call_sid,
+        last_speech=body.speech,
+        start_time=st,
+    )
+    return {"ok": True, "active_call": res}
+
 
 

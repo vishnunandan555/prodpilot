@@ -138,3 +138,55 @@ def test_voice_companion_incident_flow():
     assert "Manual takeover confirmed" in takeover_res.text
     assert "<Hangup" in takeover_res.text
 
+
+def test_active_voice_call_and_step_transitions():
+    # 1. Check initial active call endpoint
+    res = client.get("/voice/active-call")
+    assert res.status_code == 200
+    data = res.json()
+    assert "step" in data
+    assert "step_label" in data
+    assert "duration" in data
+
+    # 2. Simulate step transition: Launching
+    sim_launch = client.post(
+        "/voice/simulate-step",
+        json={"step": "LAUNCHING", "incident_id": "inc-test-123"}
+    )
+    assert sim_launch.status_code == 200
+    status_launch = client.get("/voice/active-call").json()
+    assert status_launch["step"] == "LAUNCHING"
+    assert status_launch["step_label"] == "Launching Call..."
+
+    # 3. Simulate step transition: AI_SPEAKING
+    sim_speak = client.post(
+        "/voice/simulate-step",
+        json={"step": "AI_SPEAKING", "incident_id": "inc-test-123"}
+    )
+    assert sim_speak.status_code == 200
+    status_speak = client.get("/voice/active-call").json()
+    assert status_speak["step"] == "AI_SPEAKING"
+    assert status_speak["step_label"] == "AI Speaking..."
+    assert status_speak["is_active"] is True
+
+    # 4. Simulate step transition: USER_SPEAKING
+    sim_user = client.post(
+        "/voice/simulate-step",
+        json={"step": "USER_SPEAKING", "speech": "approve hotfix", "incident_id": "inc-test-123"}
+    )
+    assert sim_user.status_code == 200
+    status_user = client.get("/voice/active-call").json()
+    assert status_user["step"] == "USER_SPEAKING"
+    assert 'approve hotfix' in status_user["step_label"]
+
+    # 5. Simulate call end
+    sim_ended = client.post(
+        "/voice/simulate-step",
+        json={"step": "ENDED"}
+    )
+    assert sim_ended.status_code == 200
+    status_ended = client.get("/voice/active-call").json()
+    assert status_ended["step"] == "ENDED"
+    assert status_ended["step_label"] == "Call Ended"
+
+

@@ -37,6 +37,7 @@ import Timeline from './Timeline';
 import PostMortemReport from './PostMortemReport';
 import AgentExecutionConsole from './AgentExecutionConsole';
 import TwilioCallModal from './TwilioCallModal';
+import VoiceHotlineButton from './VoiceHotlineButton';
 import {
   formatIncidentId,
   formatDate,
@@ -391,15 +392,11 @@ export default function IncidentDetail({
             >
               {formatStatusLabel(incident.status)}
             </span>
-            <button
-              type="button"
+            <VoiceHotlineButton
               onClick={() => setShowVoiceModal(true)}
-              className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#1e1628] hover:bg-[#2c1d3e] text-[#c084fc] border border-[#3b2752] flex items-center gap-1.5 transition cursor-pointer"
-              title="Open Voice Companion Hotline Console"
-            >
-              <PhoneCall size={11} className="text-[#c084fc]" />
-              <span>Voice Hotline</span>
-            </button>
+              apiUrl={apiUrl}
+              incidentId={incident.id}
+            />
             {onDeleteIncident && (
               <button
                 type="button"
