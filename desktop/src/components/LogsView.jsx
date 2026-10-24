@@ -17,7 +17,8 @@ import {
   Sparkles,
   Zap,
   ArrowRight,
-  Bug
+  Bug,
+  ArrowDown
 } from 'lucide-react';
 import { LogStreamSkeleton } from './LoadingSkeleton';
 import { formatIncidentId, isIncidentActive, isIncidentInactive } from '../utils/formatters';
@@ -53,6 +54,15 @@ export default function LogsView({
   const [triaging, setTriaging] = useState(false);
   const [triageAlert, setTriageAlert] = useState(null);
   const [collapsedTracebacks, setCollapsedTracebacks] = useState({});
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logsEndRef = useRef(null);
+
+  // Auto-scroll when logs change if enabled
+  useEffect(() => {
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [logs.length, autoScroll]);
 
   // Auto-refresh cadence: 15s default (consumes 4 req/min of 30 quota, leaving 26 for manual refreshes)
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(15);
@@ -536,6 +546,21 @@ export default function LogsView({
                 </button>
               ))}
             </div>
+
+            {/* Auto-scroll toggle */}
+            <button
+              type="button"
+              onClick={() => setAutoScroll(!autoScroll)}
+              className={`px-2 py-1 rounded text-[10px] font-mono transition border flex items-center gap-1 ${
+                autoScroll
+                  ? 'bg-[#161f30] text-[#3fb950] border-[#1b3d2b]'
+                  : 'bg-[#07090f] text-[#8b949e] border-[#1b2234]'
+              }`}
+              title="Toggle Auto-Scroll to latest log entries"
+            >
+              <ArrowDown size={10} className={autoScroll ? 'animate-bounce text-[#3fb950]' : ''} />
+              <span>{autoScroll ? 'Scroll: ON' : 'Scroll: OFF'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -804,6 +829,7 @@ export default function LogsView({
             );
           })
         )}
+        <div ref={logsEndRef} />
       </div>
     </div>
   );

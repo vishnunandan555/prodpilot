@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Bot,
   Terminal,
@@ -26,7 +26,8 @@ import {
   Maximize2,
   Minimize2,
   Copy,
-  ExternalLink
+  ExternalLink,
+  ArrowDown
 } from 'lucide-react';
 
 export default function AgentExecutionConsole({
@@ -41,8 +42,12 @@ export default function AgentExecutionConsole({
   const [activeViewMode, setActiveViewMode] = useState('unified'); // 'unified' | 'terminal' | 'thoughts'
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'thoughts' | 'tools' | 'tests'
   const [wrapTerminalLines, setWrapTerminalLines] = useState(true);
+  const [autoScroll, setAutoScroll] = useState(true);
   const [expandedIndices, setExpandedIndices] = useState(new Set());
   const [copiedIndex, setCopiedIndex] = useState(null);
+
+  const terminalEndRef = useRef(null);
+  const timelineEndRef = useRef(null);
 
   if (!incident) return null;
 
@@ -138,6 +143,16 @@ export default function AgentExecutionConsole({
     setCopiedIndex('all-terminal');
     setTimeout(() => setCopiedIndex(null), 2000);
   };
+
+  // Auto-scroll when new items arrive if autoScroll is enabled
+  useEffect(() => {
+    if (!autoScroll) return;
+    if (activeViewMode === 'terminal' && terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else if (activeViewMode === 'unified' && timelineEndRef.current) {
+      timelineEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [unifiedStream.length, activeViewMode, autoScroll]);
 
   // Filter items
   const filteredStream = unifiedStream.filter((item) => {
@@ -255,6 +270,19 @@ export default function AgentExecutionConsole({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition border flex items-center gap-1 ${
+                    autoScroll
+                      ? 'bg-[#161f30] text-[#3fb950] border-[#1b3d2b]'
+                      : 'bg-[#0b0e14] text-[#8b949e] border-[#1b2234]'
+                  }`}
+                  title="Toggle Auto-Scroll to latest output"
+                >
+                  <ArrowDown size={10} className={autoScroll ? 'animate-bounce text-[#3fb950]' : ''} />
+                  <span>{autoScroll ? 'Scroll: ON' : 'Scroll: OFF'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setWrapTerminalLines(!wrapTerminalLines)}
                   className={`px-2 py-0.5 rounded text-[10px] font-mono transition border ${
                     wrapTerminalLines
@@ -313,6 +341,7 @@ export default function AgentExecutionConsole({
                     )}
                   </div>
                 ))}
+                <div ref={terminalEndRef} />
               </div>
             )}
           </div>
@@ -467,6 +496,7 @@ export default function AgentExecutionConsole({
                 );
               })
             )}
+            <div ref={timelineEndRef} />
           </div>
         )}
 
