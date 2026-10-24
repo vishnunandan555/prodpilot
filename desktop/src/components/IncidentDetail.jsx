@@ -1111,7 +1111,7 @@ export default function IncidentDetail({
                   <div className="flex items-center gap-1.5">
                     <FileCode size={14} className="text-[#58a6ff]" />
                     <span className="text-xs font-bold uppercase tracking-wider text-[#c9d1d9] font-mono">
-                      Candidate Code Patch Synthesized by Agent
+                      Candidate Code Patch Synthesized by Fixer
                     </span>
                   </div>
                 </div>
@@ -1227,7 +1227,7 @@ export default function IncidentDetail({
                   <ul className="list-disc list-inside text-[#8b949e] text-[10px] space-y-0.5">
                     <li>Active exception detected in production telemetry</li>
                     <li>Service {incident.service || 'target'} reported non-200 health probe</li>
-                    <li>Autonomous triage agent initiated worktree reproduction</li>
+                    <li>Triager initiated worktree reproduction</li>
                   </ul>
                 </div>
                 <div className="p-2.5 rounded bg-[#07090f] border border-[#1b2234] space-y-1">

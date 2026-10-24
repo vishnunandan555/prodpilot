@@ -202,14 +202,14 @@ export default function AgentsView({ apiUrl = 'http://127.0.0.1:8765', incidents
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-sm font-bold text-[#f0f6fc] tracking-tight">
-                  Remediation Workers & Diagnostics
+                  Autonomous SRE Agents & Telemetry
                 </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1e17] text-[#3fb950] border border-[#1b3d2b] font-semibold">
-                  WORKERS ACTIVE
+                  FLEET ACTIVE
                 </span>
               </div>
               <p className="text-xs text-[#8b949e] mt-0.5">
-                Live worker telemetry, task execution states, worktree isolation, and safety policies
+                Live agent telemetry, cognitive task execution states, worktree isolation, and safety policies
               </p>
             </div>
           </div>

@@ -488,7 +488,7 @@ export default function AgentExecutionConsole({
                   Human-in-the-Loop Approval Required
                 </h3>
                 <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
-                  Antigravity agent has synthesized the fix, staged dual canaries on ports 8001/8002, and validated regression tests. Review candidate diff before promoting. Approving will merge and push the patch to Git and trigger automated deployment.
+                  <strong className="text-[#f0f6fc]">Fixer</strong> has synthesized the patch in an isolated worktree, and <strong className="text-[#f0f6fc]">Validator</strong> staged dual canaries on ports 8001/8002 with 100% regression verification. Review candidate diff before promoting. Approving will merge and push the patch to Git and trigger automated deployment.
                 </p>
               </div>
             </div>
