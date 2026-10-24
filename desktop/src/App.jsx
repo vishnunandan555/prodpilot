@@ -14,6 +14,7 @@ import MasterLogsView from './components/MasterLogsView';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
 import IncidentsListView from './components/IncidentsListView';
+import DemoSlidesView from './components/DemoSlidesView';
 import { GlobalProgressBar } from './components/LoadingSkeleton';
 import { isIncidentActive } from './utils/formatters';
 
@@ -635,6 +636,7 @@ export default function App() {
             isRefreshing={isRefreshing}
             onDeleteIncident={handleDeleteIncident}
             onClearIncidents={handleClearIncidents}
+            isMobileScreen={isMobileScreen}
           />
         )}
 
@@ -740,6 +742,10 @@ export default function App() {
               currentUser={currentUser}
               onUpdateUser={handleUpdateUser}
             />
+          )}
+
+          {activeNav === 'demo' && (
+            <DemoSlidesView />
           )}
         </main>
       </div>

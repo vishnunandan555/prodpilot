@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -11,7 +11,8 @@ import {
   Settings,
   Trash2,
   Clock,
-  Radio
+  Radio,
+  Presentation
 } from 'lucide-react';
 import {
   formatIncidentId,
@@ -21,6 +22,10 @@ import {
   isIncidentActive,
   isIncidentInactive
 } from '../utils/formatters';
+
+const DEFAULT_WIDTH = 280;
+const MIN_WIDTH = 220;
+const MAX_WIDTH = 480;
 
 export default function Sidebar({
   activeNav,
@@ -33,11 +38,75 @@ export default function Sidebar({
   setIncidentFilter,
   isRefreshing = false,
   onDeleteIncident,
-  onClearIncidents
+  onClearIncidents,
+  isMobileScreen = false
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const activeCount = incidents.filter((i) => isIncidentActive(i.status));
+
+  // Draggable Sidebar Width with LocalStorage persistence
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('prodpilot_sidebar_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= MIN_WIDTH && parsed <= MAX_WIDTH) {
+          return parsed;
+        }
+      }
+    } catch {
+      // fallback to default
+    }
+    return DEFAULT_WIDTH;
+  });
+
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResizing = useCallback((e) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const onMouseMove = (moveEvent) => {
+      const currentMax = Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.55));
+      const newWidth = Math.min(Math.max(startWidth + (moveEvent.clientX - startX), MIN_WIDTH), currentMax);
+      setWidth(newWidth);
+    };
+
+    const onMouseUp = (upEvent) => {
+      setIsResizing(false);
+      const currentMax = Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.55));
+      const finalWidth = Math.min(Math.max(startWidth + (upEvent.clientX - startX), MIN_WIDTH), currentMax);
+      try {
+        localStorage.setItem('prodpilot_sidebar_width', finalWidth.toString());
+      } catch {}
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [width]);
+
+  const resetWidth = useCallback(() => {
+    setWidth(DEFAULT_WIDTH);
+    try {
+      localStorage.setItem('prodpilot_sidebar_width', DEFAULT_WIDTH.toString());
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   const filteredIncidents = incidents.filter((inc) => {
     if (incidentFilter === 'active') {
@@ -65,10 +134,22 @@ export default function Sidebar({
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'team', label: 'Team', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
+    {
+      id: 'demo',
+      label: 'Demo',
+      icon: Presentation,
+      badge: 'SLIDES',
+      badgeColor: 'bg-[#162033] text-[#58a6ff] border-[#233352]'
+    },
   ];
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-[#0d111a] border-r border-[#1b2234] flex flex-col h-full select-none text-[#c9d1d9] font-sans">
+    <aside
+      style={{ width: isMobileScreen ? '100%' : `${width}px` }}
+      className={`relative flex-shrink-0 bg-[#0d111a] border-r border-[#1b2234] flex flex-col h-full select-none text-[#c9d1d9] font-sans ${
+        isResizing ? '' : 'transition-[width] duration-150 ease-out'
+      }`}
+    >
       {/* Primary Navigation Items */}
       <div className="p-2 space-y-0.5 border-b border-[#1b2234]">
         {navItems.map((item) => {
@@ -121,8 +202,8 @@ export default function Sidebar({
 
       {/* Incident Sub-list */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="px-3 pt-3 pb-2 flex items-center justify-between border-b border-[#1b2234]">
-          <div className="flex items-center gap-1.5 text-xs text-[#8b949e]">
+        <div className="px-3 pt-3 pb-2 flex items-center justify-between border-b border-[#1b2234] gap-1.5">
+          <div className="flex items-center gap-1.5 text-xs text-[#8b949e] shrink-0">
             <span className="font-semibold uppercase tracking-wider text-[10px] text-[#6e7681]">
               Incidents
             </span>
@@ -163,7 +244,7 @@ export default function Sidebar({
             )}
           </div>
 
-          <div className="flex items-center bg-[#07090f] rounded p-0.5 border border-[#1b2234]">
+          <div className="flex items-center bg-[#07090f] rounded p-0.5 border border-[#1b2234] shrink-0">
             {['all', 'active', 'resolved'].map((f) => (
               <button
                 key={f}
@@ -322,6 +403,35 @@ export default function Sidebar({
           {apiConnected ? 'Connected' : 'Offline'}
         </span>
       </div>
+
+      {/* Draggable Resizer Splitter Border */}
+      {!isMobileScreen && (
+        <div
+          onMouseDown={startResizing}
+          onDoubleClick={resetWidth}
+          className={`absolute top-0 right-0 w-2 h-full cursor-col-resize z-30 group flex items-center justify-center select-none ${
+            isResizing ? 'bg-[#388bfd]/25' : 'hover:bg-[#388bfd]/10'
+          }`}
+          title="Drag to resize sidebar • Double-click to reset (280px)"
+        >
+          {/* Highlight accent line */}
+          <div
+            className={`w-[2px] h-full transition-colors ${
+              isResizing
+                ? 'bg-[#58a6ff] shadow-[0_0_8px_rgba(88,166,255,0.7)]'
+                : 'bg-transparent group-hover:bg-[#388bfd]/60'
+            }`}
+          />
+          {/* Visual grab pill at vertical center */}
+          <div
+            className={`absolute w-1 h-7 rounded-full transition-all ${
+              isResizing
+                ? 'bg-[#58a6ff] opacity-100 scale-y-110 shadow-[0_0_6px_#58a6ff]'
+                : 'bg-[#58a6ff]/70 opacity-0 group-hover:opacity-100'
+            }`}
+          />
+        </div>
+      )}
     </aside>
   );
 }
