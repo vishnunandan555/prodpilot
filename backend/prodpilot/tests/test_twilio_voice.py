@@ -75,3 +75,64 @@ def test_voice_test_speech_echo_flow():
     assert "500 Internal Server Error in payment gateway" in callback_res.text
     assert "Speech recognition successful" in callback_res.text
 
+
+def test_parse_voice_intent():
+    from backend.prodpilot.integrations.twilio_client import parse_voice_intent
+
+    # DTMF digits
+    assert parse_voice_intent(digits="1")["intent"] == "ROLLBACK"
+    assert parse_voice_intent(digits="2")["intent"] == "APPROVE"
+    assert parse_voice_intent(digits="3")["intent"] == "TAKEOVER"
+
+    # Spoken commands
+    assert parse_voice_intent(speech_text="approve and deploy the hotfix")["intent"] == "APPROVE"
+    assert parse_voice_intent(speech_text="roll back to the previous commit")["intent"] == "ROLLBACK"
+    assert parse_voice_intent(speech_text="manual takeover I will handle it")["intent"] == "TAKEOVER"
+
+    # Spoken queries
+    assert parse_voice_intent(speech_text="what is the suspect commit?")["intent"] == "SUSPECT_COMMIT"
+    assert parse_voice_intent(speech_text="tell me the root cause")["intent"] == "ROOT_CAUSE"
+    assert parse_voice_intent(speech_text="what tests failed?")["intent"] == "TEST_EVIDENCE"
+    assert parse_voice_intent(speech_text="what did jev recommend?")["intent"] == "JEV_DECISION"
+    assert parse_voice_intent(speech_text="what is the current status?")["intent"] == "STATUS"
+    assert parse_voice_intent(speech_text="help me what can I say")["intent"] == "HELP"
+
+    # Silence
+    assert parse_voice_intent(speech_text="")["intent"] == "SILENCE"
+
+
+def test_voice_companion_incident_flow():
+    # 1. Entry webhook when phone answered
+    entry_res = client.post("/voice/incident/inc-unit-test-companion/twiml")
+    assert entry_res.status_code == 200
+    assert "<Response>" in entry_res.text
+    assert "ProdPilot Critical Incident Alert" in entry_res.text
+    assert 'input="speech dtmf"' in entry_res.text
+    assert "/voice/incident/inc-unit-test-companion/loop" in entry_res.text
+
+    # 2. Spoken Q&A: "Who broke it?"
+    qa_res = client.post(
+        "/voice/incident/inc-unit-test-companion/loop",
+        data={"SpeechResult": "Who broke it what is the suspect commit?", "Confidence": "0.94"},
+    )
+    assert qa_res.status_code == 200
+    assert "Suspect commit attribution" in qa_res.text
+    assert 'input="speech dtmf"' in qa_res.text
+
+    # 3. Spoken Q&A: "What did Jev recommend?"
+    jev_res = client.post(
+        "/voice/incident/inc-unit-test-companion/loop",
+        data={"SpeechResult": "What does Jev decision recommend?", "Confidence": "0.92"},
+    )
+    assert jev_res.status_code == 200
+    assert "Jev Decision Engine recommends" in jev_res.text
+
+    # 4. Spoken Command: "Take over manually"
+    takeover_res = client.post(
+        "/voice/incident/inc-unit-test-companion/loop",
+        data={"SpeechResult": "I want manual takeover", "Confidence": "0.95"},
+    )
+    assert takeover_res.status_code == 200
+    assert "Manual takeover confirmed" in takeover_res.text
+    assert "<Hangup" in takeover_res.text
+

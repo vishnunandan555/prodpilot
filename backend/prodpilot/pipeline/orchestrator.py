@@ -170,6 +170,36 @@ def _run_process_incident(
     except Exception as e:
         logger.warning(f"Telegram stage 2 alert error: {e}")
 
+    # Automated Emergency Sev-1 Voice Call Escalation via Twilio
+    try:
+        from backend.prodpilot.db import get_setting
+        twilio_enabled = (get_setting("SERVICE_ENABLED_TWILIO") or "true").strip().lower() not in ("false", "0", "off", "no")
+        is_sev1 = (incident.get("severity") or "").lower() in ("sev1", "sev-1", "critical") or "outage" in (incident.get("title") or "").lower()
+        if twilio_enabled and is_sev1:
+            from backend.prodpilot.integrations.twilio_client import initiate_voice_call, record_voice_log
+            from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
+            target_phone = get_setting("ENGINEER_PHONE") or os.environ.get("ENGINEER_PHONE") or "+919539916820"
+            tunnel_url = get_effective_tunnel_url()
+            webhook_url = f"{tunnel_url}/voice/incident/{incident_id}/twiml"
+            call_res = initiate_voice_call(to_phone=target_phone, webhook_url=webhook_url)
+            if call_res.get("ok"):
+                call_sid = call_res.get("call_sid")
+                record_voice_log(
+                    "AUTONOMOUS_CALL_TRIGGERED",
+                    f"Sev-1 automated voice escalation initiated to {target_phone}. Twilio Call SID: {call_sid}",
+                    {"incident_id": incident_id, "call_sid": call_sid, "to": target_phone}
+                )
+                log_event(
+                    run_id=None,
+                    incident_id=incident_id,
+                    stage="NOTIFY",
+                    kind="voice_call_initiated",
+                    payload={"call_sid": call_sid, "phone": target_phone, "status": "ringing"},
+                    db_path=db_path,
+                )
+    except Exception as e:
+        logger.warning(f"Could not trigger Twilio emergency voice escalation: {e}")
+
     # c. Transition status to FIXING and run repro pipeline
     update_incident_status(incident_id, "FIXING", db_path=db_path)
     adapter = get_agent_adapter()

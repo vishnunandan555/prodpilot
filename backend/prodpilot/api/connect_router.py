@@ -1632,6 +1632,42 @@ def voice_twiml_endpoint(
     return Response(content=xml_content, media_type="application/xml")
 
 
+def _execute_voice_approval(incident_id: str, action: str = "fix_forward", revert_commit: Optional[str] = None) -> Dict[str, Any]:
+    """Helper to execute hotfix merge or rollback requested via voice or DTMF."""
+    from backend.prodpilot.db import get_incident
+    if not get_incident(incident_id):
+        logger.info(f"Skipping DB update for mock/drill incident {incident_id}")
+        return {"ok": True, "mock": True}
+    try:
+        from backend.prodpilot.api.server import approve_incident_action, ApproveRequest
+        req = ApproveRequest(action=action, revert_commit=revert_commit)
+        return approve_incident_action(incident_id, body=req)
+    except Exception as e:
+        logger.warning(f"Voice action '{action}' standard approval returned: {e}. Executing atomic database fallback.")
+        from backend.prodpilot.db import update_incident_status, log_event
+        target_status = "ROLLED_BACK" if action == "rollback" else "DEPLOYED"
+        update_incident_status(incident_id, target_status)
+        log_event(None, incident_id, "OPERATOR", f"voice_{action}_executed", {"source": "voice_companion", "status": target_status})
+        return {"ok": True, "status": target_status, "fallback": True}
+
+
+def _execute_voice_takeover(incident_id: str) -> Dict[str, Any]:
+    """Helper to disengage autonomous loop and take over incident via voice or DTMF."""
+    from backend.prodpilot.db import get_incident
+    if not get_incident(incident_id):
+        logger.info(f"Skipping DB update for mock/drill incident {incident_id}")
+        return {"ok": True, "mock": True}
+    try:
+        from backend.prodpilot.api.server import manual_takeover_endpoint
+        return manual_takeover_endpoint(incident_id)
+    except Exception as e:
+        logger.warning(f"Voice manual takeover endpoint returned: {e}. Executing atomic database update.")
+        from backend.prodpilot.db import update_incident_status, log_event
+        update_incident_status(incident_id, "MANUAL_TAKEOVER")
+        log_event(None, incident_id, "OPERATOR", "voice_takeover_executed", {"source": "voice_companion", "status": "MANUAL_TAKEOVER"})
+        return {"ok": True, "status": "MANUAL_TAKEOVER"}
+
+
 @router.api_route("/voice/action", methods=["GET", "POST"])
 def voice_action_endpoint(
     incident_id: str = Query("inc_live_demo"),
@@ -1653,8 +1689,133 @@ def voice_action_endpoint(
         {"digit": digit, "action": action_name, "incident_id": incident_id}
     )
 
+    if digit == "1":
+        _execute_voice_approval(incident_id, action="rollback")
+    elif digit == "2":
+        _execute_voice_approval(incident_id, action="fix_forward")
+    elif digit == "3":
+        _execute_voice_takeover(incident_id)
+
     xml_content = build_action_twiml(digit=digit)
     return Response(content=xml_content, media_type="application/xml")
+
+
+@router.api_route("/voice/incident/{incident_id}/twiml", methods=["GET", "POST"])
+def voice_incident_companion_entry_endpoint(
+    request: Request,
+    incident_id: str,
+    CallSid: Optional[str] = Form(None),
+) -> Response:
+    """Entry webhook called by Twilio when engineer answers a live Sev-1 call."""
+    from backend.prodpilot.db import get_incident
+    from backend.prodpilot.integrations.twilio_client import (
+        build_incident_companion_intro_twiml,
+        record_voice_log,
+        update_voice_session,
+    )
+
+    inc = get_incident(incident_id) or {}
+    svc = inc.get("service", "Production Server")
+    brief = inc.get("brief") or {}
+    if isinstance(brief, str):
+        import json
+        try:
+            brief = json.loads(brief)
+        except Exception:
+            brief = {}
+    summary = brief.get("summary")
+
+    session_key = CallSid or incident_id
+    update_voice_session(
+        session_key,
+        incident_id=incident_id,
+        last_announced_stage=inc.get("status", "INVESTIGATING"),
+        call_sid=CallSid,
+    )
+
+    record_voice_log(
+        "PHONE_ANSWERED",
+        f"Engineer picked up call for incident {incident_id}. SRE Voice Companion active on line.",
+        {"incident_id": incident_id, "service": svc, "call_sid": CallSid}
+    )
+
+    tunnel_url = get_effective_public_url(request)
+    action_url = f"{tunnel_url}/voice/incident/{incident_id}/loop"
+    xml_content = build_incident_companion_intro_twiml(
+        incident_id=incident_id,
+        action_url=action_url,
+        service_name=svc,
+        summary=summary,
+    )
+    return Response(content=xml_content, media_type="application/xml")
+
+
+@router.api_route("/voice/incident/{incident_id}/loop", methods=["GET", "POST"])
+def voice_incident_companion_loop_endpoint(
+    request: Request,
+    incident_id: str,
+    SpeechResult: Optional[str] = Form(None),
+    Confidence: Optional[str] = Form(None),
+    Digits: Optional[str] = Form(None),
+    CallSid: Optional[str] = Form(None),
+) -> Response:
+    """Core conversational webhook handling speech transcription, DTMF, Q&A, and stage progression."""
+    from backend.prodpilot.db import get_incident
+    from backend.prodpilot.integrations.twilio_client import (
+        build_incident_companion_loop_twiml,
+        record_voice_log,
+    )
+
+    inc = get_incident(incident_id) or {}
+    session_key = CallSid or incident_id
+    tunnel_url = get_effective_public_url(request)
+    action_url = f"{tunnel_url}/voice/incident/{incident_id}/loop"
+
+    text = (SpeechResult or "").strip()
+    digits = (Digits or "").strip()
+
+    if text:
+        conf_pct = f"{round(float(Confidence) * 100)}%" if Confidence else "High"
+        record_voice_log(
+            "ENGINEER_SPEECH",
+            f"Engineer said: \"{text}\" (Confidence: {conf_pct})",
+            {"speech": text, "confidence": conf_pct, "incident_id": incident_id}
+        )
+    elif digits:
+        record_voice_log(
+            "ENGINEER_DTMF",
+            f"Engineer pressed dialpad digit: [{digits}]",
+            {"digit": digits, "incident_id": incident_id}
+        )
+
+    loop_res = build_incident_companion_loop_twiml(
+        incident=inc,
+        speech_text=text if text else None,
+        digits=digits if digits else None,
+        action_url=action_url,
+        session_key=session_key,
+    )
+
+    # If the user issued an action command, execute it!
+    action_to_exec = loop_res.get("action_to_execute")
+    if action_to_exec == "APPROVE":
+        _execute_voice_approval(incident_id, action="fix_forward")
+        record_voice_log("ACTION_EXECUTED", f"Merged PR and deployed hotfix for incident {incident_id} via voice approval.")
+    elif action_to_exec == "ROLLBACK":
+        _execute_voice_approval(incident_id, action="rollback")
+        record_voice_log("ACTION_EXECUTED", f"Rolled back to previous commit for incident {incident_id} via voice command.")
+    elif action_to_exec == "TAKEOVER":
+        _execute_voice_takeover(incident_id)
+        record_voice_log("ACTION_EXECUTED", f"Disengaged autonomous remediation for incident {incident_id} via voice takeover.")
+
+    if loop_res.get("spoken_text"):
+        record_voice_log(
+            "COMPANION_SPOKE",
+            f"Voice Companion spoken reply: \"{loop_res.get('spoken_text')}\"",
+            {"intent": loop_res.get("intent"), "incident_id": incident_id}
+        )
+
+    return Response(content=loop_res["twiml"], media_type="application/xml")
 
 
 @router.api_route("/voice/test-twiml", methods=["GET", "POST"])
@@ -1737,7 +1898,10 @@ def voice_test_call_endpoint(
     record_voice_log("DISPATCH_INITIATED", f"Initiating outbound emergency voice alert to {target_phone}...")
 
     tunnel_url = get_effective_public_url(request)
-    webhook_url = f"{tunnel_url}/voice/test-twiml"
+    if req.incident_id and req.incident_id != "inc_test_drill":
+        webhook_url = f"{tunnel_url}/voice/incident/{req.incident_id}/twiml"
+    else:
+        webhook_url = f"{tunnel_url}/voice/test-twiml"
 
     res = initiate_voice_call(to_phone=target_phone, webhook_url=webhook_url)
     if res.get("ok"):

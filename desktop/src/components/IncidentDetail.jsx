@@ -29,12 +29,14 @@ import {
   Bot,
   Trash2,
   HelpCircle,
-  GitBranch
+  GitBranch,
+  PhoneCall
 } from 'lucide-react';
 import DiffViewer from './DiffViewer';
 import Timeline from './Timeline';
 import PostMortemReport from './PostMortemReport';
 import AgentExecutionConsole from './AgentExecutionConsole';
+import TwilioCallModal from './TwilioCallModal';
 import {
   formatIncidentId,
   formatDate,
@@ -71,6 +73,7 @@ export default function IncidentDetail({
   };
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [copiedTrace, setCopiedTrace] = useState(false);
   const [copiedReproTest, setCopiedReproTest] = useState(false);
   const [dismissRestoredBanner, setDismissRestoredBanner] = useState(false);
@@ -373,6 +376,15 @@ export default function IncidentDetail({
             >
               {formatStatusLabel(incident.status)}
             </span>
+            <button
+              type="button"
+              onClick={() => setShowVoiceModal(true)}
+              className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#1e1628] hover:bg-[#2c1d3e] text-[#c084fc] border border-[#3b2752] flex items-center gap-1.5 transition cursor-pointer"
+              title="Open Voice Companion Hotline Console"
+            >
+              <PhoneCall size={11} className="text-[#c084fc]" />
+              <span>Voice Hotline</span>
+            </button>
             {onDeleteIncident && (
               <button
                 type="button"
@@ -1753,6 +1765,16 @@ export default function IncidentDetail({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Twilio Voice SRE Companion Hotline Modal */}
+      {showVoiceModal && (
+        <TwilioCallModal
+          isOpen={showVoiceModal}
+          onClose={() => setShowVoiceModal(false)}
+          apiUrl={apiUrl}
+          incidentId={incident.id}
+        />
       )}
     </div>
   );

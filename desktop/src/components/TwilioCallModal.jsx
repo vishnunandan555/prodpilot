@@ -25,6 +25,7 @@ export default function TwilioCallModal({
   initialCallData = null,
   engineerPhone = '+919539916820',
   twilioFrom = '+17372508034',
+  incidentId = null,
 }) {
   const [callSid, setCallSid] = useState(initialCallData?.call_sid || null);
   const [callStatus, setCallStatus] = useState(initialCallData?.status || 'initiating');
@@ -112,7 +113,7 @@ export default function TwilioCallModal({
       const res = await fetch(`${apiUrl}/voice/test-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: engineerPhone })
+        body: JSON.stringify({ phone_number: engineerPhone, incident_id: incidentId })
       });
       const data = await res.json();
       if (data.ok) {
@@ -212,13 +213,17 @@ export default function TwilioCallModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-[#f0f6fc]">Twilio Voice STT & TTS Echo Diagnostics</h2>
+                <h2 className="text-sm font-bold text-[#f0f6fc]">
+                  {incidentId ? 'Twilio Voice SRE Companion Hotline' : 'Twilio Voice STT & TTS Echo Diagnostics'}
+                </h2>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#122419] text-[#3fb950] border border-[#1f4a2b]">
-                  Live Echo Drill
+                  {incidentId ? `Live Sev-1 Companion: #${incidentId.slice(-6)}` : 'Live Echo Drill'}
                 </span>
               </div>
               <p className="text-[11px] text-[#8b949e]">
-                Tests outbound telephony, speech-to-text recognition, and neural voice echo in real-time
+                {incidentId
+                  ? 'Two-way interactive voice escalation, spoken stage progress announcements & voice approvals'
+                  : 'Tests outbound telephony, speech-to-text recognition, and neural voice echo in real-time'}
               </p>
             </div>
           </div>
