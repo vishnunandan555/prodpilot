@@ -267,13 +267,15 @@ def get_call_status(call_sid: str) -> Dict[str, Any]:
         return {"ok": False, "error": "Twilio client not initialized"}
     try:
         call = client.calls(call_sid).fetch()
+        from_num = getattr(call, "from_formatted", None) or getattr(call, "from", getattr(call, "_from", None))
+        to_num = getattr(call, "to_formatted", None) or getattr(call, "to", None)
         return {
             "ok": True,
             "call_sid": call.sid,
             "status": call.status,
             "duration": call.duration or "0",
-            "to": call.to,
-            "from": call.from_,
+            "to": to_num,
+            "from": from_num,
             "start_time": str(call.start_time) if call.start_time else None,
             "end_time": str(call.end_time) if call.end_time else None,
             "price": str(call.price) if call.price else None,
@@ -325,6 +327,42 @@ def clear_voice_session(session_key: str):
     VOICE_SESSIONS.pop(session_key, None)
 
 
+def dispatch_incident_voice_drill(incident: Dict[str, Any], db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Helper to trigger emergency voice hotline call for an incident."""
+    from backend.prodpilot.db import get_setting, log_event
+    from backend.prodpilot.integrations.telegram_client import get_effective_tunnel_url
+
+    twilio_enabled = (get_setting("SERVICE_ENABLED_TWILIO") or "true").strip().lower() not in ("false", "0", "off", "no")
+    if not twilio_enabled:
+        return {"ok": False, "skipped": True, "reason": "Twilio service disabled"}
+
+    incident_id = incident.get("id", "")
+    target_phone = get_setting("ENGINEER_PHONE") or os.environ.get("ENGINEER_PHONE") or "+919539916820"
+    tunnel_url = get_effective_tunnel_url()
+    webhook_url = f"{tunnel_url}/voice/incident/{incident_id}/twiml"
+
+    res = initiate_voice_call(to_phone=target_phone, webhook_url=webhook_url)
+    if res.get("ok"):
+        call_sid = res.get("call_sid")
+        record_voice_log(
+            "AUTONOMOUS_CALL_TRIGGERED",
+            f"Sev-1 automated voice escalation initiated to {target_phone}. Twilio Call SID: {call_sid}",
+            {"incident_id": incident_id, "call_sid": call_sid, "to": target_phone}
+        )
+        try:
+            log_event(
+                run_id=None,
+                incident_id=incident_id,
+                stage="NOTIFY",
+                kind="voice_call_initiated",
+                payload={"call_sid": call_sid, "phone": target_phone, "status": "ringing"},
+                db_path=db_path,
+            )
+        except Exception:
+            pass
+    return res
+
+
 def parse_voice_intent(speech_text: Optional[str] = None, digits: Optional[str] = None) -> Dict[str, Any]:
     """Classifies user's spoken utterance or dialpad press into an actionable SRE intent."""
     if digits:
@@ -343,39 +381,39 @@ def parse_voice_intent(speech_text: Optional[str] = None, digits: Optional[str] 
     norm = re.sub(r"[^\w\s]", "", norm)
 
     # 1. Approval / Deploy hotfix
-    if re.search(r"\b(approve|deploy|merge|apply fix|apply hotfix|go ahead|yes deploy|fix forward|proceed|looks good)\b", norm):
+    if re.search(r"\b(approve|deploy|merge|apply fix|apply hotfix|go ahead|yes deploy|fix forward|proceed|looks good|ship it|push it|promote)\b", norm):
         return {"intent": "APPROVE", "confidence": 0.95, "source": "speech", "raw": speech_text}
 
     # 2. Rollback
-    if re.search(r"\b(rollback|roll back|revert|undo|previous commit|backtrack|restore previous)\b", norm):
+    if re.search(r"\b(rollback|roll back|revert|undo|previous commit|backtrack|restore previous|revert commit|go back)\b", norm):
         return {"intent": "ROLLBACK", "confidence": 0.95, "source": "speech", "raw": speech_text}
 
     # 3. Manual takeover / hold
-    if re.search(r"\b(takeover|take over|manual|pause|i will handle|hold on|stop autonomous|my hands)\b", norm):
+    if re.search(r"\b(takeover|take over|manual|pause|i will handle|hold on|stop autonomous|my hands|stand down|i got this)\b", norm):
         return {"intent": "TAKEOVER", "confidence": 0.95, "source": "speech", "raw": speech_text}
 
     # 4. Suspect commit / blame
-    if re.search(r"\b(suspect|commit|who broke|culprit|author|blame|which commit|code line|who did this)\b", norm):
+    if re.search(r"\b(suspect|commit|who broke|culprit|author|blame|which commit|code line|who did this|developer|git blame)\b", norm):
         return {"intent": "SUSPECT_COMMIT", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
-    # 5. Root cause / error
-    if re.search(r"\b(root cause|what happened|what broke|error|why did it fail|exception|summary|failure)\b", norm):
+    # 5. Root cause / error / what happened
+    if re.search(r"\b(root cause|what happened|what broke|error|why did it fail|exception|summary|failure|why crash|what went wrong|tell me what happened|reason)\b", norm):
         return {"intent": "ROOT_CAUSE", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
     # 6. Test evidence / repro
-    if re.search(r"\b(test|tests|repro|reproduction|failed test|pass|passing|sandbox|evidence)\b", norm):
+    if re.search(r"\b(test|tests|repro|reproduction|failed test|pass|passing|sandbox|evidence|canary|canaries|verification)\b", norm):
         return {"intent": "TEST_EVIDENCE", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
     # 7. Jev decision / score
-    if re.search(r"\b(jev|recommendation|recommend|decision|score|confidence|probabilities)\b", norm):
+    if re.search(r"\b(jev|recommendation|recommend|decision|score|confidence|probabilities|evaluator)\b", norm):
         return {"intent": "JEV_DECISION", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
-    # 8. Status / Current stage
-    if re.search(r"\b(status|current stage|where are we|what is happening|progress|update|state)\b", norm):
+    # 8. Status / Current stage (Broad match for "what is currently happening", "what's going on", etc.)
+    if re.search(r"\b(status|current stage|where are we|what is happening|what is currently happening|whats happening|whats going on|what is going on|progress|update|state|where we at|how is it going)\b", norm):
         return {"intent": "STATUS", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
     # 9. Help / Options
-    if re.search(r"\b(help|options|commands|what can i say)\b", norm):
+    if re.search(r"\b(help|options|commands|what can i say|what can you do)\b", norm):
         return {"intent": "HELP", "confidence": 0.90, "source": "speech", "raw": speech_text}
 
     return {"intent": "GENERAL_QUERY", "confidence": 0.50, "source": "speech", "raw": speech_text}
@@ -387,31 +425,33 @@ def build_incident_companion_intro_twiml(
     service_name: str = "Production Server",
     summary: Optional[str] = None,
 ) -> str:
-    """Builds the introductory greeting TwiML when an engineer answers a live Sev-1 call."""
+    """Builds the introductory greeting TwiML when an engineer answers a live Sev-1 call.
+    
+    Optimized for low latency:
+    - barge_in=True allows immediate interruption.
+    - speech_timeout='1' triggers within 1 second of speech pause.
+    - Concise prompt cuts spoken audio from 16s down to 3s.
+    """
     response = VoiceResponse()
-    response.pause(length=1)
 
     gather = Gather(
         input="speech dtmf",
         action=action_url,
         method="POST",
-        timeout=6,
-        speech_timeout="auto",
+        timeout=4,
+        speech_timeout="1",
+        barge_in=True,
         language="en-US",
     )
 
     alert_text = (
-        f"ProdPilot Critical Incident Alert! "
-        f"A Severity-One incident has been detected on {service_name}. "
-        f"Autonomous remediation is currently diagnosing and fixing the failure in the background. "
-        f"I will stay on the line to give you live progress reports as each stage completes. "
-        f"You can ask me questions or issue voice commands at any time. "
-        f"What would you like to know?"
+        f"ProdPilot Critical Alert: Sev-One detected on {service_name}. "
+        f"Auto remediation is running. Ask a question or say 'approve'."
     )
     gather.say(alert_text, voice="Polly.Matthew-Neural")
     response.append(gather)
 
-    # If initial timeout with no speech, immediately loop to check stage updates
+    # If initial timeout with no speech, loop to check stage updates
     response.redirect(action_url)
     return str(response)
 
@@ -628,13 +668,14 @@ def build_incident_companion_loop_twiml(
             else:
                 speech = ""
 
-    # Append gather loop
+    # Append gather loop with low-latency parameters
     gather = Gather(
         input="speech dtmf",
         action=action_url,
         method="POST",
-        timeout=6,
-        speech_timeout="auto",
+        timeout=4,
+        speech_timeout="1",
+        barge_in=True,
         language="en-US",
     )
     if speech:

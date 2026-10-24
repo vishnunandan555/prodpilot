@@ -106,8 +106,10 @@ def test_voice_companion_incident_flow():
     entry_res = client.post("/voice/incident/inc-unit-test-companion/twiml")
     assert entry_res.status_code == 200
     assert "<Response>" in entry_res.text
-    assert "ProdPilot Critical Incident Alert" in entry_res.text
+    assert "ProdPilot Critical Alert" in entry_res.text
     assert 'input="speech dtmf"' in entry_res.text
+    assert 'bargeIn="true"' in entry_res.text
+    assert 'speechTimeout="1"' in entry_res.text
     assert "/voice/incident/inc-unit-test-companion/loop" in entry_res.text
 
     # 2. Spoken Q&A: "Who broke it?"
