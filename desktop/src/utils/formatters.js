@@ -69,6 +69,8 @@ export function formatStatusLabel(status) {
       return 'Rolled Back';
     case 'MANUAL_TAKEOVER':
       return 'Manual Takeover';
+    case 'WAITING_FOR_DEVELOPER':
+      return 'Needs Review';
     case 'DISMISSED':
       return 'Dismissed';
     default:
@@ -83,6 +85,9 @@ export function getStatusBadgeStyle(status) {
   }
   if (norm === 'AWAITING_APPROVAL' || norm === 'GATE' || norm === 'DECIDE') {
     return 'bg-[#241a0d] text-[#e3b341] border-[#3d2b12]';
+  }
+  if (norm === 'WAITING_FOR_DEVELOPER' || norm === 'LOW') {
+    return 'bg-[#182338] text-[#58a6ff] border-[#293652]';
   }
   if (norm === 'ROLLED_BACK') {
     return 'bg-[#1e1628] text-[#c084fc] border-[#36254a]';

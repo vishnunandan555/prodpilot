@@ -751,6 +751,213 @@ def get_server_render_details_endpoint(server_id: str) -> Dict[str, Any]:
     }
 
 
+class DeployServerRequest(BaseModel):
+    clear_cache: bool = False
+    commit_id: Optional[str] = None
+
+
+@router.post("/servers/{server_id}/deploy")
+def trigger_server_deploy_endpoint(server_id: str, body: DeployServerRequest) -> Dict[str, Any]:
+    """Triggers a deployment on Render (latest commit, with cache clear, or a specific commit)."""
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    service_id = server.get("render_service_id")
+    if not service_id:
+        return {"ok": False, "error": "No Render Service ID configured for this server."}
+
+    key = get_effective_render_key(server.get("render_api_key"))
+    client = RenderClient(api_key=key)
+    res = client.trigger_deploy(
+        service_id=service_id,
+        api_key=key,
+        clear_cache=body.clear_cache,
+        commit_id=body.commit_id,
+    )
+
+    if res.get("ok"):
+        target_commit = (body.commit_id[:8] if body.commit_id else "HEAD")
+        cache_note = " (clear build cache)" if body.clear_cache else ""
+        msg = f"Triggered deployment {res.get('deploy_id')} for {server.get('name', 'service')} at commit {target_commit}{cache_note}."
+        try:
+            from backend.prodpilot.db import get_db
+            from datetime import datetime
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                    ("OPERATOR", "INFO", msg, datetime.utcnow().isoformat())
+                )
+        except Exception:
+            pass
+
+    return res
+
+
+@router.post("/servers/{server_id}/deploys/{deploy_id}/rollback")
+def rollback_server_deploy_endpoint(server_id: str, deploy_id: str) -> Dict[str, Any]:
+    """Rolls back the Render service to the commit from a previous deployment."""
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    service_id = server.get("render_service_id")
+    if not service_id:
+        return {"ok": False, "error": "No Render Service ID configured for this server."}
+
+    key = get_effective_render_key(server.get("render_api_key"))
+    client = RenderClient(api_key=key)
+
+    # 1. Look up target commit hash from the deploy record
+    target_commit_hash = None
+    target_deploy_res = client.get_deploy(service_id, deploy_id)
+    if target_deploy_res.get("ok"):
+        target_commit_hash = target_deploy_res.get("deploy", {}).get("commit_hash")
+
+    if not target_commit_hash:
+        all_deploys = client.get_deploys(service_id, limit=30).get("deploys", [])
+        for d in all_deploys:
+            if d.get("id") == deploy_id:
+                target_commit_hash = d.get("commit_hash")
+                break
+
+    if not target_commit_hash:
+        return {
+            "ok": False,
+            "error": f"Could not determine commit hash for deployment {deploy_id} to perform rollback.",
+        }
+
+    # 2. Trigger deployment with target commit hash
+    res = client.trigger_deploy(
+        service_id=service_id,
+        api_key=key,
+        clear_cache=False,
+        commit_id=target_commit_hash,
+    )
+
+    if res.get("ok"):
+        msg = f"Initiated rollback for {server.get('name', 'service')} to deployment {deploy_id} (commit: {target_commit_hash[:8]}). New deploy: {res.get('deploy_id')}."
+        try:
+            from backend.prodpilot.db import get_db
+            from datetime import datetime
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                    ("OPERATOR", "WARN", msg, datetime.utcnow().isoformat())
+                )
+        except Exception:
+            pass
+
+    return {
+        **res,
+        "rollback_target_commit": target_commit_hash,
+        "rollback_from_deploy_id": deploy_id,
+    }
+
+
+@router.post("/servers/{server_id}/deploys/{deploy_id}/cancel")
+def cancel_server_deploy_endpoint(server_id: str, deploy_id: str) -> Dict[str, Any]:
+    """Cancels an in-progress deployment on Render."""
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    service_id = server.get("render_service_id")
+    if not service_id:
+        return {"ok": False, "error": "No Render Service ID configured for this server."}
+
+    key = get_effective_render_key(server.get("render_api_key"))
+    client = RenderClient(api_key=key)
+    res = client.cancel_deploy(service_id, deploy_id, api_key=key)
+
+    if res.get("ok"):
+        try:
+            from backend.prodpilot.db import get_db
+            from datetime import datetime
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                    ("OPERATOR", "INFO", f"Canceled deployment {deploy_id} on {server.get('name', 'service')}.", datetime.utcnow().isoformat())
+                )
+        except Exception:
+            pass
+
+    return res
+
+
+@router.get("/servers/{server_id}/deploys/{deploy_id}")
+def get_server_deploy_status_endpoint(server_id: str, deploy_id: str) -> Dict[str, Any]:
+    """Retrieves status for a single deployment, enabling live progress tracking."""
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    service_id = server.get("render_service_id")
+    if not service_id:
+        return {"ok": False, "error": "No Render Service ID configured."}
+
+    key = get_effective_render_key(server.get("render_api_key"))
+    client = RenderClient(api_key=key)
+    return client.get_deploy(service_id, deploy_id, api_key=key)
+
+
+@router.get("/servers/{server_id}/commits")
+def get_server_recent_commits_endpoint(server_id: str, limit: int = 30) -> Dict[str, Any]:
+    """Returns recent Git commits associated with the server's connected project/repo."""
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    from backend.prodpilot.integrations.github_client import GitHubClient
+
+    commits: List[Dict[str, Any]] = []
+    seen_hashes = set()
+
+    # 1. Try local project repo
+    proj_id = server.get("project_id")
+    project = get_project(proj_id) if proj_id else None
+    local_path = (project.get("local_path") if project else None) or ""
+
+    if not local_path or not Path(local_path).exists():
+        active_proj = get_active_project()
+        if active_proj and active_proj.get("local_path") and Path(active_proj["local_path"]).exists():
+            local_path = active_proj["local_path"]
+
+    if local_path and Path(local_path).exists():
+        local_commits = GitHubClient.inspect_local_commits(local_path, limit=limit)
+        for c in local_commits:
+            h = c.get("hash")
+            if h and h not in seen_hashes:
+                seen_hashes.add(h)
+                commits.append(c)
+
+    # 2. Augment with recent deploys from Render
+    service_id = server.get("render_service_id")
+    if service_id:
+        key = get_effective_render_key(server.get("render_api_key"))
+        client = RenderClient(api_key=key)
+        deploys = client.get_deploys(service_id, limit=limit).get("deploys", [])
+        for d in deploys:
+            h = d.get("commit_hash")
+            if h and h not in seen_hashes:
+                seen_hashes.add(h)
+                commits.append({
+                    "hash": h,
+                    "short_hash": d.get("commit_id") or h[:8],
+                    "message": d.get("commit_message", "Deployed commit"),
+                    "author": "Render Deploy",
+                    "date": d.get("created_at") or "",
+                    "source": "render_history",
+                })
+
+    return {
+        "ok": True,
+        "server_id": server_id,
+        "commits": commits[:limit],
+        "count": len(commits[:limit]),
+    }
+
+
 @router.get("/servers/{server_id}/logs")
 def get_server_render_logs_endpoint(server_id: str, limit: int = 100, force: bool = False) -> Dict[str, Any]:
     server = get_server(server_id)
@@ -885,7 +1092,47 @@ def run_server_log_triage(server_id: str, limit: int = 60) -> Dict[str, Any]:
     logs = logs_res.get("logs", [])
 
     from backend.prodpilot.triage.classifier import classify_logs, Severity
+    from backend.prodpilot.db import find_incident_by_fingerprint, increment_incident_recurrence, log_event
     triage = classify_logs(server.get("name", "production-service"), logs)
+
+    if triage.severity == Severity.LOW.value:
+        from backend.prodpilot.triage.low_severity import handle_low_severity
+        fp = triage.fingerprint or compute_fingerprint(triage.trace or triage.log_tail)
+        existing = find_incident_by_fingerprint(fp)
+        if not existing and triage.suspected_area:
+            existing = find_active_incident_by_service(server.get("name", "production-service"), triage.suspected_area)
+        if existing:
+            inc = increment_incident_recurrence(existing["id"])
+            return {
+                "ok": True,
+                "incident_created": False,
+                "status": "recurrent_low_severity",
+                "incident": inc,
+                "message": f"Low-severity event re-observed on active issue {existing['id']} (recurrence: {inc.get('recurrence_count', 2)}x).",
+            }
+
+        low_inc = handle_low_severity(server.get("name", "production-service"), logs, triage)
+        try:
+            from backend.prodpilot.db import get_db
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO service_logs (service, level, message, timestamp) VALUES (?, ?, ?, ?)",
+                    (
+                        "WATCHDOG",
+                        "INFO",
+                        f"Tracked low-severity non-critical issue for '{server.get('name', 'service')}': {triage.reason} (status: WAITING_FOR_DEVELOPER)",
+                        datetime.utcnow().isoformat(),
+                    ),
+                )
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "incident_created": True,
+            "status": "low_severity_recorded",
+            "incident": low_inc,
+            "message": f"Recorded low-severity event {low_inc.get('id')} ({triage.reason}) - waiting for developer action.",
+        }
 
     if triage.severity not in (Severity.HIGH.value, Severity.INFRA.value) and not triage.is_crash:
         try:

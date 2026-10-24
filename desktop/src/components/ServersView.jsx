@@ -25,7 +25,14 @@ import {
   Power,
   Check,
   Moon,
-  WifiOff
+  WifiOff,
+  Rocket,
+  GitCommit,
+  RotateCcw,
+  XCircle,
+  ChevronDown,
+  Copy,
+  Search
 } from 'lucide-react';
 import { ListItemSkeleton } from './LoadingSkeleton';
 import { formatDate, formatRelativeTime } from '../utils/formatters';
@@ -55,6 +62,22 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
   const [discoveredServices, setDiscoveredServices] = useState([]);
   const [discovering, setDiscovering] = useState(false);
   const [registerProgress, setRegisterProgress] = useState(null);
+
+  // Deploy Management Controls
+  const [showDeployDropdown, setShowDeployDropdown] = useState(false);
+  const [showCommitDeployModal, setShowCommitDeployModal] = useState(false);
+  const [recentCommits, setRecentCommits] = useState([]);
+  const [loadingCommits, setLoadingCommits] = useState(false);
+  const [selectedCommitHash, setSelectedCommitHash] = useState('');
+  const [commitSearch, setCommitSearch] = useState('');
+  const [clearCacheOption, setClearCacheOption] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [activeDeployId, setActiveDeployId] = useState(null);
+  const [activeDeployStatus, setActiveDeployStatus] = useState(null);
+  const [confirmRollbackDeploy, setConfirmRollbackDeploy] = useState(null);
+  const [rollingBack, setRollingBack] = useState(false);
+  const [cancelingDeployId, setCancelingDeployId] = useState(null);
+  const [copiedCommitHash, setCopiedCommitHash] = useState(null);
 
   // Platform Services Toggle Controls
   const [platformServices, setPlatformServices] = useState([]);
@@ -233,6 +256,130 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
   useEffect(() => {
     fetchRenderDetails();
   }, [selectedServerId]);
+
+  // Fetch recent commits for the selected server
+  const fetchRecentCommits = async () => {
+    if (!currentServer?.id) return;
+    setLoadingCommits(true);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${currentServer.id}/commits`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecentCommits(data.commits || []);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch commits:', e);
+    } finally {
+      setLoadingCommits(false);
+    }
+  };
+
+  // Trigger Deployment
+  const handleTriggerDeploy = async (clearCache = false, commitId = null) => {
+    if (!currentServer?.id) return;
+    setDeploying(true);
+    setShowDeployDropdown(false);
+    setShowCommitDeployModal(false);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${currentServer.id}/deploy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clear_cache: clearCache,
+          commit_id: commitId && commitId.trim() ? commitId.trim() : null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setActiveDeployId(data.deploy_id);
+        setActiveDeployStatus(data.status || 'BUILDING');
+        await fetchRenderDetails();
+      } else {
+        alert(`Deploy failed: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      alert(`Deploy request failed: ${err.message}`);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  // Rollback Deployment
+  const handleExecuteRollback = async () => {
+    if (!currentServer?.id || !confirmRollbackDeploy?.id) return;
+    setRollingBack(true);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${currentServer.id}/deploys/${confirmRollbackDeploy.id}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setActiveDeployId(data.deploy_id);
+        setActiveDeployStatus(data.status || 'BUILDING');
+        setConfirmRollbackDeploy(null);
+        await fetchRenderDetails();
+      } else {
+        alert(`Rollback failed: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      alert(`Rollback request failed: ${err.message}`);
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
+  // Cancel Deployment
+  const handleCancelDeploy = async (deployId) => {
+    if (!currentServer?.id || !deployId) return;
+    setCancelingDeployId(deployId);
+    try {
+      const res = await fetch(`${apiUrl}/servers/${currentServer.id}/deploys/${deployId}/cancel`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (activeDeployId === deployId) {
+          setActiveDeployStatus('CANCELED');
+        }
+        await fetchRenderDetails();
+      } else {
+        alert(`Failed to cancel deploy: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      alert(`Cancel deploy error: ${err.message}`);
+    } finally {
+      setCancelingDeployId(null);
+    }
+  };
+
+  // Polling for in-flight deployment status
+  useEffect(() => {
+    if (!activeDeployId || !currentServer?.id) return;
+    const terminalStatuses = ['LIVE', 'BUILD_FAILED', 'CANCELED', 'DEACTIVATED'];
+    if (terminalStatuses.includes(activeDeployStatus)) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${apiUrl}/servers/${currentServer.id}/deploys/${activeDeployId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.deploy) {
+            const currentStatus = data.deploy.status?.toUpperCase();
+            setActiveDeployStatus(currentStatus);
+            if (terminalStatuses.includes(currentStatus)) {
+              clearInterval(interval);
+              fetchRenderDetails();
+            }
+          }
+        }
+      } catch (e) {
+        // silence polling error
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [activeDeployId, activeDeployStatus, currentServer?.id, apiUrl]);
 
   const handleProbe = async (id) => {
     setProbingId(id);
@@ -750,17 +897,106 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                   )}
                 </div>
 
-                {/* Column 2: Render Deployments History */}
-                <div className="p-5 rounded-xl bg-[#0e1420] border border-[#1b2438] flex flex-col">
+                {/* Column 2: Render Deployments History & Control Panel */}
+                <div className="p-5 rounded-xl bg-[#0e1420] border border-[#1b2438] flex flex-col relative">
                   <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#1b2438]">
                     <div className="flex items-center gap-2">
                       <Clock size={16} className="text-[#58a6ff]" />
-                      <h3 className="text-xs font-bold text-[#f0f6fc]">Render Deploy History</h3>
+                      <h3 className="text-xs font-bold text-[#f0f6fc]">Render Deployments</h3>
+                      <span className="text-[10px] text-[#8b949e] font-mono ml-1">
+                        {renderDetails?.deploys?.length || 0} Deploys
+                      </span>
                     </div>
-                    <span className="text-[10px] text-[#8b949e] font-mono">
-                      {renderDetails?.deploys?.length || 0} Deploys
-                    </span>
+
+                    {/* Manual Deploy Action Menu */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowDeployDropdown(!showDeployDropdown)}
+                        disabled={deploying || !currentServer?.render_service_id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white transition disabled:opacity-50 shadow-sm"
+                        title={!currentServer?.render_service_id ? "Configure Render Service ID to enable deployments" : "Trigger a manual deployment on Render"}
+                      >
+                        <Rocket size={13} className={deploying ? "animate-spin" : ""} />
+                        <span>{deploying ? 'Deploying...' : 'Manual Deploy'}</span>
+                        <ChevronDown size={12} className="opacity-75" />
+                      </button>
+
+                      {showDeployDropdown && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setShowDeployDropdown(false)}
+                          />
+                          <div className="absolute right-0 mt-1.5 w-64 rounded-xl bg-[#0d111a] border border-[#263550] shadow-2xl z-50 p-1 space-y-0.5 text-xs">
+                            <button
+                              onClick={() => handleTriggerDeploy(false)}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162033] text-[#f0f6fc] flex items-start gap-2.5 transition"
+                            >
+                              <Rocket size={14} className="text-[#3fb950] shrink-0 mt-0.5" />
+                              <div>
+                                <div className="font-semibold text-[#f0f6fc]">Deploy latest commit</div>
+                                <div className="text-[10px] text-[#8b949e]">Fast deploy of active branch HEAD</div>
+                              </div>
+                            </button>
+
+                            <button
+                              onClick={() => handleTriggerDeploy(true)}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162033] text-[#f0f6fc] flex items-start gap-2.5 transition"
+                            >
+                              <RefreshCw size={14} className="text-[#79c0ff] shrink-0 mt-0.5" />
+                              <div>
+                                <div className="font-semibold text-[#f0f6fc]">Clear build cache & deploy</div>
+                                <div className="text-[10px] text-[#8b949e]">Rebuild container image from scratch</div>
+                              </div>
+                            </button>
+
+                            <div className="border-t border-[#1b2438] my-1" />
+
+                            <button
+                              onClick={() => {
+                                setShowDeployDropdown(false);
+                                fetchRecentCommits();
+                                setShowCommitDeployModal(true);
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162033] text-[#f0f6fc] flex items-start gap-2.5 transition"
+                            >
+                              <GitCommit size={14} className="text-[#ffa657] shrink-0 mt-0.5" />
+                              <div>
+                                <div className="font-semibold text-[#f0f6fc]">Deploy a specific commit...</div>
+                                <div className="text-[10px] text-[#8b949e]">Select from Git history or enter SHA</div>
+                              </div>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Active In-Progress Deploy Banner */}
+                  {activeDeployId && ['CREATED', 'BUILDING', 'IN_PROGRESS', 'PRE_DEPLOY', 'UPDATE_IN_PROGRESS'].includes(activeDeployStatus) && (
+                    <div className="p-3 mb-3 rounded-lg bg-[#0c1929] border border-[#1f4273] flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <RefreshCw size={14} className="text-[#58a6ff] animate-spin shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[#f0f6fc] flex items-center gap-1.5">
+                            <span>Deploying</span>
+                            <span className="font-mono text-[#58a6ff] truncate">{activeDeployId}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-[#162033] text-[#79c0ff] border border-[#263550]">
+                              {activeDeployStatus}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-[#8b949e] truncate">Building container on Render • Polling live progress...</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleCancelDeploy(activeDeployId)}
+                        disabled={cancelingDeployId === activeDeployId}
+                        className="px-2.5 py-1 rounded text-[10px] font-mono font-semibold bg-[#261317] hover:bg-[#381a1f] text-[#ff7b72] border border-[#4a1c24] transition shrink-0 ml-2"
+                      >
+                        {cancelingDeployId === activeDeployId ? 'Canceling...' : 'Cancel Deploy'}
+                      </button>
+                    </div>
+                  )}
 
                   {detailsLoading && (!renderDetails?.deploys || renderDetails.deploys.length === 0) ? (
                     <div className="py-2 space-y-2">
@@ -771,43 +1007,108 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
                       <ListItemSkeleton count={2} />
                     </div>
                   ) : renderDetails?.deploys && renderDetails.deploys.length > 0 ? (
-                    <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                      {renderDetails.deploys.map((dep) => {
+                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                      {renderDetails.deploys.map((dep, idx) => {
                         const depDate = dep.created_at || dep.createdAt;
                         const commitId = dep.commit_id || dep.commit?.id?.slice(0, 7) || 'HEAD';
+                        const fullCommitHash = dep.commit_hash || dep.commit?.id || commitId;
                         const commitMsg = dep.commit_message || dep.commit?.message || 'Deploy initiated';
-                        const statusLower = (dep.status || '').toLowerCase();
+                        const statusUpper = (dep.status || 'UNKNOWN').toUpperCase();
+                        const isLive = statusUpper === 'LIVE';
+                        const isBuilding = ['BUILDING', 'IN_PROGRESS', 'CREATED', 'PRE_DEPLOY', 'UPDATE_IN_PROGRESS'].includes(statusUpper);
+                        const isFailed = statusUpper === 'BUILD_FAILED' || statusUpper === 'FAILED';
+                        const isCanceled = statusUpper === 'CANCELED';
 
                         return (
                           <div
                             key={dep.id}
-                            className="p-3 rounded-lg bg-[#080b11] border border-[#1b2438] flex items-center justify-between"
+                            className={`p-3 rounded-lg border flex items-center justify-between transition ${
+                              isLive
+                                ? 'bg-[#08120c] border-[#1b3d24]'
+                                : isBuilding
+                                ? 'bg-[#08111f] border-[#1d3356]'
+                                : 'bg-[#080b11] border-[#1b2438] hover:border-[#2b3852]'
+                            }`}
                           >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1 mr-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold font-mono text-[#f0f6fc]">{dep.id}</span>
                                 <span
-                                  className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${
-                                    statusLower === 'live'
+                                  className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border flex items-center gap-1 ${
+                                    isLive
                                       ? 'bg-[#122419] text-[#3fb950] border-[#1f4a2b]'
-                                      : statusLower === 'build_failed'
+                                      : isBuilding
+                                      ? 'bg-[#161f30] text-[#79c0ff] border-[#263550] animate-pulse'
+                                      : isFailed
                                       ? 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
-                                      : 'bg-[#161f30] text-[#79c0ff] border-[#263550]'
+                                      : 'bg-[#161b22] text-[#8b949e] border-[#30363d]'
                                   }`}
                                 >
+                                  {isBuilding && <RefreshCw size={10} className="animate-spin" />}
+                                  {isLive && <CheckCircle2 size={10} />}
                                   {dep.status}
                                 </span>
+
+                                {dep.trigger && dep.trigger !== 'unknown' && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded font-mono text-[#8b949e] bg-[#161b22] border border-[#21262d]">
+                                    {dep.trigger}
+                                  </span>
+                                )}
                               </div>
 
                               <p className="text-[11px] text-[#8b949e] mt-1 line-clamp-1 font-sans">
                                 {commitMsg}
                               </p>
 
-                              <div className="flex items-center gap-3 mt-1 text-[10px] text-[#6e7681] font-mono">
-                                <span>Commit: {commitId}</span>
+                              <div className="flex items-center gap-2.5 mt-1 text-[10px] text-[#6e7681] font-mono">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(fullCommitHash);
+                                    setCopiedCommitHash(fullCommitHash);
+                                    setTimeout(() => setCopiedCommitHash(null), 1500);
+                                  }}
+                                  className="hover:text-[#58a6ff] flex items-center gap-1 transition"
+                                  title="Copy full commit SHA"
+                                >
+                                  <span>Commit: {commitId}</span>
+                                  {copiedCommitHash === fullCommitHash ? (
+                                    <Check size={10} className="text-[#3fb950]" />
+                                  ) : (
+                                    <Copy size={10} className="opacity-60" />
+                                  )}
+                                </button>
                                 <span>•</span>
                                 <span title={formatDate(depDate)}>{formatRelativeTime(depDate)}</span>
                               </div>
+                            </div>
+
+                            {/* Per-deploy actions */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isLive ? (
+                                <span className="text-[10px] font-mono font-bold text-[#3fb950] bg-[#122419] px-2 py-0.5 rounded border border-[#1f4a2b]">
+                                  Active Live
+                                </span>
+                              ) : isBuilding ? (
+                                <button
+                                  onClick={() => handleCancelDeploy(dep.id)}
+                                  disabled={cancelingDeployId === dep.id}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-[#261317] hover:bg-[#381a1f] text-[#ff7b72] border border-[#4a1c24] transition"
+                                  title="Cancel building deployment"
+                                >
+                                  <XCircle size={12} className={cancelingDeployId === dep.id ? 'animate-spin' : ''} />
+                                  <span>Cancel</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmRollbackDeploy(dep)}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-semibold bg-[#161f30] hover:bg-[#1f2d45] text-[#79c0ff] hover:text-[#a5d6ff] border border-[#263550] transition"
+                                  title={`Roll back production to commit ${commitId}`}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Rollback</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -1352,6 +1653,222 @@ export default function ServersView({ apiUrl, onNavigateToLogs }) {
               </div>
             </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Deploy Specific Commit Modal */}
+      {showCommitDeployModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-xl rounded-2xl bg-[#0e1420] border border-[#263550] shadow-2xl p-6 text-[#c9d1d9] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1b2438]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#291b12] border border-[#4a2e1c] flex items-center justify-center text-[#ffa657]">
+                  <GitCommit size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#f0f6fc]">Deploy from Commit • Render</h3>
+                  <p className="text-[11px] text-[#8b949e]">
+                    Target a specific Git commit SHA to build and deploy to <span className="font-semibold text-[#f0f6fc]">{currentServer?.name}</span>.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCommitDeployModal(false)}
+                className="text-[#8b949e] hover:text-[#f0f6fc] p-1 rounded-lg hover:bg-[#162033] transition"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            {/* Commit Search & Filter */}
+            <div className="space-y-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-2.5 text-[#8b949e]" />
+                <input
+                  type="text"
+                  placeholder="Search recent commits or enter custom hash..."
+                  value={commitSearch}
+                  onChange={(e) => {
+                    setCommitSearch(e.target.value);
+                    if (e.target.value.length >= 7 && !recentCommits.some(c => c.hash?.startsWith(e.target.value))) {
+                      setSelectedCommitHash(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-[#080b11] border border-[#1b2438] focus:border-[#58a6ff] rounded-lg pl-9 pr-3 py-2 text-xs text-[#f0f6fc] font-mono outline-none"
+                />
+              </div>
+
+              {/* Recent Commits List */}
+              <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                {loadingCommits ? (
+                  <div className="py-6 text-center text-xs text-[#58a6ff] flex items-center justify-center gap-2">
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Loading recent commits...</span>
+                  </div>
+                ) : recentCommits.length > 0 ? (
+                  recentCommits
+                    .filter((c) => {
+                      if (!commitSearch) return true;
+                      const q = commitSearch.toLowerCase();
+                      return (
+                        c.message?.toLowerCase().includes(q) ||
+                        c.hash?.toLowerCase().includes(q) ||
+                        c.short_hash?.toLowerCase().includes(q) ||
+                        c.author?.toLowerCase().includes(q)
+                      );
+                    })
+                    .slice(0, 15)
+                    .map((c) => {
+                      const isSelected = selectedCommitHash === c.hash;
+                      return (
+                        <div
+                          key={c.hash}
+                          onClick={() => setSelectedCommitHash(c.hash)}
+                          className={`p-2.5 rounded-lg border text-xs cursor-pointer flex items-center justify-between transition ${
+                            isSelected
+                              ? 'bg-[#162033] border-[#388bfd] text-[#f0f6fc]'
+                              : 'bg-[#080b11] border-[#1b2438] hover:border-[#2b3852] text-[#c9d1d9]'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1 mr-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-[#58a6ff] text-[11px]">
+                                {c.short_hash || c.hash?.slice(0, 7)}
+                              </span>
+                              <span className="text-[10px] text-[#8b949e] font-sans truncate">
+                                {c.author}
+                              </span>
+                            </div>
+                            <p className="text-xs font-sans text-[#f0f6fc] line-clamp-1 mt-0.5">
+                              {c.message}
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            {c.date && (
+                              <span className="text-[10px] text-[#6e7681] font-mono" title={formatDate(c.date)}>
+                                {formatRelativeTime(c.date)}
+                              </span>
+                            )}
+                            <input
+                              type="radio"
+                              name="selected_commit"
+                              checked={isSelected}
+                              onChange={() => setSelectedCommitHash(c.hash)}
+                              className="accent-[#388bfd]"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="py-4 text-center text-xs text-[#8b949e]">
+                    No commits retrieved from repo history. You can paste any commit hash below.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Custom Commit Input */}
+            <div>
+              <label className="block text-xs font-semibold text-[#c9d1d9] mb-1">
+                Target Commit Hash (SHA)
+              </label>
+              <input
+                type="text"
+                placeholder="Paste full 40-character or 7-character Git commit hash..."
+                value={selectedCommitHash}
+                onChange={(e) => setSelectedCommitHash(e.target.value)}
+                className="w-full bg-[#080b11] border border-[#222f47] text-xs text-[#f0f6fc] px-3 py-2 rounded-lg focus:outline-none focus:border-[#58a6ff] font-mono"
+              />
+            </div>
+
+            {/* Clear Cache Checkbox */}
+            <label className="flex items-center gap-2 text-xs text-[#c9d1d9] cursor-pointer pt-1 select-none">
+              <input
+                type="checkbox"
+                checked={clearCacheOption}
+                onChange={(e) => setClearCacheOption(e.target.checked)}
+                className="rounded bg-[#080b11] border-[#222f47] text-[#388bfd] focus:ring-0"
+              />
+              <span>Clear build cache before building (rebuild container from scratch)</span>
+            </label>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#1b2438]">
+              <button
+                type="button"
+                onClick={() => setShowCommitDeployModal(false)}
+                className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2b40] text-[#c9d1d9] text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTriggerDeploy(clearCacheOption, selectedCommitHash)}
+                disabled={deploying || !selectedCommitHash.trim()}
+                className="px-4 py-1.5 rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Rocket size={13} className={deploying ? "animate-spin" : ""} />
+                <span>{deploying ? 'Triggering...' : 'Deploy Commit'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rollback Confirmation Modal */}
+      {confirmRollbackDeploy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-[#0e1420] border border-[#3b2326] shadow-2xl p-6 text-[#c9d1d9] space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#1b2438]">
+              <div className="w-8 h-8 rounded-lg bg-[#261317] border border-[#4a1c24] flex items-center justify-center text-[#ff7b72]">
+                <RotateCcw size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#f0f6fc]">Confirm Production Rollback</h3>
+                <p className="text-[11px] text-[#8b949e]">
+                  Service: <span className="text-[#f0f6fc] font-semibold">{currentServer?.name}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#261317]/50 border border-[#4a1c24] space-y-1.5 text-xs">
+              <div className="text-[11px] font-semibold text-[#ff7b72] flex items-center gap-1">
+                <AlertTriangle size={13} />
+                <span>Warning: Rolling back production container</span>
+              </div>
+              <p className="text-[#c9d1d9] leading-relaxed">
+                Render will build and deploy the exact commit from deployment <span className="font-mono font-bold text-[#f0f6fc]">{confirmRollbackDeploy.id}</span>:
+              </p>
+              <div className="p-2 rounded bg-[#080b11] border border-[#1b2438] font-mono text-[11px] space-y-0.5">
+                <div className="text-[#58a6ff] font-bold">
+                  Commit: {confirmRollbackDeploy.commit_id}
+                </div>
+                <div className="text-[#8b949e] font-sans truncate">
+                  "{confirmRollbackDeploy.commit_message}"
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#1b2438]">
+              <button
+                type="button"
+                onClick={() => setConfirmRollbackDeploy(null)}
+                className="px-3 py-1.5 rounded-lg bg-[#161f30] hover:bg-[#1f2b40] text-[#c9d1d9] text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteRollback}
+                disabled={rollingBack}
+                className="px-4 py-1.5 rounded-lg bg-[#b62324] hover:bg-[#cf222e] text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RotateCcw size={13} className={rollingBack ? "animate-spin" : ""} />
+                <span>{rollingBack ? 'Initiating Rollback...' : 'Rollback to this Deploy'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

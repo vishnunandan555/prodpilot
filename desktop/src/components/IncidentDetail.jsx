@@ -80,6 +80,8 @@ export default function IncidentDetail({
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [resuming, setResuming] = useState(false);
+  const [triggeringFix, setTriggeringFix] = useState(false);
+  const [fixTriggerError, setFixTriggerError] = useState(null);
 
   const handleResume = async () => {
     setResuming(true);
@@ -95,6 +97,27 @@ export default function IncidentDetail({
       console.error('Failed to resume autonomous remediation:', err);
     } finally {
       setResuming(false);
+    }
+  };
+
+  const handleTriggerFix = async () => {
+    setTriggeringFix(true);
+    setFixTriggerError(null);
+    try {
+      const res = await fetch(`${apiUrl}/incidents/${incident.id}/trigger-fix`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        window.location.reload();
+      } else {
+        setFixTriggerError(data.error || 'Failed to trigger remediation');
+      }
+    } catch (err) {
+      console.error('Failed to trigger autonomous remediation:', err);
+      setFixTriggerError(err.message || 'Network error');
+    } finally {
+      setTriggeringFix(false);
     }
   };
   const [showVoiceModal, setShowVoiceModal] = useState(false);
@@ -113,6 +136,8 @@ export default function IncidentDetail({
   React.useEffect(() => {
     setDismissRestoredBanner(false);
     setConfirmAction(null);
+    setFixTriggerError(null);
+    setTriggeringFix(false);
   }, [incident?.id]);
 
   React.useEffect(() => {
@@ -184,6 +209,7 @@ export default function IncidentDetail({
   const isFailed = incident.status === 'FAILED' || incident.status === 'ERROR' || incident.status === 'CRASHED';
   const isAwaiting = incident.status === 'AWAITING_APPROVAL';
   const isResolved = (incident.status === 'DEPLOYED' || incident.status === 'RESOLVED' || incident.status === 'ROLLED_BACK') && !isTakeover;
+  const isWaitingForDev = incident.status === 'WAITING_FOR_DEVELOPER' || (incident.severity === 'LOW' && !isResolved && !isTakeover);
 
   const suspect = incident.suspect_commit || {};
   const suspectHash = typeof suspect === 'string' ? suspect.slice(0, 7) : suspect.hash?.slice(0, 7) || null;
@@ -242,6 +268,7 @@ export default function IncidentDetail({
       case 'OPEN':
       case 'DETECTED':
         return 0;
+      case 'WAITING_FOR_DEVELOPER':
       case 'INVESTIGATING':
       case 'UNDERSTAND':
       case 'TRIAGED':
@@ -461,6 +488,54 @@ export default function IncidentDetail({
       </div>
 
       <div className="flex-1 w-full max-w-[1680px] mx-auto px-6 py-5 space-y-4">
+        {/* Low Severity / Needs Review Banner */}
+        {isWaitingForDev && !isResolved && (
+          <div className="p-3.5 rounded-lg bg-[#0e1726] border border-[#1d2d4a] flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#14233e] border border-[#233a66] flex items-center justify-center text-[#58a6ff] shrink-0">
+                <Info className="w-4 h-4 text-[#58a6ff]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs font-semibold text-[#f0f6fc]">
+                    Low Severity Issue Triaged
+                  </h3>
+                  <span className="text-[11px] text-[#79c0ff] font-mono px-1.5 py-0.2 rounded bg-[#16233b] border border-[#223961]">
+                    Status: Needs Review
+                  </span>
+                  <span className="text-[11px] text-[#8b949e] font-mono px-1.5 py-0.2 rounded bg-[#161b26] border border-[#21262d]">
+                    Autonomous Fix Deferred
+                  </span>
+                </div>
+                <p className="text-xs text-[#8b949e] mt-1 leading-relaxed">
+                  Classified as non-critical ({incident.brief?.category || incident.title || 'Client disconnect or benign network drop'}). Automated PR creation, sandbox verification, and voice paging were deferred.
+                </p>
+                {fixTriggerError && (
+                  <p className="text-xs text-[#f85149] mt-1 font-mono">
+                    Error: {fixTriggerError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleTriggerFix}
+                disabled={triggeringFix}
+                className="px-3 py-1.5 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-sm hover:shadow-md"
+                title="Manually trigger autonomous agent to synthesize repro test, sandbox fix, and canary verification"
+              >
+                {triggeringFix ? (
+                  <Loader2 size={12} className="animate-spin text-white" />
+                ) : (
+                  <Zap size={12} className="text-amber-300 fill-amber-300" />
+                )}
+                <span>{triggeringFix ? 'Initiating Remediation...' : 'Generate Fix'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Production Restored Banner */}
         {isTakeover && !dismissRestoredBanner && (
           <div className="p-3.5 rounded-lg bg-[#161b26] border border-[#212a3d] flex items-center justify-between gap-3 animate-in fade-in">
@@ -689,7 +764,13 @@ export default function IncidentDetail({
 
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-xs text-[#8b949e]">Severity:</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-[#261317] text-[#ff7b72] border border-[#4a1c24]">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                    incident.severity === 'LOW'
+                      ? 'bg-[#101e38] text-[#79c0ff] border-[#1d3b6a]'
+                      : incident.severity === 'MEDIUM'
+                      ? 'bg-[#2b1f0c] text-[#e3b341] border-[#4d3814]'
+                      : 'bg-[#261317] text-[#ff7b72] border-[#4a1c24]'
+                  }`}>
                     {incident.severity || 'HIGH'}
                   </span>
                 </div>
@@ -718,6 +799,8 @@ export default function IncidentDetail({
                       ) : (
                         <span className="text-[#3fb950]">Fix-Forward (Merged PR)</span>
                       )
+                    ) : isWaitingForDev ? (
+                      <span className="text-[#79c0ff]">Manual Review (Deferred)</span>
                     ) : isAwaiting ? (
                       <span className="text-[#d29922]">Awaiting Gate Approval</span>
                     ) : currentStageIdx >= 4 ? (
@@ -834,6 +917,8 @@ export default function IncidentDetail({
                         ? 'Operator Control Active (Autonomous Loop Bypassed)'
                         : isFailed
                         ? 'Remediation Blocked — Manual Operator Intervention Required'
+                        : isWaitingForDev
+                        ? 'Needs Review — Autonomous Fix Deferred (Click "Generate Fix" to Dispatch)'
                         : isAwaiting
                         ? 'Approval Gate: Standby for Operator Sign-off'
                         : `${STAGES_LIST[currentStageIdx]?.label}: ${STAGES_LIST[currentStageIdx]?.shortDesc}`}

@@ -113,7 +113,7 @@ class RenderClient:
         except Exception as e:
             return {"ok": False, "error": str(e), "services": []}
 
-    def get_deploys(self, service_id: str, api_key: Optional[str] = None, limit: int = 15) -> Dict[str, Any]:
+    def get_deploys(self, service_id: str, api_key: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
         """Fetches deployment history for a Render service."""
         sid = service_id.strip()
         url = f"{RENDER_API_BASE}/services/{sid}/deploys?limit={limit}"
@@ -131,13 +131,16 @@ class RenderClient:
                     for d in raw_deploys:
                         deploy_obj = d.get("deploy") if "deploy" in d else d
                         commit = deploy_obj.get("commit") or {}
+                        full_commit_id = commit.get("id") or ""
                         deploys.append({
                             "id": deploy_obj.get("id", ""),
                             "status": deploy_obj.get("status", "unknown").upper(),
                             "trigger": deploy_obj.get("trigger", "unknown"),
-                            "commit_id": (commit.get("id") or "")[:8],
+                            "commit_id": full_commit_id[:8] if full_commit_id else "HEAD",
+                            "commit_hash": full_commit_id,
                             "commit_message": commit.get("message", "No commit message"),
                             "created_at": deploy_obj.get("createdAt", ""),
+                            "updated_at": deploy_obj.get("updatedAt", ""),
                             "finished_at": deploy_obj.get("finishedAt", ""),
                         })
                     return {"ok": True, "deploys": deploys}
@@ -145,8 +148,48 @@ class RenderClient:
         except Exception as e:
             return {"ok": False, "error": str(e), "deploys": []}
 
-    def trigger_deploy(self, service_id: str, api_key: Optional[str] = None, clear_cache: bool = False) -> Dict[str, Any]:
-        """Triggers an automated redeployment for a Render service."""
+    def get_deploy(self, service_id: str, deploy_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+        """Fetches status of a specific deployment."""
+        sid = service_id.strip()
+        did = deploy_id.strip()
+        url = f"{RENDER_API_BASE}/services/{sid}/deploys/{did}"
+        headers = self._headers(api_key)
+
+        if not headers.get("Authorization"):
+            return {"ok": False, "error": "Render API key not provided"}
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(url, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    deploy_obj = data.get("deploy") if "deploy" in data else data
+                    commit = deploy_obj.get("commit") or {}
+                    return {
+                        "ok": True,
+                        "deploy": {
+                            "id": deploy_obj.get("id"),
+                            "status": deploy_obj.get("status", "unknown").upper(),
+                            "trigger": deploy_obj.get("trigger", "unknown"),
+                            "commit_id": (commit.get("id") or "")[:8],
+                            "commit_hash": commit.get("id") or "",
+                            "commit_message": commit.get("message", "No commit message"),
+                            "created_at": deploy_obj.get("createdAt", ""),
+                            "finished_at": deploy_obj.get("finishedAt", ""),
+                        },
+                    }
+                return {"ok": False, "error": f"Render API error {res.status_code}: {res.text}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def trigger_deploy(
+        self,
+        service_id: str,
+        api_key: Optional[str] = None,
+        clear_cache: bool = False,
+        commit_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Triggers an automated redeployment for a Render service, optionally targeting a specific commit."""
         sid = service_id.strip()
         url = f"{RENDER_API_BASE}/services/{sid}/deploys"
         headers = self._headers(api_key)
@@ -154,19 +197,44 @@ class RenderClient:
         if not headers.get("Authorization"):
             return {"ok": False, "error": "Render API key not provided"}
 
-        body = {"clearCache": "clear" if clear_cache else "do_not_clear"}
+        body: Dict[str, Any] = {"clearCache": "clear" if clear_cache else "do_not_clear"}
+        if commit_id and commit_id.strip():
+            body["commitId"] = commit_id.strip()
+
         try:
             with httpx.Client(timeout=15.0) as client:
                 res = client.post(url, headers=headers, json=body)
                 if res.status_code in (200, 201):
                     data = res.json()
                     deploy_obj = data.get("deploy") if "deploy" in data else data
+                    commit = deploy_obj.get("commit") or {}
                     return {
                         "ok": True,
                         "deploy_id": deploy_obj.get("id"),
-                        "status": deploy_obj.get("status", "created"),
+                        "status": deploy_obj.get("status", "created").upper(),
+                        "commit_id": (commit.get("id") or (commit_id or ""))[:8],
+                        "commit_hash": commit.get("id") or commit_id or "",
                         "raw": deploy_obj,
                     }
+                return {"ok": False, "error": f"Render API error {res.status_code}: {res.text}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def cancel_deploy(self, service_id: str, deploy_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+        """Cancels an in-progress deployment on Render."""
+        sid = service_id.strip()
+        did = deploy_id.strip()
+        url = f"{RENDER_API_BASE}/services/{sid}/deploys/{did}/cancel"
+        headers = self._headers(api_key)
+
+        if not headers.get("Authorization"):
+            return {"ok": False, "error": "Render API key not provided"}
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(url, headers=headers)
+                if res.status_code in (200, 204):
+                    return {"ok": True, "message": f"Deployment {did} canceled."}
                 return {"ok": False, "error": f"Render API error {res.status_code}: {res.text}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
