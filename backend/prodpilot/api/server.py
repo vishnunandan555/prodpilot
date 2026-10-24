@@ -774,6 +774,53 @@ def resume_incident_endpoint(incident_id: str) -> Dict[str, Any]:
     }
 
 
+@app.post("/incidents/{incident_id}/trigger-fix")
+async def trigger_fix_endpoint(incident_id: str) -> Dict[str, Any]:
+    """Manually triggers autonomous fix generation for a WAITING_FOR_DEVELOPER or TRIAGED incident."""
+    inc = get_incident(incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    svc = inc.get("service") or "service"
+
+    # Set status to OPEN and severity to HIGH to initiate full remediation loop
+    update_incident_status(incident_id, "OPEN")
+    from backend.prodpilot.db import get_db, get_active_repo
+    try:
+        with get_db() as conn:
+            conn.execute("UPDATE incidents SET severity = 'HIGH' WHERE id = ?", (incident_id,))
+    except Exception:
+        pass
+
+    msg = f"[BUTTON: GENERATE FIX] Operator manually triggered autonomous remediation for incident #{incident_id[:8]} ({svc})."
+    log_event(None, incident_id, "TRIGGER_FIX", "manual_trigger", {"message": msg, "action": "trigger_fix", "status": "OPEN"})
+    insert_service_log(service=svc, level="INFO", message=msg)
+
+    # Resolve repo path for worker
+    active_repo = get_active_repo()
+    repo_path = None
+    if active_repo and active_repo.get("local_path"):
+        repo_path = active_repo.get("local_path")
+
+    # If repo path is available, immediately dispatch in background thread
+    if repo_path and Path(repo_path).is_dir():
+        from backend.prodpilot.pipeline.orchestrator import process_incident
+        asyncio.create_task(
+            asyncio.to_thread(
+                process_incident,
+                incident=inc,
+                repo_path=repo_path,
+            )
+        )
+
+    return {
+        "ok": True,
+        "status": "OPEN",
+        "severity": "HIGH",
+        "incident_id": incident_id,
+        "message": f"Autonomous fix triggered for incident {incident_id}",
+    }
+
 
 @app.post("/platform/audit-log")
 def create_audit_log_entry(body: AuditLogEntryRequest) -> Dict[str, Any]:

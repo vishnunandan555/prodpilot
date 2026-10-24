@@ -373,15 +373,16 @@ def find_incident_by_fingerprint(fingerprint: str, db_path: Optional[str] = None
 
 
 def find_active_incident_by_service(service: str, suspected_area: Optional[str] = None, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Finds any active, unresolved incident for the service to prevent duplicate incidents during ongoing triage/fixing."""
+    """Finds an active, unresolved incident for the service and area to prevent duplicate incidents during ongoing triage/fixing."""
     if not service:
         return None
     with get_db(db_path) as conn:
-        if suspected_area:
+        if suspected_area and suspected_area != service:
             cursor = conn.execute(
                 """
                 SELECT * FROM incidents
-                WHERE service = ? AND suspected_area = ? AND status NOT IN ('RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED')
+                WHERE service = ? AND suspected_area = ?
+                  AND status NOT IN ('RESOLVED', 'DEPLOYED', 'ROLLED_BACK', 'DISMISSED')
                 ORDER BY detected_at DESC LIMIT 1
                 """,
                 (service, suspected_area)
@@ -389,6 +390,8 @@ def find_active_incident_by_service(service: str, suspected_area: Optional[str] 
             row = cursor.fetchone()
             if row:
                 return dict_from_row(row)
+            # If a specific suspected_area was given and didn't match, do not clobber into an unrelated area's active incident
+            return None
 
         cursor = conn.execute(
             """
