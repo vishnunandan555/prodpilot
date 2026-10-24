@@ -114,10 +114,10 @@ start_ui() {
     echo -e "  Starting Electron workspace..."
     # If Vite dev server is already responding on port 5173, launch Electron directly.
     # Otherwise run electron:dev to start Vite and Electron concurrently.
-    if curl -s http://127.0.0.1:5173 >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✓ Vite dev server already running on http://127.0.0.1:5173${NC}"
+    if curl -s http://localhost:5173 >/dev/null 2>&1 || curl -s http://127.0.0.1:5173 >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ Vite dev server already responding on port 5173${NC}"
         echo -e "  Starting Electron window..."
-        npx electron .
+        npx electron . --ozone-platform-hint=auto
     else
         echo -e "  Starting Vite dev server + Electron desktop window..."
         npm run electron:dev

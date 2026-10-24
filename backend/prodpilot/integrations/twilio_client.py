@@ -302,6 +302,7 @@ def hangup_call(call_sid: str) -> Dict[str, Any]:
 # ----------------------------------------------------------------------
 
 VOICE_SESSIONS: Dict[str, Dict[str, Any]] = {}
+DISPATCHED_INCIDENT_CALLS: Dict[str, float] = {}
 
 
 def get_voice_session(session_key: str) -> Dict[str, Any]:
@@ -337,12 +338,19 @@ def dispatch_incident_voice_drill(incident: Dict[str, Any], db_path: Optional[st
         return {"ok": False, "skipped": True, "reason": "Twilio service disabled"}
 
     incident_id = incident.get("id", "")
+    if incident_id and incident_id in DISPATCHED_INCIDENT_CALLS:
+        elapsed = time.time() - DISPATCHED_INCIDENT_CALLS[incident_id]
+        if elapsed < 300:  # 5 min cooldown per incident to avoid duplicate dialing
+            logger.info("Voice call already placed for incident %s (%.1fs ago); skipping duplicate dial.", incident_id, elapsed)
+            return {"ok": True, "skipped": True, "reason": "Voice call already dispatched for this incident", "elapsed": elapsed}
+
     target_phone = get_setting("ENGINEER_PHONE") or os.environ.get("ENGINEER_PHONE") or "+919539916820"
     tunnel_url = get_effective_tunnel_url()
     webhook_url = f"{tunnel_url}/voice/incident/{incident_id}/twiml"
 
     res = initiate_voice_call(to_phone=target_phone, webhook_url=webhook_url)
     if res.get("ok"):
+        DISPATCHED_INCIDENT_CALLS[incident_id] = time.time()
         call_sid = res.get("call_sid")
         record_voice_log(
             "AUTONOMOUS_CALL_TRIGGERED",

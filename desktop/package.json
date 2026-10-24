@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:dev": "concurrently \"vite --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite --host 0.0.0.0 --port 5173 --strictPort\" \"wait-on -t 15000 http://localhost:5173 && electron . --ozone-platform-hint=auto\"",
     "start": "npm run electron:dev"
   },
   "dependencies": {

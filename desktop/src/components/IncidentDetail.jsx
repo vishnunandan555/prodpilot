@@ -80,7 +80,7 @@ export default function IncidentDetail({
   const [showPatchDiffInGate, setShowPatchDiffInGate] = useState(false);
   const [showRcaTrace, setShowRcaTrace] = useState(false);
   const [showReproProof, setShowReproProof] = useState(true);
-  const [showRedGreenLogs, setShowRedGreenLogs] = useState(true);
+  const [showRedGreenLogs, setShowRedGreenLogs] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [commitsList, setCommitsList] = useState([]);
   const [loadingCommits, setLoadingCommits] = useState(false);

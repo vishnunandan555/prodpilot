@@ -23,14 +23,23 @@ function createWindow() {
   });
 
   const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
-  const startUrl = process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173';
+  const startUrl = process.env.ELECTRON_START_URL || 'http://localhost:5173';
 
   if (isDev) {
-    mainWindow.loadURL(startUrl);
-    // mainWindow.webContents.openDevTools();
+    mainWindow.loadURL(startUrl).catch((err) => {
+      console.warn(`[Electron] Failed to load ${startUrl}, trying fallback to 127.0.0.1:`, err?.message);
+      mainWindow.loadURL('http://127.0.0.1:5173').catch(() => {
+        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+      });
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http:') || url.startsWith('https:')) {
